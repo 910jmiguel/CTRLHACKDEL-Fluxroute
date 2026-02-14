@@ -108,32 +108,53 @@ export default function FluxMap({
 
     const style = m.getStyle();
     if (style?.layers) {
-      for (const layer of style.layers) {
-        if (layer.id.includes("-cong-")) {
+      style.layers.forEach((layer) => {
+        if (layer.id.startsWith("route-layer-congestion-")) {
+          // ... (existing congestion logic) ...
           m.on("mouseenter", layer.id, (e) => {
             m.getCanvas().style.cursor = "pointer";
-            const feature = e.features?.[0];
-            if (feature) {
-              const congestion = feature.properties?.congestion || "unknown";
-              const description = congestionDescriptions[congestion] || congestion;
-              popup
-                .setLngLat(e.lngLat)
-                .setHTML(`<div style="font-size:12px;font-weight:500;padding:2px 4px">${description}</div>`)
-                .addTo(m);
+            if (e.features && e.features[0]) {
+              const congestion = e.features[0].properties?.congestion as string;
+              const desc = congestionDescriptions[congestion] || congestion;
+              popup.setLngLat(e.lngLat).setHTML(desc).addTo(m!);
             }
           });
-
-          m.on("mousemove", layer.id, (e) => {
-            popup.setLngLat(e.lngLat);
-          });
-
           m.on("mouseleave", layer.id, () => {
             m.getCanvas().style.cursor = "";
             popup.remove();
           });
         }
-      }
+      });
     }
+
+    // Road Closure Tooltips
+    ["road-closure-line", "road-closure-symbol"].forEach((layerId) => {
+      // Only register if layer exists (might be added async, but we are in useEffect depending on showTraffic)
+      // Actually, these events bind even if layer doesn't exist yet? No.
+      // But we just added them in the same render cycle (effectively).
+      // Safer to check if getLayer returns something, but 'on' listener doesn't throw.
+      m.on("mouseenter", layerId, (e) => {
+        m.getCanvas().style.cursor = "pointer";
+        if (e.features && e.features[0]) {
+          const props = e.features[0].properties;
+          if (props) {
+            const road = props.road || "Road Closure";
+            const desc = props.description || props.reason || "No details available";
+            const time = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
+
+            popup.setLngLat(e.lngLat).setHTML(
+              `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${time}`
+            ).addTo(m!);
+          }
+        }
+      });
+      m.on("mouseleave", layerId, () => {
+        m.getCanvas().style.cursor = "";
+        popup.remove();
+      });
+    });
+
+
 
     return () => {
       popup.remove();
@@ -163,16 +184,16 @@ export default function FluxMap({
     if (!map.current || !mapLoaded) return;
     const m = map.current;
 
+    // Manage traffic tileset & road closures
     try {
-      if (showTraffic && routes.length > 0) {
-        // Add traffic source if not present
+      if (showTraffic) { // Show if toggle is ON (regardless of route presence)
+        // 1. Mapbox Traffic Flow
         if (!m.getSource("mapbox-traffic")) {
           m.addSource("mapbox-traffic", {
             type: "vector",
             url: "mapbox://mapbox.mapbox-traffic-v1",
           });
         }
-        // Add traffic layer if not present
         if (!m.getLayer("traffic-flow-layer")) {
           m.addLayer(
             {
@@ -194,21 +215,75 @@ export default function FluxMap({
                 "line-opacity": 0.4,
               },
             },
-            // Place before route layers so routes render on top
             m.getStyle()?.layers?.find((l) => l.id.startsWith("route-layer-"))?.id
           );
         }
         if (m.getLayer("traffic-flow-layer")) {
           m.setLayoutProperty("traffic-flow-layer", "visibility", "visible");
         }
-      } else {
-        // Hide traffic layer
-        if (m.getLayer("traffic-flow-layer")) {
-          m.setLayoutProperty("traffic-flow-layer", "visibility", "none");
+
+        // 2. Road Closures (Toronto Open Data)
+        if (!m.getSource("road-closures")) {
+          m.addSource("road-closures", {
+            type: "geojson",
+            data: "/api/road-closures", // Proxy to backend
+          });
         }
+
+        // Closure Lines (Red Dashed)
+        if (!m.getLayer("road-closure-line")) {
+          m.addLayer({
+            id: "road-closure-line",
+            type: "line",
+            source: "road-closures",
+            paint: {
+              "line-color": "#EF4444", // Red
+              "line-width": 3,
+              "line-dasharray": [2, 2], // Dashed
+              "line-opacity": 0.8,
+            },
+          });
+        }
+        if (m.getLayer("road-closure-line")) {
+          m.setLayoutProperty("road-closure-line", "visibility", "visible");
+        }
+
+        // Closure Icons (Warning Symbol)
+        if (!m.getLayer("road-closure-symbol")) {
+          m.addLayer({
+            id: "road-closure-symbol",
+            type: "symbol",
+            source: "road-closures",
+            layout: {
+              "icon-image": "road-closure", // Maki icon
+              "icon-size": 1.2,
+              "icon-allow-overlap": true,
+              "text-field": "{road}", // Show road name
+              "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+              "text-size": 10,
+              "text-offset": [0, 1.5],
+              "text-anchor": "top",
+              "text-optional": true,
+            },
+            paint: {
+              "text-color": "#FECaca", // Light red text
+              "text-halo-color": "#000000",
+              "text-halo-width": 1,
+            },
+          });
+        }
+        if (m.getLayer("road-closure-symbol")) {
+          m.setLayoutProperty("road-closure-symbol", "visibility", "visible");
+        }
+
+      } else {
+        // Hide all traffic layers
+        if (m.getLayer("traffic-flow-layer")) m.setLayoutProperty("traffic-flow-layer", "visibility", "none");
+        if (m.getLayer("road-closure-line")) m.setLayoutProperty("road-closure-line", "visibility", "none");
+        if (m.getLayer("road-closure-symbol")) m.setLayoutProperty("road-closure-symbol", "visibility", "none");
       }
     } catch (err) {
-      console.warn("Failed to update traffic layer:", err);
+      console.warn("Failed to update traffic/closure layers:", err);
     }
   }, [showTraffic, routes, mapLoaded]);
 

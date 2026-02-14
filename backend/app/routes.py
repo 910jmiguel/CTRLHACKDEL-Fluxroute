@@ -161,3 +161,12 @@ async def get_weather(
 
     weather = await get_current_weather(lat, lng)
     return weather
+
+
+@router.get("/road-closures")
+async def get_road_closures():
+    """Get active road closures from Toronto Open Data."""
+    from app.road_closures import fetch_road_closures
+
+    closures = await fetch_road_closures()
+    return closures

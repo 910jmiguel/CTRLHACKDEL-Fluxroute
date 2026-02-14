@@ -18,3 +18,4 @@ build/
 nul
 *.osm.pbf
 *.jar
+*.swp
