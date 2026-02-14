@@ -68,6 +68,7 @@ class DelayPredictor:
         is_rush = 1 if (7 <= hour <= 9 or 17 <= hour <= 19) else 0
         is_weekend = 1 if day_of_week >= 5 else 0
 
+        # Features must match training order: hour, day_of_week, month, is_rush_hour, is_weekend, line_encoded, station_encoded
         features = np.array([[
             hour,
             day_of_week,
@@ -75,7 +76,7 @@ class DelayPredictor:
             is_rush,
             is_weekend,
             int(line),
-            1 if is_adverse_weather else 0,
+            0,  # station_encoded (default, no specific station mapping at prediction time)
         ]])
 
         try:

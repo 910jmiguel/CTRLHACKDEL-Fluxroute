@@ -21,7 +21,8 @@ from app.weather import get_current_weather
 
 logger = logging.getLogger("fluxroute.engine")
 
-MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "")
+def _get_mapbox_token() -> str:
+    return os.getenv("MAPBOX_TOKEN", "")
 MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
 
 
@@ -31,13 +32,14 @@ async def _mapbox_directions(
     profile: str = "driving-traffic",
 ) -> Optional[dict]:
     """Call Mapbox Directions API. Returns route data or None on failure."""
-    if not MAPBOX_TOKEN or MAPBOX_TOKEN == "your-mapbox-token-here":
+    token = _get_mapbox_token()
+    if not token or token == "your-mapbox-token-here":
         return None
 
     url = (
         f"{MAPBOX_DIRECTIONS_URL}/{profile}/"
         f"{origin.lng},{origin.lat};{destination.lng},{destination.lat}"
-        f"?geometries=geojson&overview=full&access_token={MAPBOX_TOKEN}"
+        f"?geometries=geojson&overview=full&access_token={token}"
     )
 
     try:
@@ -294,7 +296,7 @@ async def _generate_transit_route(
         )
     )
 
-    line_name = origin_stop.get("line") or transit_route.get("line", "TTC Subway") if transit_route else "TTC Subway"
+    line_name = origin_stop.get("line") or (transit_route.get("line", "TTC Subway") if transit_route else "TTC Subway")
     route_id = origin_stop.get("route_id") or (transit_route.get("route_id") if transit_route else None)
 
     # Determine transit line color

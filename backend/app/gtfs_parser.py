@@ -157,6 +157,7 @@ def find_nearest_stops(gtfs: dict, lat: float, lng: float, radius_km: float = 2.
     dlng = stops_lng_r - lng_r
 
     a = (dlat / 2).apply(math.sin) ** 2 + math.cos(lat_r) * stops_lat_r.apply(math.cos) * (dlng / 2).apply(math.sin) ** 2
+    a = a.clip(upper=1.0)  # Clamp to prevent math domain error from float precision
     distances = 6371.0 * 2 * (a.apply(math.sqrt).apply(lambda x: math.atan2(x, math.sqrt(1 - x))))
 
     stops_with_dist = stops.copy()

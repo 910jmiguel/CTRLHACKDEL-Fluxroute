@@ -12,7 +12,7 @@ export default function DelayIndicator({
   compact = false,
 }: DelayIndicatorProps) {
   const level =
-    probability < 0.2 ? "low" : probability < 0.4 ? "medium" : "high";
+    probability < 0.3 ? "low" : probability < 0.6 ? "medium" : "high";
 
   const config = {
     low: { bg: "bg-emerald-500/20", text: "text-emerald-400", border: "border-emerald-500/30", label: "Low Risk" },

@@ -1,6 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env before any other imports that read env vars
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

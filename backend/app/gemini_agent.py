@@ -10,7 +10,8 @@ from app.models import ChatMessage, ChatResponse
 
 logger = logging.getLogger("fluxroute.gemini")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+def _get_gemini_api_key() -> str:
+    return os.getenv("GEMINI_API_KEY", "")
 
 SYSTEM_PROMPT = """You are FluxRoute Assistant, an AI-powered Toronto transit expert built into the FluxRoute multimodal routing app.
 
@@ -153,14 +154,15 @@ async def chat_with_gemini(
     app_state: dict,
 ) -> ChatResponse:
     """Chat with Gemini using tool use for transit queries."""
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your-api-key-here":
+    api_key = _get_gemini_api_key()
+    if not api_key or api_key == "your-api-key-here":
         return ChatResponse(
             message="AI chat is not configured. Please set the GEMINI_API_KEY environment variable to enable the AI assistant.",
             suggested_actions=["Get routes", "Check delays"],
         )
 
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=api_key)
         
         # Initialize model with tools
         model = genai.GenerativeModel(
