@@ -18,6 +18,7 @@ from app.models import (
 from app.cost_calculator import calculate_cost
 from app.gtfs_parser import find_nearest_stops, haversine, find_transit_route
 from app.ml_predictor import DelayPredictor
+from app.otp_client import query_otp_routes, parse_otp_itinerary
 from app.weather import get_current_weather
 
 logger = logging.getLogger("fluxroute.engine")
@@ -69,10 +70,12 @@ async def _mapbox_directions(
         )
         return None
 
+    # Request congestion annotations for driving-traffic profile
+    annotations = "&annotations=congestion" if profile == "driving-traffic" else ""
     url = (
         f"{MAPBOX_DIRECTIONS_URL}/{profile}/"
         f"{origin.lng},{origin.lat};{destination.lng},{destination.lat}"
-        f"?geometries=geojson&overview=full&steps=true&access_token={token}"
+        f"?geometries=geojson&overview=full&steps=true{annotations}&access_token={token}"
     )
     if alternatives:
         url += "&alternatives=true"
@@ -92,7 +95,31 @@ async def _mapbox_directions(
             )
             return None
 
-        result = _parse_route(routes[0])
+        route = routes[0]
+
+        # Extract congestion data if available
+        congestion = None
+        congestion_level = None
+        if route.get("legs"):
+            leg = route["legs"][0]
+            annotation = leg.get("annotation", {})
+            congestion = annotation.get("congestion", [])
+            if congestion:
+                # Compute dominant congestion level
+                levels = {"low": 0, "moderate": 0, "heavy": 0, "severe": 0, "unknown": 0}
+                for c in congestion:
+                    levels[c] = levels.get(c, 0) + 1
+                total = sum(levels.values()) or 1
+                if (levels["severe"] + levels["heavy"]) / total > 0.3:
+                    congestion_level = "severe" if levels["severe"] > levels["heavy"] else "heavy"
+                elif (levels["moderate"] + levels["heavy"] + levels["severe"]) / total > 0.4:
+                    congestion_level = "moderate"
+                else:
+                    congestion_level = "low"
+
+        result = _parse_route(route)
+        result["congestion"] = congestion
+        result["congestion_level"] = congestion_level
 
         # Include alternatives if requested and available
         if alternatives and len(routes) > 1:
@@ -157,9 +184,27 @@ async def generate_routes(
 
     now = datetime.now()
 
+    # Try OTP for transit routes first (multi-agency graph routing)
+    otp_used = False
+    if RouteMode.TRANSIT in modes:
+        try:
+            otp_itineraries = await query_otp_routes(origin, destination, now, num_itineraries=3)
+            if otp_itineraries:
+                otp_used = True
+                for itin in otp_itineraries[:2]:  # Take best 2 OTP results
+                    otp_route = parse_otp_itinerary(itin, predictor=predictor, is_adverse=is_adverse)
+                    routes.append(otp_route)
+                logger.info(f"OTP returned {len(otp_itineraries)} itineraries, used {min(2, len(otp_itineraries))}")
+        except Exception as e:
+            logger.warning(f"OTP query failed, falling back to heuristic: {e}")
+
     # Generate each mode
     for mode in modes:
         try:
+            # Skip transit if OTP already handled it
+            if mode == RouteMode.TRANSIT and otp_used:
+                continue
+
             if mode == RouteMode.WALKING and total_distance > 5.0:
                 continue  # Skip walking for long distances
 
@@ -202,6 +247,7 @@ async def _generate_single_route(
     total_dist = 0.0
     delay_info = DelayInfo()
     stress_score = 0.0
+    traffic_label = ""
 
     if mode == RouteMode.TRANSIT:
         return await _generate_transit_route(
@@ -222,19 +268,33 @@ async def _generate_single_route(
             total_duration = _estimate_duration(total_dist, RouteMode.DRIVING)
             steps = []
 
+        # Determine traffic summary from congestion data
+        congestion_level = mapbox.get("congestion_level") if mapbox else None
+        traffic_label = ""
+        if congestion_level == "heavy":
+            traffic_label = " (Heavy traffic)"
+        elif congestion_level == "moderate":
+            traffic_label = " (Moderate traffic)"
+        elif congestion_level == "low":
+            traffic_label = " (Light traffic)"
+
         segments.append(RouteSegment(
             mode=RouteMode.DRIVING,
             geometry=geometry,
             distance_km=round(total_dist, 2),
             duration_min=round(total_duration, 1),
-            instructions="Drive to destination",
+            instructions=f"Drive to destination{traffic_label}",
             color="#3B82F6",
             steps=steps,
+            congestion_level=congestion_level,
         ))
 
-        # Driving stress: base 0.5, higher in rush hour
+        # Driving stress: use real congestion data if available, else rush-hour heuristic
         stress_score = 0.5
-        if 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
+        if congestion_level:
+            stress_penalties = {"severe": 0.3, "heavy": 0.2, "moderate": 0.1, "low": 0.0}
+            stress_score += stress_penalties.get(congestion_level, 0.0)
+        elif 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
             stress_score += 0.2
         if is_adverse:
             stress_score += 0.1
@@ -328,6 +388,17 @@ async def _generate_single_route(
         return None
 
     if mode not in (RouteMode.TRANSIT, RouteMode.HYBRID):
+        # Generate traffic_summary for driving routes
+        traffic_summary_text = ""
+        if mode == RouteMode.DRIVING and congestion_level:
+            traffic_map = {
+                "severe": "Severe traffic congestion",
+                "heavy": "Heavy traffic",
+                "moderate": "Moderate traffic",
+                "low": "Light traffic",
+            }
+            traffic_summary_text = traffic_map.get(congestion_level, "")
+
         return RouteOption(
             id=str(uuid.uuid4())[:8],
             label="",
@@ -339,7 +410,8 @@ async def _generate_single_route(
             delay_info=delay_info,
             stress_score=round(min(1.0, stress_score), 2),
             departure_time=now.strftime("%H:%M"),
-            summary=f"{mode.value.title()} — {total_dist:.1f} km, {total_duration:.0f} min",
+            summary=f"{mode.value.title()} — {total_dist:.1f} km, {total_duration:.0f} min{traffic_label if mode == RouteMode.DRIVING else ''}",
+            traffic_summary=traffic_summary_text,
         )
 
     return None
@@ -411,7 +483,7 @@ async def _generate_transit_route(
     route_id = origin_stop.get("route_id") or (transit_route.get("route_id") if transit_route else None)
 
     # Determine transit line color
-    line_colors = {"1": "#FFCC00", "2": "#00A651", "3": "#0082C9", "4": "#A8518A"}
+    line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
     color = line_colors.get(str(route_id), "#FFCC00")
 
     segments.append(RouteSegment(
@@ -532,6 +604,7 @@ async def _generate_hybrid_route(
 
     drive_dist = drive_geo["distance_km"] if drive_geo else haversine(origin.lat, origin.lng, park_stop["lat"], park_stop["lng"]) * 1.3
     drive_dur = drive_geo["duration_min"] if drive_geo else _estimate_duration(drive_dist, RouteMode.DRIVING)
+    drive_congestion = drive_geo.get("congestion_level") if drive_geo else None
 
     segments.append(RouteSegment(
         mode=RouteMode.DRIVING,
@@ -543,6 +616,7 @@ async def _generate_hybrid_route(
         instructions=f"Drive to {park_stop['stop_name']} station (Park & Ride)",
         color="#3B82F6",
         steps=_make_direction_steps(drive_geo.get("steps", [])) if drive_geo else [],
+        congestion_level=drive_congestion,
     ))
     total_duration += drive_dur
     total_dist += drive_dist
@@ -563,7 +637,7 @@ async def _generate_hybrid_route(
     )
 
     route_id = park_stop.get("route_id")
-    line_colors = {"1": "#FFCC00", "2": "#00A651", "3": "#0082C9", "4": "#A8518A"}
+    line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
     color = line_colors.get(str(route_id), "#FFCC00")
 
     segments.append(RouteSegment(
@@ -619,8 +693,21 @@ async def _generate_hybrid_route(
         factors=prediction["contributing_factors"],
     )
 
+    # Use real congestion for stress if available, else rush-hour heuristic
     stress_score = 0.35 + prediction["delay_probability"] * 0.2
+    if drive_congestion:
+        stress_penalties = {"severe": 0.3, "heavy": 0.2, "moderate": 0.1, "low": 0.0}
+        stress_score += stress_penalties.get(drive_congestion, 0.0)
+    elif 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
+        stress_score += 0.1
+
     cost = calculate_cost(RouteMode.HYBRID, total_dist, destination.lat, destination.lng)
+
+    # Traffic summary for hybrid driving segment
+    hybrid_traffic = ""
+    if drive_congestion:
+        traffic_map = {"severe": "Severe traffic congestion", "heavy": "Heavy traffic", "moderate": "Moderate traffic", "low": "Light traffic"}
+        hybrid_traffic = traffic_map.get(drive_congestion, "")
 
     return RouteOption(
         id=str(uuid.uuid4())[:8],
@@ -634,6 +721,7 @@ async def _generate_hybrid_route(
         stress_score=round(min(1.0, stress_score), 2),
         departure_time=now.strftime("%H:%M"),
         summary=f"Drive to {park_stop['stop_name']} → Transit to {dest_stop['stop_name']}",
+        traffic_summary=hybrid_traffic,
     )
 
 

@@ -13,8 +13,9 @@ MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ml", "del
 LINE_MAP = {
     "line 1": "1", "yu": "1", "yonge": "1", "yonge-university": "1", "line1": "1", "1": "1",
     "line 2": "2", "bd": "2", "bloor": "2", "bloor-danforth": "2", "line2": "2", "2": "2",
-    "line 3": "3", "srt": "3", "scarborough": "3", "line3": "3", "3": "3",
     "line 4": "4", "sheppard": "4", "shep": "4", "line4": "4", "4": "4",
+    "line 5": "5", "eglinton": "5", "crosstown": "5", "lrt": "5", "line5": "5", "5": "5",
+    "line 6": "6", "finch west": "6", "finch": "6", "line6": "6", "6": "6",
 }
 
 
@@ -107,7 +108,7 @@ class DelayPredictor:
     ) -> dict:
         """Heuristic prediction based on real TTC patterns."""
         # Base delay probabilities by line
-        base_prob = {"1": 0.25, "2": 0.18, "3": 0.15, "4": 0.12}.get(line, 0.20)
+        base_prob = {"1": 0.25, "2": 0.18, "4": 0.12, "5": 0.15, "6": 0.13}.get(line, 0.20)
 
         factors = []
         modifier = 0.0
@@ -148,7 +149,7 @@ class DelayPredictor:
             factors.append("Adverse weather conditions (+12%)")
 
         # Line-specific notes
-        line_names = {"1": "Line 1 Yonge-University", "2": "Line 2 Bloor-Danforth", "3": "Line 3 Scarborough", "4": "Line 4 Sheppard"}
+        line_names = {"1": "Line 1 Yonge-University", "2": "Line 2 Bloor-Danforth", "4": "Line 4 Sheppard", "5": "Line 5 Eglinton", "6": "Line 6 Finch West"}
         factors.insert(0, f"{line_names.get(line, 'Unknown line')} base rate: {base_prob:.0%}")
 
         probability = max(0.01, min(0.95, base_prob + modifier))
@@ -171,7 +172,7 @@ class DelayPredictor:
     def _get_factors(self, line: str, hour: int, day_of_week: int, month: int, is_adverse_weather: bool) -> list[str]:
         """Generate human-readable contributing factors."""
         factors = []
-        line_names = {"1": "Line 1 Yonge-University", "2": "Line 2 Bloor-Danforth", "3": "Line 3 Scarborough", "4": "Line 4 Sheppard"}
+        line_names = {"1": "Line 1 Yonge-University", "2": "Line 2 Bloor-Danforth", "4": "Line 4 Sheppard", "5": "Line 5 Eglinton", "6": "Line 6 Finch West"}
         factors.append(f"Line: {line_names.get(line, 'Unknown')}")
 
         if 7 <= hour <= 9:

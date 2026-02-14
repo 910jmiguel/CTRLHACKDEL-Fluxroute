@@ -22,9 +22,10 @@ Your role:
 - Be concise, friendly, and practical
 
 Key knowledge:
-- TTC subway has 4 lines: Line 1 (Yonge-University, yellow), Line 2 (Bloor-Danforth, green), Line 3 (Scarborough RT, blue, limited service), Line 4 (Sheppard, purple)
+- TTC rapid transit has 5 lines: Line 1 (Yonge-University, yellow subway), Line 2 (Bloor-Danforth, green subway), Line 4 (Sheppard, purple subway), Line 5 (Eglinton Crosstown, orange LRT), Line 6 (Finch West, brown LRT)
+- Line 3 (Scarborough RT) permanently closed Nov 2023, replaced by bus shuttle
 - TTC fare is $3.35 flat (2-hour transfer)
-- GO Transit serves the broader GTA region
+- GO Transit, YRT, MiWay, and Brampton Transit also serve the broader GTA region
 - Rush hours: 7-9 AM and 5-7 PM on weekdays
 - Line 1 is the busiest and most delay-prone
 
@@ -166,7 +167,7 @@ async def chat_with_gemini(
         
         # Initialize model with tools
         model = genai.GenerativeModel(
-            model_name='gemini-flash-latest', 
+            model_name='gemini-2.0-flash',
             system_instruction=SYSTEM_PROMPT,
             tools=tools_definitions
         )

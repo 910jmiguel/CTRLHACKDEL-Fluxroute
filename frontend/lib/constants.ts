@@ -14,8 +14,9 @@ export const MAP_STYLE = "mapbox://styles/mapbox/standard";
 export const TTC_COLORS: Record<string, string> = {
   "1": "#FFCC00", // Line 1 Yonge-University (Yellow)
   "2": "#00A651", // Line 2 Bloor-Danforth (Green)
-  "3": "#0082C9", // Line 3 Scarborough RT (Blue)
   "4": "#A8518A", // Line 4 Sheppard (Purple)
+  "5": "#FF6600", // Line 5 Eglinton Crosstown (Orange)
+  "6": "#8B4513", // Line 6 Finch West (Brown)
 };
 
 export const MODE_COLORS: Record<string, string> = {

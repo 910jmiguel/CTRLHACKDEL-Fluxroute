@@ -91,6 +91,18 @@ export default function RouteCards({
                 </span>
               </div>
 
+              {route.traffic_summary && (
+                <div className="text-xs mt-1.5 flex items-center gap-1">
+                  <span className={`inline-block w-2 h-2 rounded-full ${
+                    route.traffic_summary.includes("Severe") ? "bg-red-500" :
+                    route.traffic_summary.includes("Heavy") ? "bg-orange-500" :
+                    route.traffic_summary.includes("Moderate") ? "bg-yellow-500" :
+                    "bg-emerald-500"
+                  }`} />
+                  <span className="text-[var(--text-secondary)]">{route.traffic_summary}</span>
+                </div>
+              )}
+
               {route.summary && (
                 <div className="text-xs text-[var(--text-muted)] mt-1.5 truncate">
                   {route.summary}
