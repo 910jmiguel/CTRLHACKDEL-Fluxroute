@@ -1,0 +1,29 @@
+{
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "source": "ttc.zip"
+    },
+    {
+      "type": "gtfs",
+      "source": "gotransit.zip"
+    },
+    {
+      "type": "gtfs",
+      "source": "yrt.zip"
+    },
+    {
+      "type": "gtfs",
+      "source": "miway.zip"
+    },
+    {
+      "type": "gtfs",
+      "source": "upexpress.zip"
+    }
+  ],
+  "osm": [
+    {
+      "source": "ontario.osm.pbf"
+    }
+  ]
+}

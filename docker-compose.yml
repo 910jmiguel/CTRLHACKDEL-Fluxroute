@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  otp:
+    image: opentripplanner/opentripplanner:2.5.0
+    container_name: fluxroute-otp
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend/data/otp:/var/opentripplanner
+    command: ["--build", "--serve"]
+    environment:
+      - JAVA_OPTS=-Xmx4G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/otp/routers/default"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20m
+    restart: unless-stopped

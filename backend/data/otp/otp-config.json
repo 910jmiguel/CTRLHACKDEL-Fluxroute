@@ -1,0 +1,17 @@
+{
+  "routingDefaults": {
+    "walkSpeed": 1.33,
+    "bikeSpeed": 5.0,
+    "numItineraries": 3,
+    "maxTransfers": 3,
+    "walkReluctance": 2.0,
+    "waitReluctance": 1.0,
+    "transferPenalty": 180,
+    "maxWalkDistance": 1000
+  },
+  "transit": {
+    "maxTransferDistance": 500,
+    "boardSlack": 60,
+    "alightSlack": 0
+  }
+}

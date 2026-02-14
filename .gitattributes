@@ -1,0 +1,4 @@
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.osm.pbf filter=lfs diff=lfs merge=lfs -text
+backend/data/otp/*.zip filter=lfs diff=lfs merge=lfs -text
+backend/data/otp/*.osm.pbf filter=lfs diff=lfs merge=lfs -text
