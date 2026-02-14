@@ -26,10 +26,10 @@ export default function Home() {
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
 
-  // Sync theme to DOM for CSS variable switching
+  // Always keep UI in dark mode (map still uses time-based theme)
   useEffect(() => {
-    document.documentElement.dataset.theme = isDark ? "dark" : "light";
-  }, [isDark]);
+    document.documentElement.dataset.theme = "dark";
+  }, []);
 
   const handleSearch = useCallback(
     (orig: Coordinate, dest: Coordinate) => {
