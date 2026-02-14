@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { MapPin, Navigation, Search, X } from "lucide-react";
 import type { Coordinate } from "@/lib/types";
-import { MAPBOX_TOKEN, TORONTO_BOUNDS } from "@/lib/constants";
+import { MAPBOX_TOKEN } from "@/lib/constants";
 
 interface RouteInputProps {
   onSearch: (origin: Coordinate, destination: Coordinate) => void;
@@ -33,10 +33,9 @@ export default function RouteInput({ onSearch, loading }: RouteInputProps) {
       if (!query || query.length < 3 || !MAPBOX_TOKEN) return [];
 
       try {
-        const bbox = `${TORONTO_BOUNDS[0][0]},${TORONTO_BOUNDS[0][1]},${TORONTO_BOUNDS[1][0]},${TORONTO_BOUNDS[1][1]}`;
         const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
           query
-        )}.json?access_token=${MAPBOX_TOKEN}&bbox=${bbox}&limit=5&country=CA`;
+        )}.json?access_token=${MAPBOX_TOKEN}&limit=10`;
 
         const res = await fetch(url);
         const data = await res.json();
@@ -181,11 +180,10 @@ export default function RouteInput({ onSearch, loading }: RouteInputProps) {
       <button
         onClick={handleSubmit}
         disabled={!canSearch}
-        className={`w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all ${
-          canSearch
-            ? "bg-blue-600 hover:bg-blue-500 text-white"
-            : "bg-slate-700/50 text-slate-500 cursor-not-allowed"
-        }`}
+        className={`w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all ${canSearch
+          ? "bg-blue-600 hover:bg-blue-500 text-white"
+          : "bg-slate-700/50 text-slate-500 cursor-not-allowed"
+          }`}
       >
         {loading ? (
           <>
