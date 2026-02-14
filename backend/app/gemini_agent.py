@@ -167,7 +167,7 @@ async def chat_with_gemini(
         
         # Initialize model with tools
         model = genai.GenerativeModel(
-            model_name='gemini-flash-latest', 
+            model_name='gemini-2.0-flash',
             system_instruction=SYSTEM_PROMPT,
             tools=tools_definitions
         )
