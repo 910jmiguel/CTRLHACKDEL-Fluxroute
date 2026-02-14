@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+.env
+.env.*
+.env.local
+*.joblib
+backend/data/gtfs/
+*.pyc
+.next/
+dist/
+build/
+.DS_Store

@@ -1,0 +1,549 @@
+import logging
+import os
+import uuid
+from datetime import datetime
+from typing import Optional
+
+import httpx
+
+from app.models import (
+    Coordinate,
+    CostBreakdown,
+    DelayInfo,
+    RouteMode,
+    RouteOption,
+    RouteSegment,
+)
+from app.cost_calculator import calculate_cost
+from app.gtfs_parser import find_nearest_stops, haversine, find_transit_route
+from app.ml_predictor import DelayPredictor
+from app.weather import get_current_weather
+
+logger = logging.getLogger("fluxroute.engine")
+
+MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "")
+MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
+
+
+async def _mapbox_directions(
+    origin: Coordinate,
+    destination: Coordinate,
+    profile: str = "driving-traffic",
+) -> Optional[dict]:
+    """Call Mapbox Directions API. Returns route data or None on failure."""
+    if not MAPBOX_TOKEN or MAPBOX_TOKEN == "your-mapbox-token-here":
+        return None
+
+    url = (
+        f"{MAPBOX_DIRECTIONS_URL}/{profile}/"
+        f"{origin.lng},{origin.lat};{destination.lng},{destination.lat}"
+        f"?geometries=geojson&overview=full&access_token={MAPBOX_TOKEN}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+
+        routes = data.get("routes", [])
+        if not routes:
+            return None
+
+        route = routes[0]
+        return {
+            "geometry": route["geometry"],
+            "distance_km": route["distance"] / 1000,
+            "duration_min": route["duration"] / 60,
+        }
+    except Exception as e:
+        logger.warning(f"Mapbox API call failed ({profile}): {e}")
+        return None
+
+
+def _straight_line_geometry(origin: Coordinate, destination: Coordinate) -> dict:
+    """Generate straight-line GeoJSON fallback."""
+    return {
+        "type": "LineString",
+        "coordinates": [
+            [origin.lng, origin.lat],
+            [destination.lng, destination.lat],
+        ],
+    }
+
+
+def _estimate_duration(distance_km: float, mode: RouteMode) -> float:
+    """Estimate duration in minutes based on mode and distance."""
+    speeds = {
+        RouteMode.WALKING: 5.0,
+        RouteMode.CYCLING: 18.0,
+        RouteMode.DRIVING: 30.0,
+        RouteMode.TRANSIT: 25.0,
+        RouteMode.HYBRID: 28.0,
+    }
+    speed = speeds.get(mode, 25.0)
+    return (distance_km / speed) * 60
+
+
+async def generate_routes(
+    origin: Coordinate,
+    destination: Coordinate,
+    gtfs: dict,
+    predictor: DelayPredictor,
+    modes: Optional[list[RouteMode]] = None,
+) -> list[RouteOption]:
+    """Generate 3-4 route options for the given origin/destination."""
+    if modes is None:
+        modes = [RouteMode.TRANSIT, RouteMode.DRIVING, RouteMode.WALKING, RouteMode.HYBRID]
+
+    total_distance = haversine(origin.lat, origin.lng, destination.lat, destination.lng)
+    routes: list[RouteOption] = []
+
+    # Get weather for delay prediction
+    try:
+        weather = await get_current_weather(origin.lat, origin.lng)
+        is_adverse = weather.get("is_adverse", False)
+    except Exception:
+        is_adverse = False
+
+    now = datetime.now()
+
+    # Generate each mode
+    for mode in modes:
+        try:
+            if mode == RouteMode.WALKING and total_distance > 5.0:
+                continue  # Skip walking for long distances
+
+            route = await _generate_single_route(
+                origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now
+            )
+            if route:
+                routes.append(route)
+        except Exception as e:
+            logger.error(f"Failed to generate {mode} route: {e}")
+
+    # Label routes
+    _label_routes(routes)
+
+    return routes
+
+
+async def _generate_single_route(
+    origin: Coordinate,
+    destination: Coordinate,
+    mode: RouteMode,
+    gtfs: dict,
+    predictor: DelayPredictor,
+    total_distance: float,
+    is_adverse: bool,
+    now: datetime,
+) -> Optional[RouteOption]:
+    """Generate a single route option."""
+
+    segments: list[RouteSegment] = []
+    total_duration = 0.0
+    total_dist = 0.0
+    delay_info = DelayInfo()
+    stress_score = 0.0
+
+    if mode == RouteMode.TRANSIT:
+        return await _generate_transit_route(
+            origin, destination, gtfs, predictor, total_distance, is_adverse, now
+        )
+
+    elif mode == RouteMode.DRIVING:
+        mapbox = await _mapbox_directions(origin, destination, "driving-traffic")
+
+        if mapbox:
+            geometry = mapbox["geometry"]
+            total_dist = mapbox["distance_km"]
+            total_duration = mapbox["duration_min"]
+        else:
+            geometry = _straight_line_geometry(origin, destination)
+            total_dist = total_distance * 1.3  # Roads are ~30% longer than straight line
+            total_duration = _estimate_duration(total_dist, RouteMode.DRIVING)
+
+        segments.append(RouteSegment(
+            mode=RouteMode.DRIVING,
+            geometry=geometry,
+            distance_km=round(total_dist, 2),
+            duration_min=round(total_duration, 1),
+            instructions="Drive to destination",
+            color="#3B82F6",
+        ))
+
+        # Driving stress: base 0.5, higher in rush hour
+        stress_score = 0.5
+        if 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
+            stress_score += 0.2
+        if is_adverse:
+            stress_score += 0.1
+
+        cost = calculate_cost(RouteMode.DRIVING, total_dist, destination.lat, destination.lng)
+
+    elif mode == RouteMode.WALKING:
+        mapbox = await _mapbox_directions(origin, destination, "walking")
+
+        if mapbox:
+            geometry = mapbox["geometry"]
+            total_dist = mapbox["distance_km"]
+            total_duration = mapbox["duration_min"]
+        else:
+            geometry = _straight_line_geometry(origin, destination)
+            total_dist = total_distance * 1.2
+            total_duration = _estimate_duration(total_dist, RouteMode.WALKING)
+
+        segments.append(RouteSegment(
+            mode=RouteMode.WALKING,
+            geometry=geometry,
+            distance_km=round(total_dist, 2),
+            duration_min=round(total_duration, 1),
+            instructions="Walk to destination",
+            color="#10B981",
+        ))
+
+        stress_score = 0.1
+        if is_adverse:
+            stress_score += 0.3
+
+        cost = calculate_cost(RouteMode.WALKING, total_dist)
+
+    elif mode == RouteMode.HYBRID:
+        return await _generate_hybrid_route(
+            origin, destination, gtfs, predictor, total_distance, is_adverse, now
+        )
+    else:
+        return None
+
+    if mode not in (RouteMode.TRANSIT, RouteMode.HYBRID):
+        return RouteOption(
+            id=str(uuid.uuid4())[:8],
+            label="",
+            mode=mode,
+            segments=segments,
+            total_distance_km=round(total_dist, 2),
+            total_duration_min=round(total_duration, 1),
+            cost=cost,
+            delay_info=delay_info,
+            stress_score=round(min(1.0, stress_score), 2),
+            departure_time=now.strftime("%H:%M"),
+            summary=f"{mode.value.title()} — {total_dist:.1f} km, {total_duration:.0f} min",
+        )
+
+    return None
+
+
+async def _generate_transit_route(
+    origin: Coordinate,
+    destination: Coordinate,
+    gtfs: dict,
+    predictor: DelayPredictor,
+    total_distance: float,
+    is_adverse: bool,
+    now: datetime,
+) -> Optional[RouteOption]:
+    """Generate a transit route with walking segments to/from stations."""
+    # Find nearest stops to origin and destination
+    origin_stops = find_nearest_stops(gtfs, origin.lat, origin.lng, radius_km=3.0, limit=3)
+    dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=3)
+
+    if not origin_stops or not dest_stops:
+        return None
+
+    origin_stop = origin_stops[0]
+    dest_stop = dest_stops[0]
+
+    segments: list[RouteSegment] = []
+    total_duration = 0.0
+    total_dist = 0.0
+
+    # Walk to station
+    walk_to_dist = origin_stop["distance_km"]
+    walk_to_dur = _estimate_duration(walk_to_dist, RouteMode.WALKING)
+    walk_to_geo = await _mapbox_directions(
+        origin,
+        Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"]),
+        "walking"
+    )
+
+    segments.append(RouteSegment(
+        mode=RouteMode.WALKING,
+        geometry=walk_to_geo["geometry"] if walk_to_geo else _straight_line_geometry(
+            origin, Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"])
+        ),
+        distance_km=round(walk_to_geo["distance_km"] if walk_to_geo else walk_to_dist, 2),
+        duration_min=round(walk_to_geo["duration_min"] if walk_to_geo else walk_to_dur, 1),
+        instructions=f"Walk to {origin_stop['stop_name']} station",
+        color="#10B981",
+    ))
+    total_duration += walk_to_geo["duration_min"] if walk_to_geo else walk_to_dur
+    total_dist += walk_to_geo["distance_km"] if walk_to_geo else walk_to_dist
+
+    # Transit segment
+    transit_route = find_transit_route(gtfs, origin_stop["stop_id"], dest_stop["stop_id"])
+    transit_dist = transit_route["distance_km"] if transit_route else haversine(
+        origin_stop["lat"], origin_stop["lng"], dest_stop["lat"], dest_stop["lng"]
+    )
+    transit_dur = transit_route["estimated_duration_min"] if transit_route else _estimate_duration(transit_dist, RouteMode.TRANSIT)
+
+    transit_geometry = (
+        transit_route.get("geometry") if transit_route
+        else _straight_line_geometry(
+            Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"]),
+            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+        )
+    )
+
+    line_name = origin_stop.get("line") or transit_route.get("line", "TTC Subway") if transit_route else "TTC Subway"
+    route_id = origin_stop.get("route_id") or (transit_route.get("route_id") if transit_route else None)
+
+    # Determine transit line color
+    line_colors = {"1": "#FFCC00", "2": "#00A651", "3": "#0082C9", "4": "#A8518A"}
+    color = line_colors.get(str(route_id), "#FFCC00")
+
+    segments.append(RouteSegment(
+        mode=RouteMode.TRANSIT,
+        geometry=transit_geometry,
+        distance_km=round(transit_dist, 2),
+        duration_min=round(transit_dur, 1),
+        instructions=f"Take {line_name} from {origin_stop['stop_name']} to {dest_stop['stop_name']}",
+        transit_line=line_name,
+        transit_route_id=str(route_id) if route_id else None,
+        color=color,
+    ))
+    total_duration += transit_dur
+    total_dist += transit_dist
+
+    # Walk from station
+    walk_from_dist = dest_stop["distance_km"]
+    walk_from_dur = _estimate_duration(walk_from_dist, RouteMode.WALKING)
+    walk_from_geo = await _mapbox_directions(
+        Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+        destination,
+        "walking"
+    )
+
+    segments.append(RouteSegment(
+        mode=RouteMode.WALKING,
+        geometry=walk_from_geo["geometry"] if walk_from_geo else _straight_line_geometry(
+            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]), destination
+        ),
+        distance_km=round(walk_from_geo["distance_km"] if walk_from_geo else walk_from_dist, 2),
+        duration_min=round(walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur, 1),
+        instructions=f"Walk from {dest_stop['stop_name']} station to destination",
+        color="#10B981",
+    ))
+    total_duration += walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur
+    total_dist += walk_from_geo["distance_km"] if walk_from_geo else walk_from_dist
+
+    # ML delay prediction
+    line_for_pred = str(route_id) if route_id else "1"
+    prediction = predictor.predict(
+        line=line_for_pred,
+        hour=now.hour,
+        day_of_week=now.weekday(),
+        month=now.month,
+        is_adverse_weather=is_adverse,
+    )
+
+    delay_info = DelayInfo(
+        probability=prediction["delay_probability"],
+        expected_minutes=prediction["expected_delay_minutes"],
+        confidence=prediction["confidence"],
+        factors=prediction["contributing_factors"],
+    )
+
+    # Transit stress
+    transfers = transit_route.get("transfers", 0) if transit_route else 0
+    stress_score = 0.2 + transfers * 0.1 + prediction["delay_probability"] * 0.3
+
+    cost = calculate_cost(RouteMode.TRANSIT, transit_dist)
+
+    return RouteOption(
+        id=str(uuid.uuid4())[:8],
+        label="",
+        mode=RouteMode.TRANSIT,
+        segments=segments,
+        total_distance_km=round(total_dist, 2),
+        total_duration_min=round(total_duration, 1),
+        cost=cost,
+        delay_info=delay_info,
+        stress_score=round(min(1.0, stress_score), 2),
+        departure_time=now.strftime("%H:%M"),
+        summary=f"Transit via {origin_stop['stop_name']} → {dest_stop['stop_name']}",
+    )
+
+
+async def _generate_hybrid_route(
+    origin: Coordinate,
+    destination: Coordinate,
+    gtfs: dict,
+    predictor: DelayPredictor,
+    total_distance: float,
+    is_adverse: bool,
+    now: datetime,
+) -> Optional[RouteOption]:
+    """Generate a drive-to-station then transit route."""
+    # Find stops near the destination
+    dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=3)
+    if not dest_stops:
+        return None
+
+    dest_stop = dest_stops[0]
+
+    # Find a strategic mid-point station (closer to origin for park & ride)
+    origin_stops = find_nearest_stops(gtfs, origin.lat, origin.lng, radius_km=5.0, limit=5)
+    if not origin_stops:
+        return None
+
+    # Pick a station that's not too close (want some driving)
+    park_stop = None
+    for stop in origin_stops:
+        if stop["distance_km"] > 0.5:
+            park_stop = stop
+            break
+    if not park_stop:
+        park_stop = origin_stops[0]
+
+    segments: list[RouteSegment] = []
+    total_duration = 0.0
+    total_dist = 0.0
+
+    # Drive to station
+    drive_geo = await _mapbox_directions(
+        origin,
+        Coordinate(lat=park_stop["lat"], lng=park_stop["lng"]),
+        "driving-traffic"
+    )
+
+    drive_dist = drive_geo["distance_km"] if drive_geo else haversine(origin.lat, origin.lng, park_stop["lat"], park_stop["lng"]) * 1.3
+    drive_dur = drive_geo["duration_min"] if drive_geo else _estimate_duration(drive_dist, RouteMode.DRIVING)
+
+    segments.append(RouteSegment(
+        mode=RouteMode.DRIVING,
+        geometry=drive_geo["geometry"] if drive_geo else _straight_line_geometry(
+            origin, Coordinate(lat=park_stop["lat"], lng=park_stop["lng"])
+        ),
+        distance_km=round(drive_dist, 2),
+        duration_min=round(drive_dur, 1),
+        instructions=f"Drive to {park_stop['stop_name']} station (Park & Ride)",
+        color="#3B82F6",
+    ))
+    total_duration += drive_dur
+    total_dist += drive_dist
+
+    # Transit segment
+    transit_route = find_transit_route(gtfs, park_stop["stop_id"], dest_stop["stop_id"])
+    transit_dist = transit_route["distance_km"] if transit_route else haversine(
+        park_stop["lat"], park_stop["lng"], dest_stop["lat"], dest_stop["lng"]
+    )
+    transit_dur = transit_route["estimated_duration_min"] if transit_route else _estimate_duration(transit_dist, RouteMode.TRANSIT)
+
+    transit_geometry = (
+        transit_route.get("geometry") if transit_route
+        else _straight_line_geometry(
+            Coordinate(lat=park_stop["lat"], lng=park_stop["lng"]),
+            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+        )
+    )
+
+    route_id = park_stop.get("route_id")
+    line_colors = {"1": "#FFCC00", "2": "#00A651", "3": "#0082C9", "4": "#A8518A"}
+    color = line_colors.get(str(route_id), "#FFCC00")
+
+    segments.append(RouteSegment(
+        mode=RouteMode.TRANSIT,
+        geometry=transit_geometry,
+        distance_km=round(transit_dist, 2),
+        duration_min=round(transit_dur, 1),
+        instructions=f"Take transit from {park_stop['stop_name']} to {dest_stop['stop_name']}",
+        transit_line=park_stop.get("line", "TTC Subway"),
+        transit_route_id=str(route_id) if route_id else None,
+        color=color,
+    ))
+    total_duration += transit_dur
+    total_dist += transit_dist
+
+    # Walk from final station
+    walk_dist = dest_stop["distance_km"]
+    walk_dur = _estimate_duration(walk_dist, RouteMode.WALKING)
+    walk_geo = await _mapbox_directions(
+        Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+        destination,
+        "walking"
+    )
+
+    segments.append(RouteSegment(
+        mode=RouteMode.WALKING,
+        geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(
+            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]), destination
+        ),
+        distance_km=round(walk_geo["distance_km"] if walk_geo else walk_dist, 2),
+        duration_min=round(walk_geo["duration_min"] if walk_geo else walk_dur, 1),
+        instructions=f"Walk from {dest_stop['stop_name']} to destination",
+        color="#10B981",
+    ))
+    total_duration += walk_geo["duration_min"] if walk_geo else walk_dur
+    total_dist += walk_geo["distance_km"] if walk_geo else walk_dist
+
+    # Delay prediction
+    line_for_pred = str(route_id) if route_id else "1"
+    prediction = predictor.predict(
+        line=line_for_pred,
+        hour=now.hour,
+        day_of_week=now.weekday(),
+        month=now.month,
+        is_adverse_weather=is_adverse,
+    )
+
+    delay_info = DelayInfo(
+        probability=prediction["delay_probability"],
+        expected_minutes=prediction["expected_delay_minutes"],
+        confidence=prediction["confidence"],
+        factors=prediction["contributing_factors"],
+    )
+
+    stress_score = 0.35 + prediction["delay_probability"] * 0.2
+    cost = calculate_cost(RouteMode.HYBRID, total_dist, destination.lat, destination.lng)
+
+    return RouteOption(
+        id=str(uuid.uuid4())[:8],
+        label="",
+        mode=RouteMode.HYBRID,
+        segments=segments,
+        total_distance_km=round(total_dist, 2),
+        total_duration_min=round(total_duration, 1),
+        cost=cost,
+        delay_info=delay_info,
+        stress_score=round(min(1.0, stress_score), 2),
+        departure_time=now.strftime("%H:%M"),
+        summary=f"Drive to {park_stop['stop_name']} → Transit to {dest_stop['stop_name']}",
+    )
+
+
+def _label_routes(routes: list[RouteOption]) -> None:
+    """Label routes as Fastest, Cheapest, Zen based on their attributes."""
+    if not routes:
+        return
+
+    fastest = min(routes, key=lambda r: r.total_duration_min)
+    cheapest = min(routes, key=lambda r: r.cost.total)
+    zen = min(routes, key=lambda r: r.stress_score)
+
+    fastest.label = "Fastest"
+    cheapest.label = "Thrifty" if cheapest.label != "Fastest" else cheapest.label
+    zen.label = "Zen" if zen.label == "" else zen.label
+
+    # Ensure all routes have a label
+    for route in routes:
+        if not route.label:
+            if route.mode == RouteMode.HYBRID:
+                route.label = "Balanced"
+            elif route.mode == RouteMode.TRANSIT:
+                route.label = "Transit"
+            elif route.mode == RouteMode.DRIVING:
+                route.label = "Drive"
+            elif route.mode == RouteMode.WALKING:
+                route.label = "Walk"
+            else:
+                route.label = route.mode.value.title()

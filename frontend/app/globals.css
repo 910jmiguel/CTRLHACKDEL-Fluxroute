@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0f1c;
+  --foreground: #f0f0f0;
+  --glass-bg: rgba(15, 23, 42, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --accent: #3b82f6;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  overflow: hidden;
+}
+
+/* Glass card effect */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Mapbox overrides for dark theme */
+.mapboxgl-popup-content {
+  background: #1e293b !important;
+  color: #f0f0f0 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: #1e293b !important;
+}
+
+.mapboxgl-popup-close-button {
+  color: #94a3b8 !important;
+}
+
+.mapboxgl-ctrl-geocoder {
+  background: rgba(15, 23, 42, 0.9) !important;
+  color: #f0f0f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  font-family: inherit !important;
+  box-shadow: none !important;
+}
+
+.mapboxgl-ctrl-geocoder input {
+  color: #f0f0f0 !important;
+}
+
+.mapboxgl-ctrl-geocoder .suggestions {
+  background: #1e293b !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+}
+
+.mapboxgl-ctrl-geocoder .suggestions > li > a {
+  color: #f0f0f0 !important;
+}
+
+.mapboxgl-ctrl-geocoder .suggestions > .active > a {
+  background: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Loading pulse animation */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Slide-in animation */
+@keyframes slide-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.slide-up {
+  animation: slide-up 0.3s ease-out;
+}
