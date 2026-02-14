@@ -5,9 +5,16 @@ __pycache__/
 .env.local
 *.joblib
 backend/data/gtfs/
+backend/data/gtfs-go/
+backend/data/gtfs-yrt/
+backend/data/gtfs-miway/
+backend/data/gtfs-brampton/
+otp/
 *.pyc
 .next/
 dist/
 build/
 .DS_Store
 nul
+*.osm.pbf
+*.jar
