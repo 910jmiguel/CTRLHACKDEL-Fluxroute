@@ -8,6 +8,28 @@
   --glass-bg: rgba(15, 23, 42, 0.75);
   --glass-border: rgba(255, 255, 255, 0.08);
   --accent: #3b82f6;
+  --text-primary: #f0f0f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --surface: rgba(30, 41, 59, 0.5);
+  --surface-hover: rgba(30, 41, 59, 0.3);
+  --border: rgba(51, 65, 85, 0.5);
+  --input-bg: rgba(30, 41, 59, 0.6);
+}
+
+[data-theme="light"] {
+  --background: #f0f4f8;
+  --foreground: #1e293b;
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --accent: #2563eb;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --surface: rgba(241, 245, 249, 0.6);
+  --surface-hover: rgba(226, 232, 240, 0.5);
+  --border: rgba(203, 213, 225, 0.5);
+  --input-bg: rgba(241, 245, 249, 0.8);
 }
 
 body {
@@ -15,6 +37,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   overflow: hidden;
+  transition: background-color 0.5s ease, color 0.5s ease;
 }
 
 /* Glass card effect */
@@ -44,7 +67,15 @@ body {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Mapbox overrides for dark theme */
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Mapbox overrides — dark theme (default) */
 .mapboxgl-popup-content {
   background: #1e293b !important;
   color: #f0f0f0 !important;
@@ -87,6 +118,44 @@ body {
 
 .mapboxgl-ctrl-geocoder .suggestions > .active > a {
   background: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Mapbox overrides — light theme */
+[data-theme="light"] .mapboxgl-popup-content {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+[data-theme="light"] .mapboxgl-popup-tip {
+  border-top-color: #ffffff !important;
+}
+
+[data-theme="light"] .mapboxgl-popup-close-button {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .mapboxgl-ctrl-geocoder {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #1e293b !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .mapboxgl-ctrl-geocoder input {
+  color: #1e293b !important;
+}
+
+[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions > li > a {
+  color: #1e293b !important;
+}
+
+[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions > .active > a {
+  background: rgba(37, 99, 235, 0.1) !important;
 }
 
 /* Loading pulse animation */

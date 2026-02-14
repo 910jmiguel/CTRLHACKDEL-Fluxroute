@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Coordinate, VehiclePosition } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
+import { useTimeBasedTheme } from "@/hooks/useTimeBasedTheme";
 import { getVehicles } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
 import FluxMap from "@/components/FluxMap";
@@ -20,9 +21,15 @@ export default function Home() {
     selectRoute,
   } = useRoutes();
 
+  const { theme, isDark } = useTimeBasedTheme();
   const [origin, setOrigin] = useState<Coordinate | null>(null);
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
+
+  // Sync theme to DOM for CSS variable switching
+  useEffect(() => {
+    document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  }, [isDark]);
 
   const handleSearch = useCallback(
     (orig: Coordinate, dest: Coordinate) => {
@@ -74,6 +81,7 @@ export default function Home() {
             origin={origin}
             destination={destination}
             vehicles={vehicles}
+            theme={theme}
           />
 
           {/* Loading overlay */}

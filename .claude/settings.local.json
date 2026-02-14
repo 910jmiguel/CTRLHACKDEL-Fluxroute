@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:app.backboard.io)",
+      "WebFetch(domain:backboard.io)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx next build)",
+      "Bash(git pull:*)",
+      "Bash(npx next lint:*)"
+    ]
+  }
+}

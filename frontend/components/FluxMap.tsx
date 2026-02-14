@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { RouteOption, VehiclePosition } from "@/lib/types";
 import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE } from "@/lib/constants";
+import type { MapTheme } from "@/hooks/useTimeBasedTheme";
 import {
   clearRoutes,
   drawMultimodalRoute,
@@ -18,6 +19,7 @@ interface FluxMapProps {
   origin: { lat: number; lng: number } | null;
   destination: { lat: number; lng: number } | null;
   vehicles: VehiclePosition[];
+  theme: MapTheme;
 }
 
 export default function FluxMap({
@@ -26,6 +28,7 @@ export default function FluxMap({
   origin,
   destination,
   vehicles,
+  theme,
 }: FluxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -60,6 +63,12 @@ export default function FluxMap({
       map.current = null;
     };
   }, []);
+
+  // Apply theme when it changes
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    map.current.setConfigProperty("basemap", "lightPreset", theme);
+  }, [theme, mapLoaded]);
 
   // Draw routes when they change
   useEffect(() => {

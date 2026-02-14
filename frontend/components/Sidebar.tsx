@@ -30,7 +30,7 @@ export default function Sidebar({
     return (
       <button
         onClick={() => setCollapsed(false)}
-        className="absolute top-4 left-4 z-30 glass-card p-2 hover:bg-slate-700/50 transition-colors"
+        className="absolute top-4 left-4 z-30 glass-card p-2 hover:bg-[var(--surface-hover)] transition-colors"
       >
         <PanelLeft className="w-5 h-5" />
       </button>
@@ -44,7 +44,7 @@ export default function Sidebar({
         <div /> {/* Spacer for alignment */}
         <button
           onClick={() => setCollapsed(true)}
-          className="text-slate-400 hover:text-white transition-colors"
+          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
         >
           <PanelLeftClose className="w-4 h-4" />
         </button>
@@ -72,15 +72,15 @@ export default function Sidebar({
         )}
 
         {!loading && routes.length === 0 && !error && (
-          <div className="text-center text-slate-500 text-sm mt-8">
+          <div className="text-center text-[var(--text-muted)] text-sm mt-8">
             <p>Enter origin and destination to compare routes across transit, driving, walking, and hybrid options.</p>
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-slate-700/30 text-center">
-        <span className="text-xs text-slate-600">
+      <div className="p-3 border-t border-[var(--border)] text-center">
+        <span className="text-xs text-[var(--text-muted)]">
           FluxRoute MVP — AI-Powered GTA Transit
         </span>
       </div>

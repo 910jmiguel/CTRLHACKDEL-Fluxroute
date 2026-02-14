@@ -36,7 +36,7 @@ export default function RouteCards({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide px-1">
+      <h3 className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wide px-1">
         Routes
       </h3>
       <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
@@ -50,18 +50,18 @@ export default function RouteCards({
                 MODE_COLOR[route.mode]
               } ${
                 isSelected
-                  ? "ring-1 ring-blue-500/50 bg-slate-800/50"
-                  : "hover:bg-slate-800/30"
+                  ? "ring-1 ring-blue-500/50 bg-[var(--surface)]"
+                  : "hover:bg-[var(--surface-hover)]"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-300">
+                  <span className="text-[var(--text-secondary)]">
                     {MODE_ICON[route.mode]}
                   </span>
                   <div>
                     <div className="text-sm font-semibold">{route.label}</div>
-                    <div className="text-xs text-slate-400 capitalize">
+                    <div className="text-xs text-[var(--text-secondary)] capitalize">
                       {route.mode}
                     </div>
                   </div>
@@ -75,7 +75,7 @@ export default function RouteCards({
                 )}
               </div>
 
-              <div className="flex items-center gap-4 mt-2 text-xs text-slate-300">
+              <div className="flex items-center gap-4 mt-2 text-xs text-[var(--text-secondary)]">
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {Math.round(route.total_duration_min)} min
@@ -91,7 +91,7 @@ export default function RouteCards({
               </div>
 
               {route.summary && (
-                <div className="text-xs text-slate-500 mt-1.5 truncate">
+                <div className="text-xs text-[var(--text-muted)] mt-1.5 truncate">
                   {route.summary}
                 </div>
               )}

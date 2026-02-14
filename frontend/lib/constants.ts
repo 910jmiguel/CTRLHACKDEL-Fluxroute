@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
 export const TORONTO_CENTER: [number, number] = [-79.3832, 43.6532];
@@ -9,7 +9,7 @@ export const TORONTO_BOUNDS: [[number, number], [number, number]] = [
   [-79.10, 43.85],
 ];
 
-export const MAP_STYLE = "mapbox://styles/mapbox/dark-v11";
+export const MAP_STYLE = "mapbox://styles/mapbox/standard";
 
 export const TTC_COLORS: Record<string, string> = {
   "1": "#FFCC00", // Line 1 Yonge-University (Yellow)
