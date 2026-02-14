@@ -10,6 +10,7 @@ interface RouteInputProps {
   loading: boolean;
   origin?: Coordinate | null;
   destination?: Coordinate | null;
+  originLabel?: string | null;
 }
 
 interface GeocoderResult {
@@ -30,7 +31,7 @@ async function reverseGeocode(coord: Coordinate): Promise<string> {
   }
 }
 
-export default function RouteInput({ onSearch, loading, origin, destination }: RouteInputProps) {
+export default function RouteInput({ onSearch, loading, origin, destination, originLabel }: RouteInputProps) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
   const [originCoord, setOriginCoord] = useState<Coordinate | null>(null);
@@ -46,7 +47,7 @@ export default function RouteInput({ onSearch, loading, origin, destination }: R
   const lastExternalOrigin = useRef<Coordinate | null | undefined>(undefined);
   const lastExternalDest = useRef<Coordinate | null | undefined>(undefined);
 
-  // Sync external origin (from map click) into text field
+  // Sync external origin (from map click or geolocation) into text field
   useEffect(() => {
     if (
       origin &&
@@ -55,10 +56,14 @@ export default function RouteInput({ onSearch, loading, origin, destination }: R
     ) {
       lastExternalOrigin.current = origin;
       setOriginCoord(origin);
-      setOriginText(`${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`);
-      reverseGeocode(origin).then((name) => setOriginText(name));
+      if (originLabel) {
+        setOriginText(originLabel);
+      } else {
+        setOriginText(`${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`);
+        reverseGeocode(origin).then((name) => setOriginText(name));
+      }
     }
-  }, [origin]);
+  }, [origin, originLabel]);
 
   // Sync external destination (from map click) into text field
   useEffect(() => {

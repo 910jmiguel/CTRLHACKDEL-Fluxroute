@@ -22,6 +22,7 @@ interface FluxMapProps {
   theme: MapTheme;
   showTraffic: boolean;
   onMapClick?: (coord: { lat: number; lng: number }) => void;
+  onGeolocate?: (coord: { lat: number; lng: number }) => void;
 }
 
 export default function FluxMap({
@@ -33,6 +34,7 @@ export default function FluxMap({
   theme,
   showTraffic,
   onMapClick,
+  onGeolocate,
 }: FluxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -58,14 +60,18 @@ export default function FluxMap({
       "top-right"
     );
 
-    map.current.addControl(
-      new mapboxgl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: false,
-        showUserHeading: false,
-      }),
-      "top-right"
-    );
+    const geolocate = new mapboxgl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: false,
+      showUserHeading: false,
+    });
+
+    geolocate.on("geolocate", (e: any) => {
+      const coord = { lat: e.coords.latitude, lng: e.coords.longitude };
+      onGeolocate?.(coord);
+    });
+
+    map.current.addControl(geolocate, "top-right");
 
     map.current.on("load", () => {
       setMapLoaded(true);

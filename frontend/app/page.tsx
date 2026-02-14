@@ -26,6 +26,7 @@ export default function Home() {
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
   const [showTraffic, setShowTraffic] = useState(true);
+  const [originLabel, setOriginLabel] = useState<string | null>(null);
 
   const prevOriginRef = useRef<Coordinate | null>(null);
   const prevDestRef = useRef<Coordinate | null>(null);
@@ -49,11 +50,17 @@ export default function Home() {
 
   const handleMapClick = useCallback((coord: { lat: number; lng: number }) => {
     if (!origin) {
+      setOriginLabel(null);
       setOrigin(coord);
     } else {
       setDestination(coord);
     }
   }, [origin]);
+
+  const handleGeolocate = useCallback((coord: { lat: number; lng: number }) => {
+    setOriginLabel("Current Location");
+    setOrigin(coord);
+  }, []);
 
   // Auto-search when both origin and destination are set via map clicks
   useEffect(() => {
@@ -106,6 +113,8 @@ export default function Home() {
           onSelectRoute={selectRoute}
           showTraffic={showTraffic}
           onToggleTraffic={() => setShowTraffic(!showTraffic)}
+          originLabel={originLabel}
+          origin={origin}
         />
 
         {/* Map */}
@@ -119,6 +128,7 @@ export default function Home() {
             theme={theme}
             showTraffic={showTraffic}
             onMapClick={handleMapClick}
+            onGeolocate={handleGeolocate}
           />
 
           {/* Loading overlay */}

@@ -16,6 +16,8 @@ interface SidebarProps {
   onSelectRoute: (route: RouteOption) => void;
   showTraffic: boolean;
   onToggleTraffic: () => void;
+  originLabel?: string | null;
+  origin?: Coordinate | null;
 }
 
 export default function Sidebar({
@@ -27,6 +29,8 @@ export default function Sidebar({
   onSelectRoute,
   showTraffic,
   onToggleTraffic,
+  originLabel,
+  origin,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -56,7 +60,7 @@ export default function Sidebar({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <RouteInput onSearch={onSearch} loading={loading} />
+        <RouteInput onSearch={onSearch} loading={loading} originLabel={originLabel} origin={origin} />
 
         {error && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">
@@ -70,8 +74,8 @@ export default function Sidebar({
             <button
               onClick={onToggleTraffic}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${showTraffic
-                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                  : "bg-slate-800/60 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50"
+                ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                : "bg-slate-800/60 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50"
                 }`}
             >
               <Navigation className="w-4 h-4" />
