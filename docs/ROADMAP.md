@@ -1,758 +1,273 @@
-# FluxRoute — Hackathon Roadmap & Checklist
+# FluxRoute — Project Roadmap & Status
 
-**Deadline:** Sunday, February 16, 2025 — 9:00 AM
-**Last Updated:** Saturday, February 15, 2025 — 3:00 AM
-**Time Remaining:** ~15-17 hours of working time (after sleep)
-**Team:** Team FluxRoute — CTRL+HACK+DEL 2025 Hackathon
-
-### Schedule Overview
-```
-Sat Feb 15  3:00 AM  ── NOW (wrap up, go to sleep)
-            ~10 AM   ── Wake up, start Phase 0 + 1
-            ~2 PM    ── Phase 2 (Real Data & Multi-Agency)
-            ~7 PM    ── Phase 3 (ML & AI Polish)
-            ~10 PM   ── Phase 4 (UI/UX & Demo Polish)
-Sun Feb 16  ~1 AM    ── Phase 5 (Final Submission Prep)
-            ~3 AM    ── FREEZE: stop adding features, only fix bugs
-            9:00 AM  ── DEADLINE
-```
+**Hackathon:** CTRL+HACK+DEL 2025
+**Team:** Team FluxRoute
+**Last Updated:** February 14, 2026
 
 ---
 
-## Table of Contents
+## Current State Summary
 
-1. [Current State Assessment](#1-current-state-assessment)
-2. [Target Architecture](#2-target-architecture)
-3. [Time Budget](#3-time-budget)
-4. [Phase 0 — Critical Fixes (NOW)](#phase-0--critical-fixes-now--1-hour)
-5. [Phase 1 — Core Functionality Lock-In](#phase-1--core-functionality-lock-in-3-4-hours)
-6. [Phase 2 — Real Data & Multi-Agency Transit](#phase-2--real-data--multi-agency-transit-4-5-hours)
-7. [Phase 3 — ML & AI Polish](#phase-3--ml--ai-polish-3-4-hours)
-8. [Phase 4 — UI/UX & Demo Polish](#phase-4--uiux--demo-polish-3-4-hours)
-9. [Phase 5 — Final Submission Prep](#phase-5--final-submission-prep-1-2-hours)
-10. [Data Sources & API Reference](#data-sources--api-reference)
-11. [Risk Register](#risk-register)
-12. [Decision Log](#decision-log)
+FluxRoute is a fully functional multimodal transit routing app for the GTA. The core application, multi-agency integration, ML pipeline, AI assistant, and real-time data feeds are all built and working.
 
----
+### What's Built and Working
 
-## 1. Current State Assessment
-
-### What's Working
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| FastAPI backend structure | **Working** | Lifespan, CORS, all 9 endpoints defined |
-| Pydantic v2 models | **Working** | Full API contract, type-safe |
-| Route engine (transit/drive/walk/hybrid) | **Working** | Generates multimodal routes with segments |
-| GTFS static data (TTC) | **Working** | 9,388 stops, 230 routes loaded on startup |
-| ML delay predictor (heuristic fallback) | **Working** | Rule-based predictions active |
-| Gemini AI chat assistant | **Working** | Tool use with 4 tools implemented |
-| Cost calculator | **Working** | TTC fares, gas, parking |
-| Weather integration (Open-Meteo) | **Working** | Real-time weather, no API key needed |
-| GTFS-RT poller | **Working** | Falls back to mock data when feeds unavailable |
-| Next.js 14 frontend | **Working** | All 10 components built |
-| Mapbox GL map | **Working** | Dark theme, route polylines, markers |
-| Geocoder (origin/destination) | **Working** | Mapbox GL Geocoder with Toronto bounds |
-| Route cards + Decision Matrix | **Working** | Fastest / Thrifty / Zen comparison |
-| Chat assistant UI | **Working** | Floating panel, message history |
-| Live alerts banner | **Working** | Rotating alerts display |
-| Vehicle position overlay | **Working** | 15-second polling on map |
-
-### What's Broken or Incomplete
-
-| Issue | Severity | Details |
-|-------|----------|---------|
-| **TTC subway lines outdated** | **High** | Line 3 (Scarborough RT) closed Nov 2023 but still hardcoded; Line 5 (Eglinton) and Line 6 (Finch West) are now operational but missing entirely. Affects 7+ files across backend and frontend — see detailed breakdown below. |
-| ~~ML model file missing~~ | **Done** | `delay_model.joblib` generated — XGBoost model trained and serving predictions |
-| ~~Documentation outdated~~ | **Done** | CLAUDE.md and README updated to reference Gemini (fixed Feb 15 3AM) |
-| Only TTC data | **High** | No GO Transit, MiWay, YRT, or Brampton Transit data |
-| GTFS-RT uses mock data | **High** | Real-time feeds not connected (mock vehicles/alerts) |
-| No multi-agency routing | **High** | Can't plan trips across TTC + GO + regional agencies |
-| Transit routing is nearest-stop heuristic | **Medium** | Not a real graph search — misses optimal transfers |
-| API keys in `.env.local` | **Low** | Should be `.env` (gitignored) — minor file naming issue |
-| Git has uncommitted changes | **Low** | `.gitignore`, `README.md`, `package-lock.json` modified |
-
-#### TTC Subway Line Data — Detailed Breakdown
-
-The codebase reflects the pre-2024 TTC subway network (only Lines 1-4). This is **stale static data** that needs to be corrected:
-
-**Line 3 (Scarborough RT) — REMOVE:** Permanently closed Nov 19, 2023. Replaced by bus shuttle. All 5 hardcoded stations (Scarborough Centre, McCowan, Lawrence East, Ellesmere, Midland) must be removed from subway data.
-
-**Line 5 (Eglinton Crosstown LRT) — ADD:** Now operational. Needs stations with coordinates, line color (orange), route shape, delay heuristics, and mock realtime data.
-
-**Line 6 (Finch West LRT) — ADD:** Now operational. Needs stations with coordinates, line color, route shape, delay heuristics, and mock realtime data.
-
-**Files requiring updates (7+ files):**
-
-| File | Changes Needed |
-|------|---------------|
-| `backend/app/gtfs_parser.py` | Remove 5 Line 3 stations; add all Line 5 & 6 stations with lat/lng coordinates |
-| `backend/app/ml_predictor.py` | Remove Line 3 from `LINE_MAP`, base delays, and `line_names`; add Lines 5 & 6 with appropriate heuristic delay values |
-| `backend/app/gtfs_realtime.py` | Remove Line 3 from mock `SUBWAY_LINES`; add Lines 5 & 6 with coordinates, colors, and mock alerts |
-| `backend/app/gemini_agent.py` | Update `SYSTEM_PROMPT`: change "4 lines" to "5 lines", remove Line 3 description, add Lines 5 & 6 |
-| `backend/app/route_engine.py` | Update `line_colors` dict: remove key `"3"`, add `"5"` and `"6"` with correct TTC colors |
-| `frontend/lib/constants.ts` | Update `TTC_COLORS`: remove `"3"`, add `"5"` and `"6"` |
-| `CLAUDE.md` | Update all TTC line references throughout documentation |
-
-### What's Missing Entirely
-
-| Feature | Priority | Notes |
-|---------|----------|-------|
-| OpenTripPlanner integration | **P0** | Needed for real multi-agency transit routing |
-| **Real-time traffic data for driving/hybrid routes** | **P1** | Mapbox `driving-traffic` profile is used but congestion annotations are discarded — no traffic visualization, no traffic-aware stress scoring, no traffic comparison between modes |
-| Transitland API integration | **P1** | Unified discovery layer for all GTHA agencies |
-| Multi-agency GTFS data (GO, YRT, MiWay, Brampton) | **P1** | Only TTC currently loaded |
-| Real GTFS-RT feeds | **P1** | Vehicle positions + alerts from live feeds |
-| ~~Trained XGBoost model~~ | **Done** | Model trained and serving predictions |
-| Google Routes API for last-mile | **P2** | Currently using Mapbox for everything |
-| Community reporting | **P3** | Stretch goal |
-| Voice copilot | **P3** | Stretch goal — skip unless time permits |
+| Component | Status | Details |
+|-----------|--------|---------|
+| **FastAPI Backend** | Working | Lifespan startup, CORS, 11 API endpoints |
+| **Pydantic v2 Models** | Working | Full API contract with strict type validation |
+| **Route Engine** | Working | OTP-first transit routing with GTFS fallback, Mapbox driving/walking |
+| **OpenTripPlanner Integration** | Working | 5-agency multi-agency routing (TTC, GO, YRT, MiWay, UP Express) |
+| **OTP Client** | Working | Async HTTP client, health checks, polyline decoding |
+| **GTFS Static Data (TTC)** | Working | 9,388 stops, 230 routes loaded on startup |
+| **Multi-Agency GTFS Data** | Working | 5 agencies via OTP (Git LFS tracked) |
+| **Ontario OSM Street Network** | Working | 890 MB PBF file for OTP graph building |
+| **XGBoost ML Model** | Working | Trained delay predictor with heuristic fallback |
+| **Gemini AI Chat** | Working | Tool use with route prediction, delay checking, transit info |
+| **Cost Calculator** | Working | Multi-agency fares, gas, parking, PRESTO co-fare discounts |
+| **Weather Integration** | Working | Open-Meteo API, feeds into delay predictions + stress scoring |
+| **Road Closures** | Working | City of Toronto closure data, factored into stress scoring |
+| **GTFS-RT Poller** | Working | Vehicle positions + service alerts (mock fallback) |
+| **Real-Time Traffic** | Working | Mapbox congestion annotations for driving/hybrid routes |
+| **Next.js 14 Frontend** | Working | All 11 components built |
+| **Mapbox GL Map** | Working | Dark theme, congestion-colored routes, vehicle markers |
+| **Geocoder Input** | Working | Mapbox Geocoder with Toronto bounding box |
+| **Route Cards + Decision Matrix** | Working | Fastest / Thrifty / Zen comparison |
+| **Turn-by-Turn Directions** | Working | DirectionSteps component for driving/walking |
+| **Chat Assistant UI** | Working | Floating panel, message history, suggested actions |
+| **Live Alerts Banner** | Working | Rotating service alerts display |
+| **Vehicle Overlay** | Working | 15-second polling, pulsing markers on map |
+| **Time-Based Theme** | Working | Map style adapts to dawn/day/dusk/night |
+| **Docker Compose** | Working | OTP service containerization |
+| **Git LFS** | Working | Large GTFS/OSM files tracked and pushed |
 
 ---
 
-## 2. Target Architecture
-
-### Current Architecture (MVP)
+## Architecture (Current)
 
 ```
-User → Frontend (Next.js) → Backend (FastAPI) → Mapbox Directions API
-                                              → TTC GTFS Static (local)
-                                              → Mock GTFS-RT data
-                                              → XGBoost heuristic
-                                              → Gemini AI chat
-                                              → Open-Meteo weather
-```
-
-### Target Architecture (Upgraded)
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    DATA LAYER                            │
-│                                                         │
-│  GTFS Static Files (per agency):                        │
-│  ├── TTC (Toronto Transit Commission)     ✅ Have it    │
-│  ├── GO Transit / Metrolinx              🔲 Need it    │
-│  ├── YRT / Viva (York Region)            🔲 Need it    │
-│  ├── MiWay (Mississauga)                 🔲 Need it    │
-│  └── Brampton Transit                    🔲 Need it    │
-│                                                         │
-│  Discovery: Transitland API (transit.land)              │
-│  → Browse/download all GTHA feeds from one place        │
-│  → Free tier, 2,500+ operators indexed                  │
-└──────────────────────┬──────────────────────────────────┘
-                       ↓
-┌──────────────────────┴──────────────────────────────────┐
-│              ROUTING ENGINE LAYER                        │
-│                                                         │
-│  OpenTripPlanner (OTP) — Self-hosted                    │
-│  → Ingests ALL agency GTFS files                        │
-│  → Cross-agency journey planning (TTC→GO→YRT)           │
-│  → Handles transfers, schedules, real routing graph      │
-│  → Replaces our nearest-stop heuristic                  │
-│  → Free, open-source, industry standard                 │
-│                                                         │
-│  Mapbox Directions API (driving/walking/cycling)        │
-│  → Last-mile segments to/from transit stops             │
-└──────────────────────┬──────────────────────────────────┘
-                       ↓
-┌──────────────────────┴──────────────────────────────────┐
-│             REAL-TIME DATA LAYER                         │
-│                                                         │
-│  GTFS-RT Feeds (per agency):                            │
-│  ├── TTC — Vehicle positions + service alerts           │
-│  ├── GO/Metrolinx — Via Metrolinx Open Data API         │
-│  └── Others — Via Transitland GTFS-RT proxy             │
-│                                                         │
-│  Polling: 15-second interval, cached in app_state       │
-└──────────────────────┬──────────────────────────────────┘
-                       ↓
-┌──────────────────────┴──────────────────────────────────┐
-│              ML / AI LAYER                               │
-│                                                         │
-│  XGBoost Delay Predictor                                │
-│  → Trained on TTC historical delay CSV                  │
-│  → Features: line, station, hour, day, month, weather   │
-│  → Output: delay probability + expected minutes         │
-│                                                         │
-│  Google Gemini AI Chat Assistant                         │
-│  → Tool use: routes, delays, alerts, weather            │
-│  → Context-aware (user location, current routes)        │
-│                                                         │
-│  Open-Meteo Weather API                                 │
-│  → Feeds into delay prediction + stress scoring         │
-└──────────────────────┬──────────────────────────────────┘
-                       ↓
-┌──────────────────────┴──────────────────────────────────┐
-│              PRESENTATION LAYER                          │
-│                                                         │
-│  Next.js 14 Frontend                                    │
-│  ├── Mapbox GL JS — Route visualization, live vehicles  │
-│  ├── Decision Matrix — Fastest / Thrifty / Zen          │
-│  ├── Route Cards — Multimodal comparison                │
-│  ├── Chat Assistant — Gemini-powered advice             │
-│  ├── Live Alerts — Rotating service alert banner        │
-│  └── Delay Indicators — Green/Yellow/Red badges         │
-└─────────────────────────────────────────────────────────┘
+Browser (localhost:3000)
+    |
+    v
+Next.js 14 Frontend (TypeScript, Mapbox GL JS)
+    |  HTTP requests
+    v
+FastAPI Backend (localhost:8000)
+    |
+    |-- OpenTripPlanner (localhost:8080)
+    |   |-- TTC GTFS (subway, bus, streetcar)
+    |   |-- GO Transit GTFS (trains, buses)
+    |   |-- YRT GTFS (York Region Transit)
+    |   |-- MiWay GTFS (Mississauga Transit)
+    |   |-- UP Express GTFS
+    |   |-- Ontario OSM (street network)
+    |
+    |-- Mapbox Directions API
+    |   |-- driving-traffic profile + congestion annotations
+    |   |-- walking profile
+    |   |-- geocoding
+    |
+    |-- Google Gemini API (AI chat with tool use)
+    |-- Open-Meteo Weather API (real-time weather)
+    |-- TTC GTFS-RT (live vehicle positions + alerts)
+    |-- City of Toronto (road closures)
+    |-- XGBoost ML Model (delay prediction)
+    |
+    v
+Frontend renders:
+    - Congestion-colored route polylines
+    - Multi-agency route cards with cost breakdown
+    - Decision matrix (Fastest/Thrifty/Zen)
+    - Turn-by-turn directions
+    - Live vehicle markers
+    - Service alert banner
+    - AI chat assistant
 ```
 
 ---
 
-## 3. Time Budget
+## Completed Milestones
 
-**Available:** ~15-17 working hours (Sat morning → Sun 9 AM)
-**Buffer:** Always keep 2-3 hours for unexpected issues and bug fixes
-**Code Freeze:** Sunday 3 AM — no new features after this, only bug fixes
+### Phase 0 — Core Infrastructure
+- [x] FastAPI backend with lifespan, CORS, all endpoints
+- [x] Pydantic v2 models for full API contract
+- [x] Next.js 14 frontend with App Router
+- [x] Mapbox GL JS map with dark-v11 style
+- [x] Geocoder-powered origin/destination input
+- [x] Environment variable configuration (.env, .env.local)
 
-| Phase | Est. Time | Window (Sat-Sun) | Priority |
-|-------|-----------|-------------------|----------|
-| **Phase 0** — Critical Fixes | 1-1.5 hrs | Sat 10:00 AM - 11:30 AM | MUST DO |
-| **Phase 1** — Core Lock-In | 2-3 hrs | Sat 11:30 AM - 2:00 PM | MUST DO |
-| **Phase 2** — Real Data & Multi-Agency | 4-5 hrs | Sat 2:00 PM - 7:00 PM | MUST DO |
-| **Phase 3** — ML & AI Polish | 2-3 hrs | Sat 7:00 PM - 10:00 PM | SHOULD DO |
-| **Phase 4** — UI/UX & Demo Polish | 3-4 hrs | Sat 10:00 PM - Sun 1:00 AM | SHOULD DO |
-| **Phase 5** — Final Submission | 1-2 hrs | Sun 1:00 AM - 3:00 AM | MUST DO |
-| **Bug Fix Buffer** | 2-3 hrs | Sun 3:00 AM - 6:00 AM (if needed) | RESERVE |
-| **Sleep / Rest before demo** | — | Sun 6:00 AM - 9:00 AM | DO IT |
+### Phase 1 — Core Routing & Features
+- [x] Route engine generating transit, driving, walking, hybrid routes
+- [x] TTC GTFS static data loading (9,388 stops, 230 routes)
+- [x] Mapbox Directions API integration (driving-traffic profile)
+- [x] Cost calculator (TTC fares, gas, parking)
+- [x] Stress scoring (transfers, delays, weather, traffic, walking)
+- [x] Decision Matrix (Fastest / Thrifty / Zen)
+- [x] Route cards with duration, cost, delay badge, summary
+- [x] Sidebar collapse/expand
+- [x] Loading overlay during route calculation
 
-**Golden Rule:** At every phase boundary, you should have a _demoable_ product. Never be in a state where "it's all broken but it'll work when I finish this next thing."
+### Phase 2 — ML & AI
+- [x] XGBoost model training pipeline (feature engineering + train)
+- [x] ML delay predictor with heuristic fallback
+- [x] Delay predictions integrated into route responses
+- [x] Weather data feeds into delay predictions
+- [x] Google Gemini AI chat assistant with tool use
+- [x] Chat UI with message history and suggested actions
+- [x] DelayIndicator badge (green/yellow/red)
 
-**Tonight (3 AM):** Go to sleep. You've done the planning and doc updates. Fresh eyes tomorrow will be 10x more productive than grinding through bugs at 4 AM.
+### Phase 3 — Real-Time Data
+- [x] GTFS-RT poller for vehicle positions + service alerts
+- [x] Live vehicle markers on map (15-second polling)
+- [x] Rotating service alert banner
+- [x] Mock fallback when feeds unavailable
+- [x] Weather API integration (Open-Meteo)
 
----
+### Phase 4 — Traffic & Map Enhancements
+- [x] Mapbox congestion annotations for driving/hybrid routes
+- [x] Congestion-colored route polylines (green/yellow/orange/red)
+- [x] Traffic-aware stress scoring (replaces rush-hour heuristic)
+- [x] Rush-hour heuristic fallback when congestion data unavailable
+- [x] Time-based map theme (dawn/day/dusk/night)
+- [x] Turn-by-turn direction steps component
+- [x] Road closure data from City of Toronto
 
-## Phase 0 — Critical Fixes | ~1-1.5 hours | Sat 10:00 AM
-
-First thing when you wake up. Stabilize the current build before touching anything else.
-
-### Environment & Config
-
-- [x] Verify `backend/.env` exists with correct keys:
-  ```
-  GEMINI_API_KEY=your-gemini-key
-  MAPBOX_TOKEN=pk.your-mapbox-token
-  ```
-- [x] Verify `frontend/.env.local` exists with correct keys:
-  ```
-  NEXT_PUBLIC_MAPBOX_TOKEN=pk.your-mapbox-token
-  NEXT_PUBLIC_API_URL=http://localhost:8000
-  ```
-- [x] Confirm backend starts without errors: `cd backend && python3 -m uvicorn app.main:app --reload`
-- [x] Confirm frontend starts without errors: `cd frontend && npm run dev`
-- [x] Test health endpoint: `curl http://localhost:8000/api/health`
-
-### Quick Bug Fixes
-
-- [x] Fix any import errors or startup crashes (check terminal output)
-- [x] Verify the map renders at `http://localhost:3000`
-- [x] Verify geocoder (origin/destination input) works
-- [x] Test a route search end-to-end: enter origin → destination → see routes on map
-- [x] Verify chat assistant sends/receives messages
-
-### Git Housekeeping
-
-- [x] Commit current uncommitted changes (`.gitignore`, `README.md`, `package-lock.json`)
-- [x] Create a `stable-mvp` tag or branch as a safety checkpoint
-
-**Exit Criteria:** App runs locally, routes appear on map, chat works. You have a stable baseline to build on.
-
----
-
-## Phase 1 — Core Functionality Lock-In | 2-3 hours | Sat 11:30 AM
-
-Lock in all existing features so they work reliably before adding new data sources.
-
-### Real-Time Traffic Integration (Driving & Hybrid Routes)
-
-Currently, the Mapbox `driving-traffic` profile is used for driving and hybrid routes, which means the **duration and path** already account for real-time traffic. However, the congestion annotation data from Mapbox is discarded. This task adds full traffic awareness across the stack.
-
-#### Backend
-
-- [ ] Update `_mapbox_directions()` in `route_engine.py` to request congestion annotations:
-  - Add `&annotations=congestion` to the Mapbox API URL
-  - Parse per-leg `congestion` values (`low`, `moderate`, `heavy`, `severe`) from the response
-  - Return congestion data alongside geometry/distance/duration
-- [ ] Add `congestion_level` (optional str) field to `RouteSegment` model in `models.py`
-- [ ] Add `traffic_summary` (optional str) field to `RouteOption` model (e.g., "Heavy traffic on Gardiner Expressway")
-- [ ] Replace hardcoded rush-hour stress penalty in `route_engine.py` with real congestion-based scoring:
-  - `severe` → +0.3 stress
-  - `heavy` → +0.2 stress
-  - `moderate` → +0.1 stress
-  - `low` → +0.0 stress
-- [ ] Compute an overall `traffic_summary` string from the dominant congestion level across segments
-- [ ] Ensure hybrid route driving segments also extract and pass through congestion data
-
-#### Frontend
-
-- [ ] Add `congestionLevel` and `trafficSummary` fields to TypeScript `RouteSegment` and `RouteOption` types in `lib/types.ts`
-- [ ] Color-code driving route polylines on the map by congestion level (green/yellow/orange/red) instead of flat blue
-- [ ] (Optional) Add Mapbox Traffic tileset layer (`mapbox://mapbox.mapbox-traffic-v1`) to `FluxMap.tsx` for general traffic visibility
-- [ ] Display traffic badge/indicator on driving and hybrid `RouteCards` (e.g., "Heavy traffic" / "Light traffic")
-- [ ] Factor traffic level into the Decision Matrix comparison display
-
-#### Fallback
-
-- [ ] If Mapbox doesn't return congestion annotations, fall back to the existing rush-hour heuristic (7-9am, 4-7pm)
-- [ ] If Mapbox API is unavailable entirely, straight-line fallback remains unchanged
-
-### Backend Stability
-
-- [x] Train the XGBoost ML model:
-  ```bash
-  cd backend && python3 -m ml.train_model
-  ```
-  Verify `backend/ml/delay_model.joblib` is generated.
-- [x] Restart backend and confirm ML predictor loads in "ML mode" (check logs for "Loaded XGBoost model")
-- [x] Test delay prediction endpoint:
-  ```bash
-  curl "http://localhost:8000/api/predict-delay?line=Line+1&hour=8&day_of_week=0"
-  ```
-- [x] Test route generation returns delay info with ML predictions (not just heuristic)
-- [x] Verify Gemini chat assistant responds with tool use (ask it "What's the fastest route from Union Station to Finch?")
-- [x] Test weather endpoint returns real data: `curl http://localhost:8000/api/weather`
-
-### Frontend Stability
-
-- [x] Verify route cards display correctly (duration, cost, delay badge, summary)
-- [x] Verify Decision Matrix picks correct winners (Fastest/Thrifty/Zen)
-- [x] Verify CostBreakdown expands and shows fare/gas/parking
-- [x] Verify DelayIndicator colors are correct (green <30%, yellow 30-60%, red >60%)
-- [x] Verify LiveAlerts banner rotates alerts
-- [x] Verify vehicle markers appear on map (even if mock data)
-- [x] Test sidebar collapse/expand on different screen sizes
-- [x] Verify route selection highlights the route on the map
-
-### Bug Hunt Checklist
-
-- [x] Check browser console for JavaScript errors
-- [x] Check backend terminal for Python exceptions
-- [x] Test with various origin/destination pairs (not just downtown)
-- [x] Test edge case: origin and destination very close together
-- [x] Test edge case: origin and destination very far apart (across GTA)
-- [x] Verify no CORS errors in browser network tab
-
-**Exit Criteria:** All existing features work reliably. ML model is trained and serving real predictions. No crashes on typical usage.
+### Phase 5 — Multi-Agency OTP Integration
+- [x] Downloaded GTFS data for 5 agencies (TTC, GO, YRT, MiWay, UP Express)
+- [x] Downloaded Ontario OSM street network (890 MB)
+- [x] OTP build-config.json and otp-config.json created
+- [x] Docker Compose configuration for OTP service
+- [x] OTP client module (async HTTP, polyline decoding, health checks)
+- [x] Route engine: OTP-first with GTFS fallback
+- [x] Multi-agency cost calculator with PRESTO co-fare discounts
+- [x] `/api/otp/status` endpoint
+- [x] Git LFS tracking for large data files
+- [x] OTP data files merged into main branch
+- [x] Setup documentation (OTP_SETUP.md, OTP_INTEGRATION.md)
+- [x] GTFS download helper script
 
 ---
 
-## Phase 2 — Real Data & Multi-Agency Transit | 4-5 hours | Sat 2:00 PM
+## What's Next — Potential Enhancements
 
-This is the biggest and most important upgrade — moving from TTC-only mock data to real multi-agency GTHA transit. **Grab lunch first**, then grind this out.
+These are ideas for future development beyond the hackathon scope.
 
-### 2A. Gather Multi-Agency GTFS Data | ~1 hour
+### High Priority
 
-Use **Transitland** (transit.land) as your discovery layer to find and download feeds.
+| Enhancement | Description | Effort |
+|-------------|-------------|--------|
+| Real GTFS-RT feeds | Replace mock vehicle/alert data with live TTC GTFS-RT protobuf feeds | Medium |
+| OTP GTFS-RT integration | Feed real-time updates into OTP for schedule-adjusted routing | Medium |
+| Brampton Transit | Add Brampton/Zum GTFS data as 6th agency in OTP | Low |
+| Smaller OSM extract | Use GTA-only OSM extract (~200 MB) instead of all Ontario (~890 MB) | Low |
 
-- [ ] **TTC** — Already have it in `backend/data/gtfs/`
-- [ ] **GO Transit / Metrolinx** — Download GTFS static feed
-  - Source: Transitland or [Metrolinx Open Data](https://www.metrolinx.com/en/about-us/open-data)
-  - Save to: `backend/data/gtfs-go/`
-- [ ] **YRT / Viva (York Region Transit)** — Download GTFS static feed
-  - Source: Transitland or [YRT Open Data](https://www.yrt.ca/en/about-us/open-data.aspx)
-  - Save to: `backend/data/gtfs-yrt/`
-- [ ] **MiWay (Mississauga Transit)** — Download GTFS static feed
-  - Source: Transitland or [MiWay Open Data](https://www.mississauga.ca/services-and-programs/transportation-and-streets/miway/developer-download/)
-  - Save to: `backend/data/gtfs-miway/`
-- [ ] **Brampton Transit** — Download GTFS static feed
-  - Source: Transitland or [Brampton Open Data](https://geohub.brampton.ca/)
-  - Save to: `backend/data/gtfs-brampton/`
+### Medium Priority
 
-> **Tip:** All of these agencies are indexed on Transitland. Go to `transit.land/feeds`, search for each one, and grab the download URL. You can also use the Transitland REST API to query feeds programmatically.
+| Enhancement | Description | Effort |
+|-------------|-------------|--------|
+| GO Transit real-time | Metrolinx Open Data API for live GO train/bus positions | Medium |
+| Cached OTP graph | Save built graph to skip 15-minute rebuild on restart | Low |
+| User preferences | Avoid transfers, prefer subway, accessibility options | Medium |
+| Bike-share integration | Bike Share Toronto stations as first/last mile options | Medium |
+| Carbon footprint | CO2 emissions comparison across route modes | Low |
 
-### 2B. Set Up OpenTripPlanner (OTP) | ~2 hours
+### Low Priority (Stretch Goals)
 
-OTP is your **unified routing engine** — it ingests all GTFS feeds and handles cross-agency journey planning natively.
-
-- [ ] Download OTP 2.x JAR file:
-  ```bash
-  mkdir -p otp && cd otp
-  curl -L -o otp-shaded.jar "https://repo1.maven.org/maven2/org/opentripplanner/otp/2.5.0/otp-2.5.0-shaded.jar"
-  ```
-- [ ] Create OTP data directory and copy all GTFS zips:
-  ```bash
-  mkdir -p otp/data
-  # Copy all agency GTFS zip files into otp/data/
-  cp backend/data/gtfs.zip otp/data/ttc-gtfs.zip        # re-zip if needed
-  cp backend/data/gtfs-go/*.zip otp/data/go-gtfs.zip
-  cp backend/data/gtfs-yrt/*.zip otp/data/yrt-gtfs.zip
-  # ... etc for each agency
-  ```
-- [ ] Download OpenStreetMap data for GTA (needed for street routing):
-  ```bash
-  cd otp/data
-  # Download Ontario extract from Geofabrik
-  curl -L -o ontario.osm.pbf "https://download.geofabrik.de/north-america/canada/ontario-latest.osm.pbf"
-  ```
-  > **Note:** This file is ~500MB. If too slow, use a smaller bounding-box extract from BBBike.
-- [ ] Build OTP graph:
-  ```bash
-  java -Xmx4G -jar otp-shaded.jar --build --save otp/data
-  ```
-  This processes all GTFS + OSM data into a routing graph. Takes 5-15 minutes.
-- [ ] Start OTP server:
-  ```bash
-  java -Xmx2G -jar otp-shaded.jar --load otp/data
-  ```
-  OTP API will be available at `http://localhost:8080`
-- [ ] Test OTP routing:
-  ```bash
-  curl "http://localhost:8080/otp/routers/default/plan?fromPlace=43.6532,-79.3832&toPlace=43.7804,-79.4153&mode=TRANSIT,WALK&date=2025-02-15&time=08:00:00"
-  ```
-- [ ] Verify cross-agency routing works (e.g., TTC to GO transfer)
-
-### 2C. Integrate OTP into FluxRoute Backend | ~1.5 hours
-
-Replace the current nearest-stop heuristic with real OTP routing.
-
-- [ ] Create `backend/app/otp_client.py` — async HTTP client for OTP API:
-  ```python
-  # Key function: query_otp_routes(origin, destination, modes, departure_time)
-  # Parses OTP itineraries into our RouteOption/RouteSegment models
-  ```
-- [ ] Update `backend/app/route_engine.py`:
-  - [ ] Add OTP as primary transit routing source
-  - [ ] Keep Mapbox Directions for driving/walking/cycling
-  - [ ] Keep existing heuristic as fallback if OTP is down
-  - [ ] Map OTP itinerary legs → our `RouteSegment` model
-  - [ ] Preserve delay prediction, cost calc, and stress scoring on top of OTP routes
-- [ ] Update `backend/app/main.py`:
-  - [ ] Add OTP health check to startup lifespan
-  - [ ] Store OTP base URL in app_state
-  - [ ] Add `OTP_BASE_URL` to `.env` (default: `http://localhost:8080`)
-- [ ] Test end-to-end: frontend → backend → OTP → response with real multi-agency routes
-
-### 2D. Connect Real GTFS-RT Feeds | ~1 hour
-
-Replace mock data with live vehicle positions and service alerts.
-
-- [ ] **TTC GTFS-RT feeds** (no API key required):
-  - Vehicle positions: `https://alerts.ttc.ca/api/alerts/live-map/getVehicles`
-  - Service alerts: `https://alerts.ttc.ca/api/alerts/list`
-  - Or use protobuf feeds if available
-- [ ] **Metrolinx / GO GTFS-RT** (may require API key):
-  - Check Metrolinx Open Data portal for real-time feed URLs
-  - Or use Transitland GTFS-RT proxy
-- [ ] Update `backend/app/gtfs_realtime.py`:
-  - [ ] Add real TTC feed URLs
-  - [ ] Add GO Transit feed URLs (if available)
-  - [ ] Keep mock fallback for agencies where feeds aren't available
-  - [ ] Parse protobuf responses into our `VehiclePosition` and `ServiceAlert` models
-- [ ] **Transitland API integration** (optional but powerful):
-  - [ ] Sign up for Transitland API key at `transit.land`
-  - [ ] Use `/api/v2/rest/feeds` to discover feed URLs
-  - [ ] Use `/api/v2/rest/routes` and `/api/v2/rest/stops` for enriched data
-  - [ ] Add `TRANSITLAND_API_KEY` to `.env`
-- [ ] Test: verify real vehicle positions appear on the map
-- [ ] Test: verify real service alerts appear in the banner
-
-**Exit Criteria:** Routes are generated using real OTP graph routing across multiple agencies. Real-time vehicle positions and alerts are live (at least for TTC). The app shows real transit data, not just mock.
+| Enhancement | Description | Effort |
+|-------------|-------------|--------|
+| Multi-stop trips | Plan routes with intermediate stops | High |
+| Historical performance | Track route reliability over time | High |
+| Community reporting | User-submitted delay/incident reports | High |
+| Voice copilot | Voice input for route queries | Medium |
+| Accessibility routing | Wheelchair-accessible route filtering | Medium |
+| GTFS auto-refresh | Cron job to download fresh GTFS feeds weekly | Low |
 
 ---
 
-## Phase 3 — ML & AI Polish | 2-3 hours | Sat 7:00 PM
+## Tech Stack Summary
 
-Improve the intelligence layer now that real data is flowing. **Grab dinner first.**
-
-### ML Delay Predictor
-
-- [x] Verify XGBoost model is loaded and serving predictions
-- [x] Test predictions for different lines, times, and days:
-  ```bash
-  # Rush hour Monday on Line 1
-  curl "http://localhost:8000/api/predict-delay?line=Line+1&hour=8&day_of_week=0"
-  # Weekend afternoon on Line 2
-  curl "http://localhost:8000/api/predict-delay?line=Line+2&hour=14&day_of_week=5"
-  ```
-- [x] Verify delay predictions integrate into route responses (check `delay_info` in route JSON)
-- [x] Ensure weather data feeds into delay predictions (precipitation → higher delay probability)
-- [ ] Tune stress scoring weights if they feel off during testing:
-  - Transfers: 0.1 per transfer
-  - Delay probability: 0.3 weight
-  - Weather: 0.2 if bad
-  - Rush hour: 0.1
-  - Walking: 0.05/km
-  - Driving: 0.15 base
-
-### Gemini AI Chat Assistant
-
-- [x] Test chat with route-related questions:
-  - "What's the fastest way to get from Union to Finch?"
-  - "Is there any delays on Line 1 right now?"
-  - "Should I drive or take transit to the airport?"
-- [x] Verify tool use works (Gemini calls get_routes, predict_delay, etc.)
-- [x] Test chat retains context across messages (conversation history)
-- [x] Verify suggested actions appear and are relevant
-- [ ] If OTP is integrated, update chat tools to use real routing data
-- [x] Test error handling: what happens if Gemini API key is invalid or rate-limited?
-- [ ] Add transit-specific system prompt enhancements if needed (e.g., GTHA knowledge, fare info for all agencies)
-
-### Data Quality
-
-- [x] Spot-check a few routes for sanity:
-  - Duration reasonable? (not 0 min or 999 min)
-  - Distance reasonable?
-  - Cost breakdown makes sense?
-  - Route geometry actually follows roads/rails on the map?
-- [ ] Verify routes from multiple agencies appear (if OTP integrated)
-- [x] Check that hybrid routes (park & ride) make geographic sense
-
-**Exit Criteria:** ML predictions feel realistic. Chat assistant gives helpful transit advice. Route data passes the "sniff test" — nothing obviously wrong.
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Next.js 14, TypeScript, React 18 | App framework |
+| **Map** | Mapbox GL JS 3.18 | Route visualization, geocoding |
+| **Styling** | Tailwind CSS 3.4 | Glassmorphism UI theme |
+| **Backend** | FastAPI, Python 3.12, Uvicorn | API server |
+| **Transit Routing** | OpenTripPlanner 2.5 | Multi-agency graph routing |
+| **ML** | XGBoost, scikit-learn | Delay prediction |
+| **AI Chat** | Google Gemini | Conversational assistant with tool use |
+| **Weather** | Open-Meteo API | Real-time weather (no API key) |
+| **Traffic** | Mapbox Directions API | Congestion annotations |
+| **Real-time** | TTC GTFS-RT | Vehicle positions + alerts |
+| **Data** | Pandas, Git LFS | GTFS processing, large file storage |
+| **Infra** | Docker Compose | OTP containerization |
 
 ---
 
-## Phase 4 — UI/UX & Demo Polish | 3-4 hours | Sat 10:00 PM
+## Data Sources
 
-Make it look and feel like a polished product for the demo. This is the late-night push.
+### GTFS Static Feeds (via OTP)
 
-### Visual Polish
+| Agency | File | Size | Coverage |
+|--------|------|------|----------|
+| TTC | `ttc.zip` | 79 MB | Subway, bus, streetcar |
+| GO Transit | `gotransit.zip` | 21 MB | Commuter rail + bus |
+| YRT/Viva | `yrt.zip` | 5 MB | York Region Transit |
+| MiWay | `miway.zip` | 7.6 MB | Mississauga Transit |
+| UP Express | `upexpress.zip` | 888 KB | Airport rail link |
+| **Street Network** | `ontario.osm.pbf` | 890 MB | OpenStreetMap Ontario |
 
-- [ ] Verify glassmorphism theme looks good (backdrop-blur, transparency)
-- [ ] Check route colors are distinct and meaningful:
-  - Transit: blue (#3b82f6)
-  - Driving: purple (#8b5cf6)
-  - Walking: green (#10b981)
-  - Cycling: orange (#f59e0b)
-  - Hybrid: gradient
-- [ ] Verify map is centered on Toronto (43.6532, -79.3832) on load
-- [ ] Verify route polylines render cleanly (no gaps, no weird loops)
-- [ ] Check that vehicle markers pulse/animate on map
-- [ ] Test the loading overlay appears during route calculation
-- [ ] Make sure the chat panel doesn't overlap important UI elements
-
-### Responsive & Edge Cases
-
-- [ ] Test on the screen size you'll use for the demo (likely laptop)
-- [ ] Verify sidebar collapses cleanly
-- [ ] Test with 1 route result, 3 route results, and 0 route results
-- [ ] Handle "no routes found" gracefully (user-friendly message)
-- [ ] Handle API errors gracefully (not just blank screen or console errors)
-
-### Demo-Specific Prep
-
-- [ ] Pick 2-3 origin/destination pairs that showcase the app well:
-  - **Demo Route 1:** Suburban → Downtown (shows hybrid option advantage)
-    - e.g., Vaughan Metropolitan Centre → Union Station
-  - **Demo Route 2:** Cross-town (shows transit vs driving tradeoff)
-    - e.g., Scarborough Centre → Kipling Station
-  - **Demo Route 3:** Short trip (shows walking as viable option)
-    - e.g., King Station → St. Andrew Station
-- [ ] Pre-test these routes to make sure they produce good results
-- [ ] Prepare a few chat prompts that get impressive AI responses
-- [ ] Make sure live alerts are showing something (even if simulated)
-
-### Documentation Updates
-
-- [ ] Update `README.md`:
-  - [ ] Replace all "Claude" / "Anthropic" references with "Gemini" / "Google"
-  - [ ] Add multi-agency support description (if implemented)
-  - [ ] Update setup instructions for OTP (if integrated)
-  - [ ] Add screenshots if time permits
-- [ ] Update `CLAUDE.md`:
-  - [ ] Fix all `claude_agent.py` references → `gemini_agent.py`
-  - [ ] Fix `ANTHROPIC_API_KEY` references → `GEMINI_API_KEY`
-  - [ ] Add OTP architecture section (if integrated)
-  - [ ] Add new GTFS data directories to project structure
-- [ ] Update `API_KEYS_SETUP.md` with current key requirements
-
-**Exit Criteria:** App looks polished on demo screen. Demo routes are pre-tested and impressive. Documentation matches the actual codebase.
-
----
-
-## Phase 5 — Final Submission Prep | 1-2 hours | Sun 1:00 AM
-
-**Code freeze at 3:00 AM.** After that, only bug fixes. Get some rest before 9 AM.
-
-### Final Testing (Sun ~1:00 AM - 2:00 AM)
-
-- [ ] Full cold-start test: kill all servers, restart from scratch
-  ```bash
-  # Terminal 1: OTP (if using)
-  cd otp && java -Xmx2G -jar otp-shaded.jar --load data
-
-  # Terminal 2: Backend
-  cd backend && python3 -m uvicorn app.main:app --reload
-
-  # Terminal 3: Frontend
-  cd frontend && npm run dev
-  ```
-- [ ] Run through all 3 demo routes end-to-end
-- [ ] Test chat assistant with 2-3 questions
-- [ ] Verify no console errors, no crashes
-- [ ] Check that real-time data is flowing (vehicles on map, alerts in banner)
-
-### Git & Submission (Sun ~2:00 AM - 3:00 AM)
-
-- [ ] Commit ALL changes with a clean commit message
-- [ ] Push to GitHub: `git push origin main`
-- [ ] Verify the repo looks good on GitHub (README renders, files are there)
-- [ ] Double-check `.gitignore` — no API keys, no node_modules, no .env files committed
-- [ ] Tag the submission: `git tag -a v1.0-hackathon -m "CTRL+HACK+DEL 2025 submission"`
-
-### Submission Materials
-
-- [ ] Prepare a 1-paragraph project summary (for submission form)
-- [ ] Note all tech used: Next.js 14, FastAPI, Mapbox GL, XGBoost, Google Gemini, OpenTripPlanner, Transitland, TTC GTFS, Tailwind CSS
-- [ ] List team members
-- [ ] Have the GitHub repo URL ready
-- [ ] Have the local demo ready to screen-share (if virtual) or run on laptop (if in-person)
-
-### Code Freeze (Sun 3:00 AM)
-
-**STOP adding features.** Only fix breaking bugs after this point.
-
-- [ ] If something is broken, fix it. If something is missing, skip it.
-- [ ] Make sure the app starts cleanly and the demo routes work.
-
-### Backup Plan
-
-- [ ] If OTP isn't working: fall back to existing TTC-only routing (it works!)
-- [ ] If GTFS-RT is flaky: mock data fallback is already built in
-- [ ] If Gemini API is rate-limited: chat returns friendly error, app still works
-- [ ] If ML model is acting up: heuristic fallback is solid
-
-### Rest (Sun 3:00 AM - 9:00 AM)
-
-- [ ] Get some sleep or at least rest before the submission window
-- [ ] Set an alarm for 8:00 AM to do a final sanity check
-- [ ] At 8:30 AM: verify servers are running, do one last demo walkthrough
-
-**Exit Criteria:** App submitted. Repo pushed. Demo-ready. Get some rest.
-
----
-
-## Data Sources & API Reference
-
-### GTFS Static Feeds (Download Once)
-
-| Agency | Source | URL | Notes |
-|--------|--------|-----|-------|
-| **TTC** | Toronto Open Data | [CKAN Link](https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/7795b45e-e65a-4465-81fc-c36b9dfff169) | Already downloaded |
-| **GO Transit** | Metrolinx Open Data | [Metrolinx](https://www.metrolinx.com/en/about-us/open-data) | Covers GO Bus + Train |
-| **YRT/Viva** | York Region Open Data | [YRT](https://www.yrt.ca/en/about-us/open-data.aspx) | York Region Transit |
-| **MiWay** | Mississauga Open Data | [MiWay](https://www.mississauga.ca/services-and-programs/transportation-and-streets/miway/developer-download/) | Mississauga Transit |
-| **Brampton Transit** | Brampton Open Data | [Brampton GeoHub](https://geohub.brampton.ca/) | Brampton/Züm |
-| **All of the above** | **Transitland** | [transit.land/feeds](https://transit.land/feeds) | One-stop shop for all feeds |
-
-### GTFS-RT Real-Time Feeds
-
-| Agency | Feed Type | URL / Notes |
-|--------|-----------|-------------|
-| **TTC** | Vehicle Positions | `https://alerts.ttc.ca/api/alerts/live-map/getVehicles` |
-| **TTC** | Service Alerts | `https://alerts.ttc.ca/api/alerts/list` |
-| **Metrolinx/GO** | GTFS-RT | Metrolinx Open Data API (may require key) |
-| **Transitland** | RT Proxy | Transitland can proxy GTFS-RT for some feeds |
-
-### APIs Used
+### APIs
 
 | API | Purpose | Auth | Free Tier |
 |-----|---------|------|-----------|
-| **Mapbox** | Maps, directions, geocoding | Token (`pk.`) | 50K map loads, 100K directions/mo |
-| **Google Gemini** | AI chat assistant | API key | Free tier (rate-limited) |
-| **Open-Meteo** | Weather data | None | Unlimited, no key needed |
-| **OpenTripPlanner** | Multi-agency transit routing | None (self-hosted) | Fully free/open-source |
-| **Transitland** | GTFS feed discovery | API key (free tier) | Free tier available |
-
-### Key Environment Variables
-
-```bash
-# backend/.env
-GEMINI_API_KEY=your-gemini-api-key        # Google AI Studio
-MAPBOX_TOKEN=pk.your-mapbox-token         # Mapbox account
-METROLINX_API_KEY=optional                # Metrolinx Open Data
-TRANSITLAND_API_KEY=optional              # transit.land
-OTP_BASE_URL=http://localhost:8080        # OpenTripPlanner (if self-hosted)
-
-# frontend/.env.local
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.your-mapbox-token
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
----
-
-## Risk Register
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| OTP setup takes too long | Medium | High | Skip OTP, use existing TTC-only routing (works fine for demo) |
-| Mapbox congestion annotations unavailable | Low | Low | Fall back to rush-hour heuristic (7-9am, 4-7pm) for stress scoring |
-| GTFS-RT feeds require auth we can't get | Medium | Medium | Mock data fallback already built in |
-| Gemini API rate limit during demo | Low | High | Pre-cache some chat responses; heuristic fallback |
-| Mapbox free tier exceeded | Very Low | High | Unlikely in hackathon; have Leaflet as backup plan |
-| OSM data download too slow | Medium | Medium | Use smaller GTA-only extract from BBBike instead of all Ontario |
-| XGBoost training fails | Low | Low | Heuristic predictor is already working |
-| CORS issues with OTP | Medium | Low | Add proxy route in FastAPI to forward OTP requests |
-| Team runs out of time | Medium | High | Every phase has a demoable checkpoint. Ship what you have. |
+| Mapbox | Maps, directions, geocoding, congestion | Token | 50K loads, 100K directions/mo |
+| Google Gemini | AI chat assistant | API key | Free tier (rate-limited) |
+| Open-Meteo | Weather data | None | Unlimited |
+| OpenTripPlanner | Multi-agency routing | None (self-hosted) | Fully free/open-source |
+| TTC GTFS-RT | Vehicle positions + alerts | None | Public feeds |
+| City of Toronto | Road closures | None | Public data |
 
 ---
 
 ## Decision Log
 
-Track major decisions here so the team stays aligned.
-
 | # | Decision | Rationale | Date |
 |---|----------|-----------|------|
-| 1 | Migrated from Anthropic Claude to Google Gemini | Cost/availability for hackathon | Feb 2025 |
-| 2 | Using Mapbox over Google Maps | Generous free tier, better DX | Feb 2025 |
-| 3 | XGBoost for delay prediction | Fast to train, works well on tabular data | Feb 2025 |
-| 4 | Adding OpenTripPlanner for routing | Industry-standard, handles multi-agency natively | Feb 14 |
-| 5 | Using Transitland for feed discovery | Unified source for all GTHA agency data | Feb 14 |
-| 6 | Keeping all fallbacks in place | Demo reliability > feature completeness | Feb 14 |
-| 7 | Adding real-time traffic data for driving/hybrid | Mapbox `driving-traffic` already used but congestion annotations discarded — need full traffic integration for proper driving vs transit comparison | Feb 14 |
+| 1 | Google Gemini for AI chat | Free tier, tool use support | Feb 2025 |
+| 2 | Mapbox over Google Maps | Generous free tier, better DX, congestion annotations | Feb 2025 |
+| 3 | XGBoost for delay prediction | Fast training, good for tabular data | Feb 2025 |
+| 4 | OpenTripPlanner for transit routing | Industry-standard, handles multi-agency natively | Feb 2025 |
+| 5 | Git LFS for large files | GTFS zips and OSM PBF too large for regular git | Feb 2025 |
+| 6 | OTP JAR via Maven Central | JAR too large for git (~174 MB), easy curl download | Feb 2025 |
+| 7 | Keep all fallbacks | Demo reliability over feature completeness | Feb 2025 |
+| 8 | Mapbox driving-traffic profile | Real congestion data for driving vs transit comparison | Feb 2025 |
+| 9 | PRESTO co-fare discounts | Accurate multi-agency cost comparison | Feb 2025 |
 
 ---
 
-## Quick Reference: Key Commands
+## Quick Reference
 
 ```bash
-# Start everything (3 terminals)
+# Download OTP JAR (one-time)
+curl -L -o backend/data/otp/otp-2.5.0-shaded.jar \
+  "https://repo1.maven.org/maven2/org/opentripplanner/otp/2.5.0/otp-2.5.0-shaded.jar"
 
-# Terminal 1: OTP (if set up)
-cd otp && java -Xmx2G -jar otp-shaded.jar --load data
+# Start OTP (Terminal 1, ~15-20 min first build)
+cd backend/data/otp && java -Xmx8G -jar otp-2.5.0-shaded.jar --build --serve .
 
-# Terminal 2: Backend
+# Start Backend (Terminal 2)
 cd backend && python3 -m uvicorn app.main:app --reload
 
-# Terminal 3: Frontend
+# Start Frontend (Terminal 3)
 cd frontend && npm run dev
 
-# Train ML model
+# Train ML model (optional)
 cd backend && python3 -m ml.train_model
 
 # Test API
 curl http://localhost:8000/api/health
+curl http://localhost:8000/api/otp/status
 curl -X POST http://localhost:8000/api/routes \
   -H "Content-Type: application/json" \
   -d '{"origin":{"lat":43.7804,"lng":-79.4153},"destination":{"lat":43.6453,"lng":-79.3806}}'
-
-# Test OTP (if running)
-curl "http://localhost:8080/otp/routers/default/plan?fromPlace=43.6532,-79.3832&toPlace=43.7804,-79.4153&mode=TRANSIT,WALK"
 ```
-
----
-
-**Remember:** A working demo with fewer features beats a broken demo with everything. Ship early, ship often, keep the fallbacks.
-
----
-
-## Timeline At-a-Glance
-
-```
-SAT FEB 15
-──────────
- 3:00 AM   Planning done. Go to sleep.
-10:00 AM   Phase 0 — Critical fixes, verify app runs
-11:30 AM   Phase 1 — Train ML model, lock in all features
- 2:00 PM   Phase 2 — GTFS data download, OTP setup, real-time feeds (BIGGEST BLOCK)
- 7:00 PM   Phase 3 — Tune ML predictions, polish Gemini chat
-10:00 PM   Phase 4 — UI polish, pre-test demo routes, update docs
-
-SUN FEB 16
-──────────
- 1:00 AM   Phase 5 — Cold-start test, git push, tag submission
- 3:00 AM   CODE FREEZE — no new features, only critical bug fixes
- 6:00 AM   Rest / sleep
- 8:00 AM   Wake up, final sanity check
- 9:00 AM   DEADLINE
-```
-
-Good luck, Team FluxRoute!
