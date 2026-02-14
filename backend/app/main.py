@@ -33,6 +33,15 @@ async def lifespan(app: FastAPI):
     app_state["predictor"] = predictor
     logger.info(f"ML predictor mode: {predictor.mode}")
 
+    # Check OTP availability
+    from app.otp_client import check_otp_health
+    otp_available = await check_otp_health()
+    app_state["otp_available"] = otp_available
+    if otp_available:
+        logger.info("OpenTripPlanner is available — using OTP for transit routing")
+    else:
+        logger.info("OpenTripPlanner not available — using heuristic transit routing (fallback)")
+
     logger.info("Starting real-time poller...")
     poller_task = await start_realtime_poller(app_state)
     app_state["poller_task"] = poller_task

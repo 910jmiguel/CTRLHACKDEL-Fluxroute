@@ -6,6 +6,14 @@ const ROUTE_SOURCE_PREFIX = "route-";
 const ROUTE_LAYER_PREFIX = "route-layer-";
 const VEHICLES_SOURCE = "vehicles-source";
 
+// Congestion-based colors for driving segments
+const CONGESTION_COLORS: Record<string, string> = {
+  low: "#10B981",      // Green
+  moderate: "#F59E0B", // Yellow
+  heavy: "#F97316",    // Orange
+  severe: "#EF4444",   // Red
+};
+
 export function clearRoutes(map: mapboxgl.Map) {
   // Remove all route layers and sources
   const style = map.getStyle();
@@ -37,7 +45,11 @@ export function drawMultimodalRoute(
     if (map.getLayer(layerId)) map.removeLayer(layerId);
     if (map.getSource(sourceId)) map.removeSource(sourceId);
 
-    const color = segment.color || MODE_COLORS[segment.mode] || "#FFFFFF";
+    // Use congestion-based color for driving/hybrid driving segments
+    const color =
+      segment.mode === "driving" && segment.congestion_level
+        ? CONGESTION_COLORS[segment.congestion_level] || segment.color || MODE_COLORS[segment.mode] || "#3B82F6"
+        : segment.color || MODE_COLORS[segment.mode] || "#FFFFFF";
 
     map.addSource(sourceId, {
       type: "geojson",

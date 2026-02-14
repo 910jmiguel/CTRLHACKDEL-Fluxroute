@@ -14,6 +14,7 @@ export interface RouteSegment {
   transit_line?: string;
   transit_route_id?: string;
   color?: string;
+  congestion_level?: string; // "low" | "moderate" | "heavy" | "severe"
 }
 
 export interface CostBreakdown {
@@ -43,6 +44,7 @@ export interface RouteOption {
   departure_time?: string;
   arrival_time?: string;
   summary: string;
+  traffic_summary?: string; // "Heavy traffic", "Moderate traffic", etc.
 }
 
 export interface RouteRequest {

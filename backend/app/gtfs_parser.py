@@ -80,18 +80,31 @@ TTC_SUBWAY_STATIONS = [
     {"stop_id": "BD_VCPK", "stop_name": "Victoria Park", "stop_lat": 43.6903, "stop_lon": -79.2930, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
     {"stop_id": "BD_WARD", "stop_name": "Warden", "stop_lat": 43.6917, "stop_lon": -79.2794, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
     {"stop_id": "BD_KNDY", "stop_name": "Kennedy", "stop_lat": 43.7326, "stop_lon": -79.2637, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
-    # Line 3 Scarborough RT
-    {"stop_id": "SRT_SCBC", "stop_name": "Scarborough Centre", "stop_lat": 43.7747, "stop_lon": -79.2577, "route_id": "3", "line": "Line 3 Scarborough"},
-    {"stop_id": "SRT_MCCW", "stop_name": "McCowan", "stop_lat": 43.7750, "stop_lon": -79.2498, "route_id": "3", "line": "Line 3 Scarborough"},
-    {"stop_id": "SRT_LWRE", "stop_name": "Lawrence East", "stop_lat": 43.7482, "stop_lon": -79.2706, "route_id": "3", "line": "Line 3 Scarborough"},
-    {"stop_id": "SRT_ELLM", "stop_name": "Ellesmere", "stop_lat": 43.7668, "stop_lon": -79.2612, "route_id": "3", "line": "Line 3 Scarborough"},
-    {"stop_id": "SRT_MIDL", "stop_name": "Midland", "stop_lat": 43.7706, "stop_lon": -79.2725, "route_id": "3", "line": "Line 3 Scarborough"},
     # Line 4 Sheppard
     {"stop_id": "SH_SHPY", "stop_name": "Sheppard-Yonge", "stop_lat": 43.7615, "stop_lon": -79.4111, "route_id": "4", "line": "Line 4 Sheppard"},
     {"stop_id": "SH_BAYV", "stop_name": "Bayview", "stop_lat": 43.7670, "stop_lon": -79.3868, "route_id": "4", "line": "Line 4 Sheppard"},
     {"stop_id": "SH_BESS", "stop_name": "Bessarion", "stop_lat": 43.7693, "stop_lon": -79.3763, "route_id": "4", "line": "Line 4 Sheppard"},
     {"stop_id": "SH_LESL", "stop_name": "Leslie", "stop_lat": 43.7710, "stop_lon": -79.3659, "route_id": "4", "line": "Line 4 Sheppard"},
     {"stop_id": "SH_DNML", "stop_name": "Don Mills", "stop_lat": 43.7757, "stop_lon": -79.3461, "route_id": "4", "line": "Line 4 Sheppard"},
+    # Line 5 Eglinton Crosstown LRT
+    {"stop_id": "EC_MTPL", "stop_name": "Mount Pleasant", "stop_lat": 43.7077, "stop_lon": -79.3892, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_LIRD", "stop_name": "Leaside", "stop_lat": 43.7080, "stop_lon": -79.3670, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_LAER", "stop_name": "Laird", "stop_lat": 43.7083, "stop_lon": -79.3580, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_BAYO", "stop_name": "Bayview", "stop_lat": 43.7085, "stop_lon": -79.3490, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_SCNC", "stop_name": "Science Centre", "stop_lat": 43.7090, "stop_lon": -79.3388, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_AMES", "stop_name": "Aga Khan Park & Museum", "stop_lat": 43.7228, "stop_lon": -79.3310, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_FRMH", "stop_name": "Ferrand", "stop_lat": 43.7230, "stop_lon": -79.3150, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_PHRM", "stop_name": "Pharmacy", "stop_lat": 43.7233, "stop_lon": -79.2980, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_HKME", "stop_name": "Hakimi Lebovic", "stop_lat": 43.7235, "stop_lon": -79.2815, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_KNDY", "stop_name": "Kennedy", "stop_lat": 43.7326, "stop_lon": -79.2637, "route_id": "5", "line": "Line 5 Eglinton"},
+    # Line 6 Finch West LRT
+    {"stop_id": "FW_FNCH", "stop_name": "Finch West", "stop_lat": 43.7649, "stop_lon": -79.4912, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_DRFT", "stop_name": "Driftwood", "stop_lat": 43.7641, "stop_lon": -79.5089, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_SNTN", "stop_name": "Sentinel", "stop_lat": 43.7638, "stop_lon": -79.5213, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_SGWY", "stop_name": "Signet", "stop_lat": 43.7635, "stop_lon": -79.5352, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_MTNR", "stop_name": "Martin Grove", "stop_lat": 43.7630, "stop_lon": -79.5520, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_KPLG", "stop_name": "Kipling", "stop_lat": 43.7625, "stop_lon": -79.5650, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_HMBR", "stop_name": "Humber College", "stop_lat": 43.7620, "stop_lon": -79.5940, "route_id": "6", "line": "Line 6 Finch West"},
 ]
 
 
@@ -118,11 +131,27 @@ def load_gtfs_data() -> dict:
         "stop_times": "stop_times.txt",
     }
 
+    columns_map = {
+        "stops": ["stop_id", "stop_name", "stop_lat", "stop_lon", "route_id", "line"],
+        "stop_times": ["trip_id", "stop_id", "arrival_time", "departure_time", "stop_sequence"],
+        "trips": ["route_id", "service_id", "trip_id", "trip_headsign", "shape_id"],
+        "shapes": ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"],
+        "routes": ["route_id", "route_short_name", "route_long_name", "route_color"],
+    }
+
     try:
         for key, fname in files.items():
             fpath = os.path.join(DATA_DIR, fname)
             if os.path.exists(fpath):
-                data[key] = pd.read_csv(fpath, low_memory=False)
+                # Only load columns that exist in the file to avoid errors
+                usecols = None
+                if key in columns_map:
+                    # quick check of header
+                    with open(fpath, 'r', encoding='utf-8-sig') as f:
+                        header = f.readline().strip().split(',')
+                    usecols = [c for c in columns_map[key] if c in header]
+
+                data[key] = pd.read_csv(fpath, usecols=usecols, low_memory=False)
                 logger.info(f"Loaded {key}: {len(data[key])} rows")
             else:
                 logger.warning(f"GTFS file not found: {fpath}")

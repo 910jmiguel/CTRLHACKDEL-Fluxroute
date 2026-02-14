@@ -14,9 +14,13 @@ logger = logging.getLogger("fluxroute.realtime")
 POLL_INTERVAL = 30  # seconds
 METROLINX_API_KEY = os.getenv("METROLINX_API_KEY", "")
 
-# TTC GTFS-RT endpoints
+# TTC GTFS-RT endpoints (protobuf)
 TTC_VEHICLE_URL = "https://opendata.toronto.ca/toronto-transit-commission/ttc-routes-and-schedules/opendata_ttc_vehicle_positions"
 TTC_ALERTS_URL = "https://opendata.toronto.ca/toronto-transit-commission/ttc-routes-and-schedules/opendata_ttc_alerts"
+
+# TTC JSON-based API (more reliable fallback)
+TTC_LIVE_VEHICLES_URL = "https://alerts.ttc.ca/api/alerts/live-map/getVehicles"
+TTC_LIVE_ALERTS_URL = "https://alerts.ttc.ca/api/alerts/list"
 
 # TTC subway line coordinates for mock vehicles
 SUBWAY_LINES = {
@@ -50,6 +54,28 @@ SUBWAY_LINES = {
         "coords": [
             (43.7615, -79.4111), (43.7670, -79.3868), (43.7693, -79.3763),
             (43.7710, -79.3659), (43.7757, -79.3461),
+        ],
+    },
+    "5": {  # Eglinton Crosstown LRT
+        "name": "Line 5 Eglinton",
+        "color": "#FF6600",
+        "coords": [
+            (43.6898, -79.5520), (43.6909, -79.5299), (43.6921, -79.5105),
+            (43.6930, -79.4882), (43.6942, -79.4650), (43.6956, -79.4432),
+            (43.6972, -79.4210), (43.6986, -79.3989), (43.7000, -79.3780),
+            (43.7017, -79.3593), (43.7032, -79.3442), (43.7048, -79.3292),
+            (43.7065, -79.3150), (43.7078, -79.2990), (43.7090, -79.2815),
+            (43.7100, -79.2636),
+        ],
+    },
+    "6": {  # Finch West LRT
+        "name": "Line 6 Finch West",
+        "color": "#8B4513",
+        "coords": [
+            (43.7630, -79.5950), (43.7635, -79.5750), (43.7640, -79.5550),
+            (43.7645, -79.5350), (43.7650, -79.5150), (43.7655, -79.4950),
+            (43.7660, -79.4770), (43.7665, -79.4590), (43.7670, -79.4410),
+            (43.7675, -79.4230), (43.7680, -79.4111),
         ],
     },
 }
@@ -131,83 +157,212 @@ def _get_mock_alerts() -> list[ServiceAlert]:
     return random.sample(MOCK_ALERTS, k=min(3, len(MOCK_ALERTS)))
 
 
+async def _try_fetch_vehicles_protobuf(client: httpx.AsyncClient) -> list[VehiclePosition]:
+    """Try TTC GTFS-RT protobuf vehicle feed."""
+    resp = await client.get(TTC_VEHICLE_URL)
+    if resp.status_code != 200:
+        return []
+
+    from google.transit import gtfs_realtime_pb2
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(resp.content)
+
+    vehicles = []
+    for entity in feed.entity:
+        if entity.HasField("vehicle"):
+            vp = entity.vehicle
+            vehicles.append(VehiclePosition(
+                vehicle_id=str(vp.vehicle.id) if vp.vehicle.id else entity.id,
+                route_id=str(vp.trip.route_id) if vp.trip.route_id else None,
+                latitude=vp.position.latitude,
+                longitude=vp.position.longitude,
+                bearing=vp.position.bearing if vp.position.bearing else None,
+                speed=vp.position.speed if vp.position.speed else None,
+                timestamp=vp.timestamp if vp.timestamp else None,
+            ))
+    return vehicles
+
+
+async def _try_fetch_vehicles_json(client: httpx.AsyncClient) -> list[VehiclePosition]:
+    """Try TTC JSON vehicle API (fallback)."""
+    resp = await client.get(TTC_LIVE_VEHICLES_URL)
+    if resp.status_code != 200:
+        return []
+
+    data = resp.json()
+    vehicles = []
+    ts = int(time.time())
+
+    # The TTC live-map API returns vehicles grouped by route
+    if isinstance(data, dict):
+        for route_id, route_vehicles in data.items():
+            if not isinstance(route_vehicles, list):
+                continue
+            for v in route_vehicles:
+                try:
+                    vehicles.append(VehiclePosition(
+                        vehicle_id=str(v.get("id", f"ttc_{route_id}_{len(vehicles)}")),
+                        route_id=str(route_id),
+                        latitude=float(v.get("lat", 0)),
+                        longitude=float(v.get("lon", v.get("lng", 0))),
+                        bearing=float(v["heading"]) if v.get("heading") else None,
+                        speed=float(v["speed"]) if v.get("speed") else None,
+                        timestamp=ts,
+                    ))
+                except (ValueError, KeyError):
+                    continue
+    elif isinstance(data, list):
+        for v in data:
+            try:
+                vehicles.append(VehiclePosition(
+                    vehicle_id=str(v.get("id", f"ttc_{len(vehicles)}")),
+                    route_id=str(v.get("routeId", v.get("route_id", ""))),
+                    latitude=float(v.get("lat", v.get("latitude", 0))),
+                    longitude=float(v.get("lon", v.get("lng", v.get("longitude", 0)))),
+                    bearing=float(v["heading"]) if v.get("heading") else None,
+                    speed=float(v["speed"]) if v.get("speed") else None,
+                    timestamp=ts,
+                ))
+            except (ValueError, KeyError):
+                continue
+
+    return vehicles
+
+
+async def _try_fetch_alerts_protobuf(client: httpx.AsyncClient) -> list[ServiceAlert]:
+    """Try TTC GTFS-RT protobuf alerts feed."""
+    resp = await client.get(TTC_ALERTS_URL)
+    if resp.status_code != 200:
+        return []
+
+    from google.transit import gtfs_realtime_pb2
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(resp.content)
+
+    alerts = []
+    for entity in feed.entity:
+        if entity.HasField("alert"):
+            alert = entity.alert
+            title = ""
+            desc = ""
+            if alert.header_text and alert.header_text.translation:
+                title = alert.header_text.translation[0].text
+            if alert.description_text and alert.description_text.translation:
+                desc = alert.description_text.translation[0].text
+
+            route_id = None
+            if alert.informed_entity:
+                route_id = alert.informed_entity[0].route_id or None
+
+            alerts.append(ServiceAlert(
+                id=entity.id,
+                route_id=route_id,
+                title=title or "Service Alert",
+                description=desc or "No details available",
+                severity="warning",
+            ))
+    return alerts
+
+
+async def _try_fetch_alerts_json(client: httpx.AsyncClient) -> list[ServiceAlert]:
+    """Try TTC JSON alerts API (fallback)."""
+    resp = await client.get(TTC_LIVE_ALERTS_URL)
+    if resp.status_code != 200:
+        return []
+
+    data = resp.json()
+    alerts = []
+
+    # TTC alerts API uses "routes" key, other formats may use "alerts" or "data"
+    alert_list = data if isinstance(data, list) else data.get("routes", data.get("alerts", data.get("data", [])))
+    for item in alert_list:
+        try:
+            # Map TTC severity values
+            severity = "info"
+            sev_str = str(item.get("severity", item.get("priority", ""))).lower()
+            if "critical" in sev_str or sev_str == "error":
+                severity = "error"
+            elif "major" in sev_str or "warning" in sev_str or str(item.get("priority", "")) == "1":
+                severity = "warning"
+
+            # Use headerText (TTC format) or title
+            title = item.get("headerText", item.get("customHeaderText", item.get("title", "Service Alert")))
+            description = item.get("description", "") or title
+
+            route_id = item.get("route")
+            if route_id and str(route_id) == "9999":
+                route_id = None  # TTC uses 9999 for system-wide alerts
+
+            alerts.append(ServiceAlert(
+                id=str(item.get("id", f"alert_{len(alerts)}")),
+                route_id=str(route_id) if route_id else None,
+                title=title[:200] if title else "Service Alert",
+                description=description[:500] if description else "No details",
+                severity=severity,
+            ))
+        except (ValueError, KeyError):
+            continue
+
+    return alerts
+
+
 async def _try_fetch_realtime(app_state: dict) -> None:
     """Try to fetch real GTFS-RT data, fall back to mock."""
+    vehicles_fetched = False
+    alerts_fetched = False
+
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Try TTC vehicle positions
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            # Try vehicle positions: protobuf first, then JSON
             try:
-                resp = await client.get(TTC_VEHICLE_URL)
-                if resp.status_code == 200:
-                    from google.transit import gtfs_realtime_pb2
-                    feed = gtfs_realtime_pb2.FeedMessage()
-                    feed.ParseFromString(resp.content)
+                vehicles = await _try_fetch_vehicles_protobuf(client)
+                if vehicles:
+                    app_state["vehicles"] = vehicles
+                    vehicles_fetched = True
+                    logger.info(f"Fetched {len(vehicles)} real vehicle positions (protobuf)")
+            except Exception as e:
+                logger.debug(f"TTC protobuf vehicle feed unavailable: {e}")
 
-                    vehicles = []
-                    for entity in feed.entity:
-                        if entity.HasField("vehicle"):
-                            vp = entity.vehicle
-                            vehicles.append(VehiclePosition(
-                                vehicle_id=str(vp.vehicle.id) if vp.vehicle.id else entity.id,
-                                route_id=str(vp.trip.route_id) if vp.trip.route_id else None,
-                                latitude=vp.position.latitude,
-                                longitude=vp.position.longitude,
-                                bearing=vp.position.bearing if vp.position.bearing else None,
-                                speed=vp.position.speed if vp.position.speed else None,
-                                timestamp=vp.timestamp if vp.timestamp else None,
-                            ))
-
+            if not vehicles_fetched:
+                try:
+                    vehicles = await _try_fetch_vehicles_json(client)
                     if vehicles:
                         app_state["vehicles"] = vehicles
-                        logger.info(f"Fetched {len(vehicles)} real vehicle positions")
-                        return
-            except Exception as e:
-                logger.debug(f"TTC vehicle feed unavailable: {e}")
+                        vehicles_fetched = True
+                        logger.info(f"Fetched {len(vehicles)} real vehicle positions (JSON)")
+                except Exception as e:
+                    logger.debug(f"TTC JSON vehicle feed unavailable: {e}")
 
-            # Try TTC alerts
+            # Try alerts: protobuf first, then JSON
             try:
-                resp = await client.get(TTC_ALERTS_URL)
-                if resp.status_code == 200:
-                    from google.transit import gtfs_realtime_pb2
-                    feed = gtfs_realtime_pb2.FeedMessage()
-                    feed.ParseFromString(resp.content)
+                alerts = await _try_fetch_alerts_protobuf(client)
+                if alerts:
+                    app_state["alerts"] = alerts
+                    alerts_fetched = True
+                    logger.info(f"Fetched {len(alerts)} real alerts (protobuf)")
+            except Exception as e:
+                logger.debug(f"TTC protobuf alerts feed unavailable: {e}")
 
-                    alerts = []
-                    for entity in feed.entity:
-                        if entity.HasField("alert"):
-                            alert = entity.alert
-                            title = ""
-                            desc = ""
-                            if alert.header_text and alert.header_text.translation:
-                                title = alert.header_text.translation[0].text
-                            if alert.description_text and alert.description_text.translation:
-                                desc = alert.description_text.translation[0].text
-
-                            route_id = None
-                            if alert.informed_entity:
-                                route_id = alert.informed_entity[0].route_id or None
-
-                            alerts.append(ServiceAlert(
-                                id=entity.id,
-                                route_id=route_id,
-                                title=title or "Service Alert",
-                                description=desc or "No details available",
-                                severity="warning",
-                            ))
-
+            if not alerts_fetched:
+                try:
+                    alerts = await _try_fetch_alerts_json(client)
                     if alerts:
                         app_state["alerts"] = alerts
-                        logger.info(f"Fetched {len(alerts)} real alerts")
-            except Exception as e:
-                logger.debug(f"TTC alerts feed unavailable: {e}")
+                        alerts_fetched = True
+                        logger.info(f"Fetched {len(alerts)} real alerts (JSON)")
+                except Exception as e:
+                    logger.debug(f"TTC JSON alerts feed unavailable: {e}")
 
     except Exception as e:
         logger.debug(f"Real-time fetch failed: {e}")
 
-    # Fallback to mock data
-    app_state["vehicles"] = _generate_mock_vehicles()
-    app_state["alerts"] = _get_mock_alerts()
-    logger.debug("Using mock real-time data")
+    # Fallback to mock data for anything we couldn't fetch
+    if not vehicles_fetched:
+        app_state["vehicles"] = _generate_mock_vehicles()
+        logger.debug("Using mock vehicle data")
+    if not alerts_fetched:
+        app_state["alerts"] = _get_mock_alerts()
+        logger.debug("Using mock alert data")
 
 
 async def _poller_loop(app_state: dict):

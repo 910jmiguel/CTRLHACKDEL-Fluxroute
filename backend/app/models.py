@@ -28,6 +28,7 @@ class RouteSegment(BaseModel):
     transit_line: Optional[str] = None
     transit_route_id: Optional[str] = None
     color: Optional[str] = None
+    congestion_level: Optional[str] = None  # "low", "moderate", "heavy", "severe"
 
 
 class CostBreakdown(BaseModel):
@@ -57,6 +58,7 @@ class RouteOption(BaseModel):
     departure_time: Optional[str] = None
     arrival_time: Optional[str] = None
     summary: str = ""
+    traffic_summary: str = ""  # "Heavy traffic", "Moderate traffic", etc.
 
 
 class RouteRequest(BaseModel):
