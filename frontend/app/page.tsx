@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Coordinate, VehiclePosition } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useTimeBasedTheme } from "@/hooks/useTimeBasedTheme";
@@ -21,11 +21,14 @@ export default function Home() {
     selectRoute,
   } = useRoutes();
 
-  const { theme, isDark } = useTimeBasedTheme();
+  const { theme } = useTimeBasedTheme();
   const [origin, setOrigin] = useState<Coordinate | null>(null);
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
   const [showTraffic, setShowTraffic] = useState(true);
+
+  const prevOriginRef = useRef<Coordinate | null>(null);
+  const prevDestRef = useRef<Coordinate | null>(null);
 
   // Always keep UI in dark mode (map still uses time-based theme)
   useEffect(() => {
@@ -36,10 +39,39 @@ export default function Home() {
     (orig: Coordinate, dest: Coordinate) => {
       setOrigin(orig);
       setDestination(dest);
+      // Update refs so auto-search effect doesn't double-fire
+      prevOriginRef.current = orig;
+      prevDestRef.current = dest;
       fetchRoutes(orig, dest);
     },
     [fetchRoutes]
   );
+
+  const handleMapClick = useCallback((coord: { lat: number; lng: number }) => {
+    if (!origin) {
+      setOrigin(coord);
+    } else {
+      setDestination(coord);
+    }
+  }, [origin]);
+
+  // Auto-search when both origin and destination are set via map clicks
+  useEffect(() => {
+    if (!origin || !destination) return;
+    const originChanged =
+      prevOriginRef.current?.lat !== origin.lat ||
+      prevOriginRef.current?.lng !== origin.lng;
+    const destChanged =
+      prevDestRef.current?.lat !== destination.lat ||
+      prevDestRef.current?.lng !== destination.lng;
+
+    prevOriginRef.current = origin;
+    prevDestRef.current = destination;
+
+    if (originChanged || destChanged) {
+      fetchRoutes(origin, destination);
+    }
+  }, [origin, destination, fetchRoutes]);
 
   // Poll vehicles every 15 seconds
   useEffect(() => {
@@ -86,6 +118,7 @@ export default function Home() {
             vehicles={vehicles}
             theme={theme}
             showTraffic={showTraffic}
+            onMapClick={handleMapClick}
           />
 
           {/* Loading overlay */}

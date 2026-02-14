@@ -75,11 +75,21 @@ FluxRoute requires 2 API keys to be fully functional (plus 1 optional key). This
 
 ### Backend — `backend/.env`
 
+Copy `backend/.env.example` to `backend/.env` and fill in your API keys:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Then edit `backend/.env`:
+
 ```
 GEMINI_API_KEY=your-api-key-here
 MAPBOX_TOKEN=pk.your-token-here
 METROLINX_API_KEY=
 ```
+
+**Note:** Without `MAPBOX_TOKEN`, driving and walking routes will render as straight lines instead of following roads. The backend will log a warning at startup if the token is missing.
 
 ### Frontend — `frontend/.env.local`
 
@@ -113,6 +123,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - Check that `MAPBOX_TOKEN` is set in **both** `backend/.env` and `frontend/.env.local`
 - Ensure the token starts with `pk.`
 - Verify you restarted both servers
+
+**Driving/walking routes show as straight lines (not following roads):**
+- Add `MAPBOX_TOKEN=pk.xxxxx` to `backend/.env` (use the same token as in `frontend/.env.local`)
+- Restart the backend server
+- Check backend logs at startup for the MAPBOX_TOKEN warning
 
 **AI chat doesn't work:**
 - Confirm `GEMINI_API_KEY` is set in `backend/.env`

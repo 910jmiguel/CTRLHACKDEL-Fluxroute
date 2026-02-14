@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -18,6 +19,15 @@ app_state: dict = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load data, ML model, and start real-time poller on startup."""
+    mapbox_token = os.getenv("MAPBOX_TOKEN", "")
+    if not mapbox_token or mapbox_token == "your-mapbox-token-here":
+        logger.warning(
+            "MAPBOX_TOKEN is missing or placeholder in backend/.env — "
+            "driving/walking routes will use straight-line fallback. "
+            "Copy backend/.env.example to backend/.env and add your "
+            "Mapbox token for road-following routes."
+        )
+
     from app.gtfs_parser import load_gtfs_data
     from app.ml_predictor import DelayPredictor
     from app.gtfs_realtime import start_realtime_poller, stop_realtime_poller

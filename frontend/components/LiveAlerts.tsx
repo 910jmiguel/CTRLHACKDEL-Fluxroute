@@ -24,6 +24,10 @@ export default function LiveAlerts() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    setCurrentIdx((prev) => Math.min(prev, Math.max(0, alerts.length - 1)));
+  }, [alerts]);
+
   // Rotate through alerts
   useEffect(() => {
     if (alerts.length <= 1) return;
@@ -36,6 +40,8 @@ export default function LiveAlerts() {
   if (alerts.length === 0) return null;
 
   const alert = alerts[currentIdx];
+  if (!alert) return null;
+
   const Icon =
     alert.severity === "error"
       ? XCircle
