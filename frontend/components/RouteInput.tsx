@@ -35,7 +35,7 @@ export default function RouteInput({ onSearch, loading }: RouteInputProps) {
       try {
         const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
           query
-        )}.json?access_token=${MAPBOX_TOKEN}&limit=10`;
+        )}.json?access_token=${MAPBOX_TOKEN}&limit=10&country=ca`;
 
         const res = await fetch(url);
         const data = await res.json();
