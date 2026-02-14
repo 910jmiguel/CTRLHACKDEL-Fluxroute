@@ -15,7 +15,7 @@ Built for **CTRL+HACK+DEL Hackathon 2025**.
 - **Service Alerts** — Live TTC service alerts with rotating banner
 - **Cost Breakdown** — Detailed fare, gas, and parking cost calculations for every route
 - **Stress Scoring** — Each route gets a stress score based on transfers, delays, traffic, and weather
-- **AI Chat Assistant** — Claude-powered assistant with tool use for route planning, delay checks, and transit tips
+- **AI Chat Assistant** — Google Gemini-powered assistant with tool use for route planning, delay checks, and transit tips
 - **Weather Integration** — Real-time weather from Open-Meteo API, factored into delay predictions and route scoring
 - **Dark Theme UI** — Glassmorphism design with Mapbox dark-v11 map style
 
@@ -27,8 +27,8 @@ Built for **CTRL+HACK+DEL Hackathon 2025**.
 - **Framework:** FastAPI (Python 3.12)
 - **ML:** XGBoost (classifier + regressor), scikit-learn
 - **Data:** Real TTC GTFS static feed (9,388 stops, 230 routes, 437K shape points)
-- **APIs:** Mapbox Directions, Open-Meteo Weather, Anthropic Claude, TTC GTFS-RT
-- **Libraries:** pandas, httpx, joblib, protobuf
+- **APIs:** Mapbox Directions, Open-Meteo Weather, Google Gemini, TTC GTFS-RT
+- **Libraries:** pandas, httpx, joblib, protobuf, google-generativeai
 
 ### Frontend
 - **Framework:** Next.js 14 (App Router, TypeScript)
@@ -54,7 +54,7 @@ fluxroute/
 │   │   ├── cost_calculator.py   # Fare, gas, parking cost calculations
 │   │   ├── weather.py           # Open-Meteo weather API integration
 │   │   ├── gtfs_realtime.py     # Real-time vehicle positions and alerts
-│   │   └── claude_agent.py      # AI chat assistant with tool use
+│   │   └── gemini_agent.py      # Gemini AI chat assistant with tool use
 │   ├── ml/
 │   │   ├── feature_engineering.py  # Feature extraction from delay CSV
 │   │   ├── train_model.py          # XGBoost model training pipeline
@@ -88,8 +88,12 @@ fluxroute/
 │   │   ├── useRoutes.ts         # Route fetching and selection state
 │   │   └── useChat.ts           # Chat message state management
 │   └── package.json
+├── docs/
+│   ├── ROADMAP.md               # Hackathon roadmap & checklist
+│   └── API_KEYS_SETUP.md        # API key setup instructions
 ├── .gitignore
-└── README.md
+├── README.md
+└── CLAUDE.md                    # Project guide for Claude Code
 ```
 
 ---
@@ -101,15 +105,16 @@ fluxroute/
 - **npm** or **yarn**
 - **Homebrew** (macOS only, for XGBoost dependency)
 
-### API Keys (optional but recommended)
+### API Keys
 
 | Key | Purpose | Required? |
 |-----|---------|-----------|
 | `MAPBOX_TOKEN` | Map display and route directions | Yes for map |
-| `ANTHROPIC_API_KEY` | AI chat assistant | No (chat shows fallback message) |
+| `GEMINI_API_KEY` | AI chat assistant (Google Gemini) | No (chat shows fallback message) |
 | `METROLINX_API_KEY` | GO Transit real-time data | No (mock data used) |
 
 Get a free Mapbox token at [mapbox.com](https://account.mapbox.com/access-tokens/).
+Get a free Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey).
 
 ---
 
@@ -142,7 +147,7 @@ cd ../../..
 
 Create `backend/.env`:
 ```env
-ANTHROPIC_API_KEY=your-anthropic-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
 MAPBOX_TOKEN=your-mapbox-token-here
 METROLINX_API_KEY=your-metrolinx-api-key-here
 ```
@@ -152,6 +157,8 @@ Create `frontend/.env.local`:
 NEXT_PUBLIC_MAPBOX_TOKEN=your-mapbox-token-here
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+See `docs/API_KEYS_SETUP.md` for detailed instructions.
 
 ### 4. Train the ML model (optional)
 
@@ -176,7 +183,7 @@ Open two terminals:
 **Terminal 1 — Backend:**
 ```bash
 cd backend
-python3 -m uvicorn app.main:app --reload 
+python3 -m uvicorn app.main:app --reload
 # OR
 python -m uvicorn app.main:app --reload
 ```
@@ -197,7 +204,7 @@ The app will be available at `http://localhost:3000`.
 |--------|----------|-------------|
 | POST | `/api/routes` | Generate multimodal route options |
 | GET | `/api/predict-delay` | ML delay prediction for a TTC line |
-| POST | `/api/chat` | AI chat assistant |
+| POST | `/api/chat` | Gemini AI chat assistant |
 | GET | `/api/alerts` | Current service alerts |
 | GET | `/api/vehicles` | Live vehicle positions |
 | GET | `/api/transit-shape/{id}` | GeoJSON shape for a transit route |
@@ -234,7 +241,7 @@ FluxRoute is designed to work even when external services are unavailable:
 | Delay CSV unavailable | Heuristic predictor based on real TTC delay patterns |
 | GTFS-RT feeds down | Mock vehicle positions along subway lines + sample alerts |
 | Mapbox API unavailable | Straight-line geometry with haversine distance estimates |
-| Claude API unavailable | Chat shows friendly error; all other features work |
+| Gemini API unavailable | Chat shows friendly error; all other features work |
 | Weather API down | Default Toronto winter conditions |
 
 ---

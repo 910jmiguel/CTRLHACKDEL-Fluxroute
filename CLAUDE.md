@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # FluxRoute — Project Guide for Claude
 
 ## Project Overview
@@ -10,7 +9,7 @@ FluxRoute is an **AI-powered multimodal transit routing application** for the Gr
 - ML-based TTC subway delay predictions using XGBoost
 - Real-time GTFS data integration (TTC schedules + live vehicle positions)
 - Decision matrix for optimizing by speed (Fastest), cost (Thrifty), or comfort (Zen)
-- AI chat assistant powered by Google Gemini (formerly Claude/Anthropic)
+- AI chat assistant powered by Google Gemini
 
 ---
 
@@ -107,7 +106,7 @@ fluxroute/
 │   │   ├── cost_calculator.py   # TTC/GO fares, gas, parking calculations
 │   │   ├── weather.py           # Open-Meteo weather integration
 │   │   ├── gtfs_realtime.py     # GTFS-RT vehicle positions + alerts poller
-│   │   └── claude_agent.py      # Gemini AI chat assistant with tools
+│   │   └── gemini_agent.py      # Gemini AI chat assistant with tools
 │   ├── ml/
 │   │   ├── feature_engineering.py  # Delay CSV → ML features
 │   │   ├── train_model.py          # XGBoost training pipeline
@@ -145,9 +144,12 @@ fluxroute/
 │   ├── package.json
 │   └── .env.local               # Frontend config (gitignored)
 │
+├── docs/
+│   ├── ROADMAP.md               # Hackathon roadmap & checklist
+│   └── API_KEYS_SETUP.md        # API key setup instructions
+│
 ├── .gitignore
 ├── README.md
-├── API_KEYS_SETUP.md
 └── CLAUDE.md                    # This file
 ```
 
@@ -224,7 +226,7 @@ fluxroute/
 - Calculates fare, gas, and parking costs
 - **TTC Fares:** $3.35 single, $3.00 PRESTO
 - **GO Transit Fares:** Distance-based ($4-$12)
-- **Gas Cost:** Distance × fuel consumption × gas price
+- **Gas Cost:** Distance x fuel consumption x gas price
 - **Parking:** Downtown ($15-$30), suburbs ($5-$10)
 - Returns `CostBreakdown` model
 
@@ -242,8 +244,8 @@ fluxroute/
 - **Mock fallback:** If GTFS-RT unavailable, generates mock subway vehicle positions and sample alerts
 - Updates `app_state["vehicles"]` and `app_state["alerts"]`
 
-#### `app/claude_agent.py`
-- **AI chat assistant** powered by **Google Gemini** (note: originally designed for Claude/Anthropic, migrated to Gemini)
+#### `app/gemini_agent.py`
+- **AI chat assistant** powered by **Google Gemini** (`google-generativeai` SDK)
 - **Tool use:** Can call route prediction, delay checking, and transit info tools
 - **Context-aware:** Receives user location, current routes, weather
 - **Returns:** `ChatResponse` with message + suggested actions
@@ -296,7 +298,7 @@ fluxroute/
 #### `components/RouteInput.tsx`
 - Mapbox Geocoder integration
 - Origin/destination input fields
-- **Geocoding scope:** Toronto bounding box (43.58-43.85°N, -79.65--79.12°W)
+- **Geocoding scope:** Toronto bounding box (43.58-43.85N, -79.65--79.12W)
 - Triggers route search on submission
 
 #### `components/RouteCards.tsx`
@@ -339,11 +341,11 @@ fluxroute/
 #### `lib/api.ts`
 - Typed API client with fetch wrappers
 - **Functions:**
-  - `fetchRoutes(origin, destination)` → `RouteResponse`
-  - `sendChatMessage(message, history, context)` → `ChatResponse`
-  - `getAlerts()` → `{alerts: ServiceAlert[]}`
-  - `getVehicles()` → `{vehicles: VehiclePosition[]}`
-  - `predictDelay(params)` → `DelayPredictionResponse`
+  - `fetchRoutes(origin, destination)` -> `RouteResponse`
+  - `sendChatMessage(message, history, context)` -> `ChatResponse`
+  - `getAlerts()` -> `{alerts: ServiceAlert[]}`
+  - `getVehicles()` -> `{vehicles: VehiclePosition[]}`
+  - `predictDelay(params)` -> `DelayPredictionResponse`
 
 #### `lib/constants.ts`
 - Configuration constants:
@@ -396,7 +398,7 @@ fluxroute/
 ### Naming Conventions
 - **Backend:** snake_case for variables/functions, PascalCase for classes
 - **Frontend:** camelCase for variables/functions, PascalCase for components
-- **Files:** kebab-case for multi-word files (e.g., `route-engine.py`)
+- **Files:** snake_case for Python files, PascalCase for React components
 - **API endpoints:** `/api/kebab-case` pattern
 
 ### Code Quality Standards
@@ -546,7 +548,7 @@ python3 -m ml.train_model
 cd frontend
 npm install
 
-# Configure .env files (see API_KEYS_SETUP.md)
+# Configure .env files (see docs/API_KEYS_SETUP.md)
 ```
 
 ### Run Development Servers
@@ -644,10 +646,10 @@ FluxRoute is designed to work even when external services fail:
 - **Chat not working:** Check `GEMINI_API_KEY` in `backend/.env` and backend logs
 
 ### AI Integration Notes
-- **Originally designed for Anthropic Claude API** but migrated to **Google Gemini**
-- File `claude_agent.py` name is legacy (now uses Gemini)
-- API key env var changed from `ANTHROPIC_API_KEY` to `GEMINI_API_KEY`
-- See `API_KEYS_SETUP.md` for updated Gemini setup instructions
+- AI chat is powered by **Google Gemini** via the `google-generativeai` Python SDK
+- Chat implementation lives in `backend/app/gemini_agent.py`
+- API key env var: `GEMINI_API_KEY`
+- See `docs/API_KEYS_SETUP.md` for setup instructions
 
 ---
 
@@ -686,7 +688,7 @@ The decision matrix compares routes by three criteria:
 ### Stress Score Calculation
 Weighted factors:
 - **Transfers:** 0.1 per transfer
-- **Delay probability:** 0.3 × `delay_info.probability`
+- **Delay probability:** 0.3 x `delay_info.probability`
 - **Weather penalty:** 0.2 if precipitation > 5mm
 - **Traffic penalty:** 0.1 if rush hour (7-9am, 4-7pm)
 - **Walking distance:** 0.05 per km
@@ -698,8 +700,8 @@ Weighted factors:
 
 ## Future Enhancement Ideas
 - Real-time schedule updates (integrate TTC GTFS-RT trip updates)
-- Full graph-based transit routing (Dijkstra/A* on GTFS graph)
-- GO Transit real-time data (requires Metrolinx API key)
+- Full graph-based transit routing (OpenTripPlanner integration)
+- Multi-agency GTHA data (GO, YRT, MiWay, Brampton Transit via Transitland)
 - User preferences (avoid transfers, prefer subway, etc.)
 - Historical route performance tracking
 - Multi-stop trip planning
@@ -723,9 +725,9 @@ When working on this project:
 2. **Respect fallback behavior** — Don't break graceful degradation
 3. **Test API integration** — Use curl or Postman to test backend endpoints
 4. **Check environment variables** — Many features require API keys
-5. **Understand data flow** — GTFS data → route engine → ML prediction → cost calculation → response
+5. **Understand data flow** — GTFS data -> route engine -> ML prediction -> cost calculation -> response
 6. **Follow conventions** — snake_case (Python), camelCase (TypeScript), PascalCase (classes/components)
-7. **Read `API_KEYS_SETUP.md`** for detailed API key setup instructions
+7. **Read `docs/API_KEYS_SETUP.md`** for detailed API key setup instructions
 8. **Check `README.md`** for user-facing setup documentation
 
 This project demonstrates:
@@ -738,99 +740,3 @@ This project demonstrates:
 - Glassmorphism UI design
 
 The codebase is well-structured, type-safe, and resilient. Have fun building on it!
-=======
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project
-
-FluxRoute — AI-powered multimodal transit routing app for the Greater Toronto Area. FastAPI backend + Next.js 14 frontend with Mapbox GL maps and XGBoost ML delay predictions for TTC subway lines.
-
-## Commands
-
-### Backend
-```bash
-# Install deps (macOS needs: brew install libomp for XGBoost)
-pip install -r backend/requirements.txt
-
-# Run dev server
-cd backend && python3 -m uvicorn app.main:app --reload
-
-# Train ML model (optional — heuristic fallback works without it)
-cd backend && python3 -m ml.train_model
-```
-
-### Frontend
-```bash
-cd frontend && npm install
-cd frontend && npm run dev      # dev server on :3000
-cd frontend && npm run build    # production build
-cd frontend && npm run lint     # ESLint
-```
-
-### Environment
-Both `backend/.env` and `frontend/.env.local` are gitignored. Required keys:
-- `MAPBOX_TOKEN` / `NEXT_PUBLIC_MAPBOX_TOKEN` — same `pk.` token in both files
-- `ANTHROPIC_API_KEY` — `sk-ant-` key in backend only
-- `METROLINX_API_KEY` — optional, mock data fallback exists
-
-## Architecture
-
-### Backend (`/backend/app/`)
-- **main.py** — FastAPI app with lifespan context manager that loads GTFS data, ML model, and starts real-time polling on startup
-- **routes.py** — All API endpoints under `/api` prefix
-- **route_engine.py** — Core routing logic generating transit/driving/walking/hybrid options with segment-level detail
-- **models.py** — Pydantic v2 models defining the full API contract (RouteRequest → RouteResponse with RouteOption[], etc.)
-- **gtfs_parser.py** — Loads TTC GTFS static feed; falls back to 75 hardcoded subway stations if files missing
-- **ml_predictor.py** — XGBoost delay prediction with heuristic fallback using real TTC line patterns (rush hour, seasonal, weather modifiers)
-- **claude_agent.py** — Anthropic Claude chat with tool use (route planning, delay checks)
-- **gtfs_realtime.py** — Polls TTC/Metrolinx GTFS-RT feeds for vehicle positions and service alerts
-- **cost_calculator.py** — TTC fare ($3.35), gas ($0.15/km), parking cost estimation
-- **weather.py** — Open-Meteo API integration
-
-### ML Pipeline (`/backend/ml/`)
-- **feature_engineering.py** — Extracts temporal features (hour, day, rush hour, weekend) from TTC delay CSV with dynamic column detection
-- **train_model.py** — Trains XGBoost classifier (delay probability) + regressor (expected minutes), saves as `delay_model.joblib`
-
-### Frontend (`/frontend/`)
-Next.js 14 App Router, TypeScript strict mode, Tailwind CSS, dark glassmorphism theme.
-
-- **app/page.tsx** — Main page composing all components
-- **components/** — FluxMap (Mapbox), Sidebar, RouteInput (geocoder), RouteCards, DecisionMatrix (fastest/thrifty/zen), ChatAssistant, LiveAlerts, DelayIndicator, CostBreakdown
-- **lib/types.ts** — TypeScript interfaces mirroring backend Pydantic models
-- **lib/api.ts** — Typed fetch wrapper for all backend endpoints
-- **lib/constants.ts** — Config: API URL, Mapbox token, Toronto bounds, TTC line colors
-- **lib/mapUtils.ts** — Route polyline drawing, markers, vehicle position updates
-- **hooks/** — useRoutes (route fetching/selection state), useChat (message state)
-
-### API Endpoints
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/api/routes` | Generate multimodal routes |
-| GET | `/api/predict-delay` | ML delay prediction for TTC line |
-| POST | `/api/chat` | Claude AI assistant |
-| GET | `/api/alerts` | Cached TTC service alerts |
-| GET | `/api/vehicles` | Cached vehicle positions |
-| GET | `/api/transit-shape/{route_id}` | GeoJSON shape for route |
-| GET | `/api/nearby-stops` | Stops near coordinates |
-| GET | `/api/weather` | Current conditions |
-| GET | `/api/health` | Health check |
-
-### Data Flow
-1. Frontend sends origin/destination coords → `/api/routes`
-2. Backend route_engine generates up to 3 options using GTFS data + Mapbox Directions API
-3. Each option gets ML delay prediction, cost calculation, stress score
-4. Frontend renders routes on Mapbox map with polylines, shows cards with decision matrix
-5. Real-time: vehicle positions polled every 15s, alerts rotate in banner
-
-### Resilience
-Every external dependency has a fallback: GTFS → hardcoded stations, ML model → heuristic predictor, Mapbox → haversine straight lines, weather → Toronto winter defaults, GTFS-RT → mock vehicles/alerts.
-
-## Notes
-- Use `python3` not `python` (macOS)
-- GTFS data (`backend/data/gtfs/`) is gitignored — downloaded from Toronto Open Data CKAN on first setup
-- `*.joblib` models are gitignored — regenerated via `python3 -m ml.train_model`
-- Frontend path alias: `@/*` maps to project root
-- TTC line normalization in ml_predictor handles many formats ("Line 1", "YU", "Yonge-University" → "1")
->>>>>>> a4ea520bb53c56a1d8ed5d90c3730003f209b3b5

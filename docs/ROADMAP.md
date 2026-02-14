@@ -1,9 +1,21 @@
 # FluxRoute — Hackathon Roadmap & Checklist
 
-**Deadline:** Sunday, February 15, 2025 — 9:00 AM
-**Current Date:** Friday, February 14, 2025
-**Time Remaining:** ~18-20 hours of working time
+**Deadline:** Sunday, February 16, 2025 — 9:00 AM
+**Last Updated:** Saturday, February 15, 2025 — 3:00 AM
+**Time Remaining:** ~15-17 hours of working time (after sleep)
 **Team:** Team FluxRoute — CTRL+HACK+DEL 2025 Hackathon
+
+### Schedule Overview
+```
+Sat Feb 15  3:00 AM  ── NOW (wrap up, go to sleep)
+            ~10 AM   ── Wake up, start Phase 0 + 1
+            ~2 PM    ── Phase 2 (Real Data & Multi-Agency)
+            ~7 PM    ── Phase 3 (ML & AI Polish)
+            ~10 PM   ── Phase 4 (UI/UX & Demo Polish)
+Sun Feb 16  ~1 AM    ── Phase 5 (Final Submission Prep)
+            ~3 AM    ── FREEZE: stop adding features, only fix bugs
+            9:00 AM  ── DEADLINE
+```
 
 ---
 
@@ -52,7 +64,7 @@
 | Issue | Severity | Details |
 |-------|----------|---------|
 | ML model file missing | **Medium** | `delay_model.joblib` not generated — heuristic works but less accurate |
-| Documentation outdated | **Medium** | CLAUDE.md and README still reference Anthropic/Claude instead of Gemini |
+| ~~Documentation outdated~~ | **Done** | CLAUDE.md and README updated to reference Gemini (fixed Feb 15 3AM) |
 | Only TTC data | **High** | No GO Transit, MiWay, YRT, or Brampton Transit data |
 | GTFS-RT uses mock data | **High** | Real-time feeds not connected (mock vehicles/alerts) |
 | No multi-agency routing | **High** | Can't plan trips across TTC + GO + regional agencies |
@@ -164,26 +176,30 @@ User → Frontend (Next.js) → Backend (FastAPI) → Mapbox Directions API
 
 ## 3. Time Budget
 
-**Available:** ~18-20 working hours (Friday evening → Sunday 9 AM)
-**Buffer:** Always keep 1-2 hours for unexpected issues
+**Available:** ~15-17 working hours (Sat morning → Sun 9 AM)
+**Buffer:** Always keep 2-3 hours for unexpected issues and bug fixes
+**Code Freeze:** Sunday 3 AM — no new features after this, only bug fixes
 
-| Phase | Time | Window | Priority |
-|-------|------|--------|----------|
-| **Phase 0** — Critical Fixes | 1 hr | NOW | MUST DO |
-| **Phase 1** — Core Lock-In | 3-4 hrs | Fri evening | MUST DO |
-| **Phase 2** — Real Data & Multi-Agency | 4-5 hrs | Fri night / Sat morning | MUST DO |
-| **Phase 3** — ML & AI Polish | 3-4 hrs | Sat afternoon | SHOULD DO |
-| **Phase 4** — UI/UX & Demo Polish | 3-4 hrs | Sat evening | SHOULD DO |
-| **Phase 5** — Final Submission | 1-2 hrs | Sun morning (before 9 AM) | MUST DO |
-| **Buffer** | 1-2 hrs | Anytime | RESERVE |
+| Phase | Est. Time | Window (Sat-Sun) | Priority |
+|-------|-----------|-------------------|----------|
+| **Phase 0** — Critical Fixes | 1-1.5 hrs | Sat 10:00 AM - 11:30 AM | MUST DO |
+| **Phase 1** — Core Lock-In | 2-3 hrs | Sat 11:30 AM - 2:00 PM | MUST DO |
+| **Phase 2** — Real Data & Multi-Agency | 4-5 hrs | Sat 2:00 PM - 7:00 PM | MUST DO |
+| **Phase 3** — ML & AI Polish | 2-3 hrs | Sat 7:00 PM - 10:00 PM | SHOULD DO |
+| **Phase 4** — UI/UX & Demo Polish | 3-4 hrs | Sat 10:00 PM - Sun 1:00 AM | SHOULD DO |
+| **Phase 5** — Final Submission | 1-2 hrs | Sun 1:00 AM - 3:00 AM | MUST DO |
+| **Bug Fix Buffer** | 2-3 hrs | Sun 3:00 AM - 6:00 AM (if needed) | RESERVE |
+| **Sleep / Rest before demo** | — | Sun 6:00 AM - 9:00 AM | DO IT |
 
 **Golden Rule:** At every phase boundary, you should have a _demoable_ product. Never be in a state where "it's all broken but it'll work when I finish this next thing."
 
+**Tonight (3 AM):** Go to sleep. You've done the planning and doc updates. Fresh eyes tomorrow will be 10x more productive than grinding through bugs at 4 AM.
+
 ---
 
-## Phase 0 — Critical Fixes (NOW) | ~1 hour
+## Phase 0 — Critical Fixes | ~1-1.5 hours | Sat 10:00 AM
 
-These are things that should be done immediately to stabilize the current build.
+First thing when you wake up. Stabilize the current build before touching anything else.
 
 ### Environment & Config
 
@@ -218,7 +234,7 @@ These are things that should be done immediately to stabilize the current build.
 
 ---
 
-## Phase 1 — Core Functionality Lock-In | 3-4 hours
+## Phase 1 — Core Functionality Lock-In | 2-3 hours | Sat 11:30 AM
 
 Lock in all existing features so they work reliably before adding new data sources.
 
@@ -262,9 +278,9 @@ Lock in all existing features so they work reliably before adding new data sourc
 
 ---
 
-## Phase 2 — Real Data & Multi-Agency Transit | 4-5 hours
+## Phase 2 — Real Data & Multi-Agency Transit | 4-5 hours | Sat 2:00 PM
 
-This is the biggest upgrade — moving from TTC-only mock data to real multi-agency GTHA transit.
+This is the biggest and most important upgrade — moving from TTC-only mock data to real multi-agency GTHA transit. **Grab lunch first**, then grind this out.
 
 ### 2A. Gather Multi-Agency GTFS Data | ~1 hour
 
@@ -376,9 +392,9 @@ Replace mock data with live vehicle positions and service alerts.
 
 ---
 
-## Phase 3 — ML & AI Polish | 3-4 hours
+## Phase 3 — ML & AI Polish | 2-3 hours | Sat 7:00 PM
 
-Improve the intelligence layer now that real data is flowing.
+Improve the intelligence layer now that real data is flowing. **Grab dinner first.**
 
 ### ML Delay Predictor
 
@@ -427,9 +443,9 @@ Improve the intelligence layer now that real data is flowing.
 
 ---
 
-## Phase 4 — UI/UX & Demo Polish | 3-4 hours
+## Phase 4 — UI/UX & Demo Polish | 3-4 hours | Sat 10:00 PM
 
-Make it look and feel like a polished product for the demo.
+Make it look and feel like a polished product for the demo. This is the late-night push.
 
 ### Visual Polish
 
@@ -485,11 +501,11 @@ Make it look and feel like a polished product for the demo.
 
 ---
 
-## Phase 5 — Final Submission Prep | 1-2 hours
+## Phase 5 — Final Submission Prep | 1-2 hours | Sun 1:00 AM
 
-**Timeline:** Sunday morning, before 9 AM.
+**Code freeze at 3:00 AM.** After that, only bug fixes. Get some rest before 9 AM.
 
-### Final Testing
+### Final Testing (Sun ~1:00 AM - 2:00 AM)
 
 - [ ] Full cold-start test: kill all servers, restart from scratch
   ```bash
@@ -507,7 +523,7 @@ Make it look and feel like a polished product for the demo.
 - [ ] Verify no console errors, no crashes
 - [ ] Check that real-time data is flowing (vehicles on map, alerts in banner)
 
-### Git & Submission
+### Git & Submission (Sun ~2:00 AM - 3:00 AM)
 
 - [ ] Commit ALL changes with a clean commit message
 - [ ] Push to GitHub: `git push origin main`
@@ -523,6 +539,13 @@ Make it look and feel like a polished product for the demo.
 - [ ] Have the GitHub repo URL ready
 - [ ] Have the local demo ready to screen-share (if virtual) or run on laptop (if in-person)
 
+### Code Freeze (Sun 3:00 AM)
+
+**STOP adding features.** Only fix breaking bugs after this point.
+
+- [ ] If something is broken, fix it. If something is missing, skip it.
+- [ ] Make sure the app starts cleanly and the demo routes work.
+
 ### Backup Plan
 
 - [ ] If OTP isn't working: fall back to existing TTC-only routing (it works!)
@@ -530,7 +553,13 @@ Make it look and feel like a polished product for the demo.
 - [ ] If Gemini API is rate-limited: chat returns friendly error, app still works
 - [ ] If ML model is acting up: heuristic fallback is solid
 
-**Exit Criteria:** App submitted. Repo pushed. Demo-ready. Team can sleep.
+### Rest (Sun 3:00 AM - 9:00 AM)
+
+- [ ] Get some sleep or at least rest before the submission window
+- [ ] Set an alarm for 8:00 AM to do a final sanity check
+- [ ] At 8:30 AM: verify servers are running, do one last demo walkthrough
+
+**Exit Criteria:** App submitted. Repo pushed. Demo-ready. Get some rest.
 
 ---
 
@@ -643,5 +672,28 @@ curl "http://localhost:8080/otp/routers/default/plan?fromPlace=43.6532,-79.3832&
 ---
 
 **Remember:** A working demo with fewer features beats a broken demo with everything. Ship early, ship often, keep the fallbacks.
+
+---
+
+## Timeline At-a-Glance
+
+```
+SAT FEB 15
+──────────
+ 3:00 AM   Planning done. Go to sleep.
+10:00 AM   Phase 0 — Critical fixes, verify app runs
+11:30 AM   Phase 1 — Train ML model, lock in all features
+ 2:00 PM   Phase 2 — GTFS data download, OTP setup, real-time feeds (BIGGEST BLOCK)
+ 7:00 PM   Phase 3 — Tune ML predictions, polish Gemini chat
+10:00 PM   Phase 4 — UI polish, pre-test demo routes, update docs
+
+SUN FEB 16
+──────────
+ 1:00 AM   Phase 5 — Cold-start test, git push, tag submission
+ 3:00 AM   CODE FREEZE — no new features, only critical bug fixes
+ 6:00 AM   Rest / sleep
+ 8:00 AM   Wake up, final sanity check
+ 9:00 AM   DEADLINE
+```
 
 Good luck, Team FluxRoute!
