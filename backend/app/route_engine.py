@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import uuid
@@ -28,38 +29,11 @@ def _get_mapbox_token() -> str:
 MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
 
 
-def _parse_steps(legs: list[dict]) -> list[dict]:
-    """Extract turn-by-turn steps from Mapbox legs."""
-    steps = []
-    for leg in legs:
-        for step in leg.get("steps", []):
-            maneuver = step.get("maneuver", {})
-            steps.append({
-                "instruction": maneuver.get("instruction", ""),
-                "distance_km": round(step.get("distance", 0) / 1000, 2),
-                "duration_min": round(step.get("duration", 0) / 60, 1),
-                "maneuver_type": maneuver.get("type", ""),
-                "maneuver_modifier": maneuver.get("modifier", ""),
-            })
-    return steps
-
-
-def _parse_route(route_data: dict) -> dict:
-    """Parse a single Mapbox route into our format."""
-    legs = route_data.get("legs", [])
-    return {
-        "geometry": route_data["geometry"],
-        "distance_km": route_data["distance"] / 1000,
-        "duration_min": route_data["duration"] / 60,
-        "steps": _parse_steps(legs),
-    }
-
-
 async def _mapbox_directions(
     origin: Coordinate,
     destination: Coordinate,
     profile: str = "driving-traffic",
-    alternatives: bool = False,
+    http_client: Optional[httpx.AsyncClient] = None,
 ) -> Optional[dict]:
     """Call Mapbox Directions API. Returns route data or None on failure."""
     token = _get_mapbox_token()
@@ -77,22 +51,20 @@ async def _mapbox_directions(
         f"{origin.lng},{origin.lat};{destination.lng},{destination.lat}"
         f"?geometries=geojson&overview=full&steps=true{annotations}&access_token={token}"
     )
-    if alternatives:
-        url += "&alternatives=true"
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url)
+        if http_client:
+            resp = await http_client.get(url, timeout=8.0)
             resp.raise_for_status()
             data = resp.json()
+        else:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
 
         routes = data.get("routes", [])
         if not routes:
-            logger.warning(
-                "Mapbox returned 200 but empty routes array for %s: "
-                "origin=(%s, %s) dest=(%s, %s)",
-                profile, origin.lat, origin.lng, destination.lat, destination.lng,
-            )
             return None
 
         route = routes[0]
@@ -117,21 +89,27 @@ async def _mapbox_directions(
                 else:
                     congestion_level = "low"
 
-        result = _parse_route(route)
-        result["congestion"] = congestion
-        result["congestion_level"] = congestion_level
+        # Extract turn-by-turn steps
+        steps = []
+        for leg in route.get("legs", []):
+            for step in leg.get("steps", []):
+                maneuver = step.get("maneuver", {})
+                steps.append({
+                    "instruction": maneuver.get("instruction", ""),
+                    "distance_km": round(step.get("distance", 0) / 1000, 2),
+                    "duration_min": round(step.get("duration", 0) / 60, 1),
+                    "maneuver_type": maneuver.get("type", ""),
+                    "maneuver_modifier": maneuver.get("modifier", ""),
+                })
 
-        # Include alternatives if requested and available
-        if alternatives and len(routes) > 1:
-            result["alternatives"] = [_parse_route(r) for r in routes[1:2]]
-
-        return result
-    except httpx.HTTPStatusError as e:
-        logger.warning(
-            "Mapbox API HTTP error (%s): status=%s body=%s",
-            profile, e.response.status_code, e.response.text[:300],
-        )
-        return None
+        return {
+            "geometry": route["geometry"],
+            "distance_km": route["distance"] / 1000,
+            "duration_min": route["duration"] / 60,
+            "congestion": congestion,
+            "congestion_level": congestion_level,
+            "steps": steps,
+        }
     except Exception as e:
         logger.warning(f"Mapbox API call failed ({profile}): {e}")
         return None
@@ -225,12 +203,47 @@ def _split_geometry_by_congestion(
     return segments
 
 
+def _make_direction_steps(raw_steps: list[dict]) -> list[DirectionStep]:
+    """Convert raw step dicts to DirectionStep models."""
+    return [DirectionStep(**s) for s in raw_steps]
+
+
+async def _fetch_weather(lat: float, lng: float, http_client=None) -> bool:
+    """Fetch weather and return is_adverse flag. Returns False on failure."""
+    try:
+        weather = await get_current_weather(lat, lng, http_client=http_client)
+        return weather.get("is_adverse", False)
+    except Exception:
+        return False
+
+
+async def _fetch_otp(origin, destination, now, modes, otp_available, http_client=None):
+    """Query OTP if available. Returns (otp_used, otp_routes) tuple."""
+    if RouteMode.TRANSIT not in modes or not otp_available:
+        if RouteMode.TRANSIT in modes and not otp_available:
+            logger.info("OTP not available — skipping (using heuristic transit routing)")
+        return False, []
+
+    try:
+        otp_itineraries = await query_otp_routes(
+            origin, destination, now, num_itineraries=3, http_client=http_client
+        )
+        if otp_itineraries:
+            logger.info(f"OTP returned {len(otp_itineraries)} itineraries")
+            return True, otp_itineraries
+    except Exception as e:
+        logger.warning(f"OTP query failed, falling back to heuristic: {e}")
+
+    return False, []
+
+
 async def generate_routes(
     origin: Coordinate,
     destination: Coordinate,
     gtfs: dict,
     predictor: DelayPredictor,
     modes: Optional[list[RouteMode]] = None,
+    app_state: Optional[dict] = None,
 ) -> list[RouteOption]:
     """Generate 3-4 route options for the given origin/destination."""
     if modes is None:
@@ -238,60 +251,48 @@ async def generate_routes(
 
     total_distance = haversine(origin.lat, origin.lng, destination.lat, destination.lng)
     routes: list[RouteOption] = []
-
-    # Get weather for delay prediction
-    try:
-        weather = await get_current_weather(origin.lat, origin.lng)
-        is_adverse = weather.get("is_adverse", False)
-    except Exception:
-        is_adverse = False
-
     now = datetime.now()
 
-    # Try OTP for transit routes first (multi-agency graph routing)
-    otp_used = False
-    if RouteMode.TRANSIT in modes:
-        try:
-            otp_itineraries = await query_otp_routes(origin, destination, now, num_itineraries=3)
-            if otp_itineraries:
-                otp_used = True
-                for itin in otp_itineraries[:2]:  # Take best 2 OTP results
-                    otp_route = parse_otp_itinerary(itin, predictor=predictor, is_adverse=is_adverse)
-                    routes.append(otp_route)
-                logger.info(f"OTP returned {len(otp_itineraries)} itineraries, used {min(2, len(otp_itineraries))}")
-        except Exception as e:
-            logger.warning(f"OTP query failed, falling back to heuristic: {e}")
+    # Get shared http client for connection pooling (falls back to per-call clients)
+    http_client = (app_state or {}).get("http_client")
+    otp_available = (app_state or {}).get("otp_available", False)
 
-    # Generate each mode
+    # Phase 1: Fetch weather + OTP concurrently (instead of sequentially)
+    weather_task = _fetch_weather(origin.lat, origin.lng, http_client=http_client)
+    otp_task = _fetch_otp(origin, destination, now, modes, otp_available, http_client=http_client)
+    is_adverse, (otp_used, otp_itineraries) = await asyncio.gather(weather_task, otp_task)
+
+    # Process OTP results
+    if otp_used:
+        for itin in otp_itineraries[:2]:  # Take best 2 OTP results
+            otp_route = parse_otp_itinerary(itin, predictor=predictor, is_adverse=is_adverse)
+            routes.append(otp_route)
+        logger.info(f"Used {min(2, len(otp_itineraries))} OTP itineraries")
+
+    # Phase 2: Build and run route tasks in parallel
+    tasks = []
     for mode in modes:
-        try:
-            # Skip transit if OTP already handled it
-            if mode == RouteMode.TRANSIT and otp_used:
-                continue
+        if mode == RouteMode.TRANSIT and otp_used:
+            continue
+        if mode == RouteMode.WALKING and total_distance > 5.0:
+            continue
+        tasks.append(_generate_single_route(
+            origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now,
+            http_client=http_client,
+        ))
 
-            if mode == RouteMode.WALKING and total_distance > 5.0:
-                continue  # Skip walking for long distances
-
-            result = await _generate_single_route(
-                origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now
-            )
-            if result:
-                if isinstance(result, list):
-                    routes.extend(result)
-                else:
-                    routes.append(result)
-        except Exception as e:
-            logger.error(f"Failed to generate {mode} route: {e}")
+    # Run all route modes in parallel
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Route generation failed: {result}")
+        elif result:
+            routes.append(result)
 
     # Label routes
     _label_routes(routes)
 
     return routes
-
-
-def _make_direction_steps(raw_steps: list[dict]) -> list[DirectionStep]:
-    """Convert raw step dicts to DirectionStep models."""
-    return [DirectionStep(**s) for s in raw_steps]
 
 
 async def _generate_single_route(
@@ -303,8 +304,9 @@ async def _generate_single_route(
     total_distance: float,
     is_adverse: bool,
     now: datetime,
-) -> Optional[RouteOption | list[RouteOption]]:
-    """Generate route option(s). Driving may return a list with alternatives."""
+    http_client=None,
+) -> Optional[RouteOption]:
+    """Generate a single route option."""
 
     segments: list[RouteSegment] = []
     total_duration = 0.0
@@ -315,11 +317,12 @@ async def _generate_single_route(
 
     if mode == RouteMode.TRANSIT:
         return await _generate_transit_route(
-            origin, destination, gtfs, predictor, total_distance, is_adverse, now
+            origin, destination, gtfs, predictor, total_distance, is_adverse, now,
+            http_client=http_client,
         )
 
     elif mode == RouteMode.DRIVING:
-        mapbox = await _mapbox_directions(origin, destination, "driving-traffic", alternatives=True)
+        mapbox = await _mapbox_directions(origin, destination, "driving-traffic", http_client=http_client)
 
         if mapbox:
             geometry = mapbox["geometry"]
@@ -328,7 +331,7 @@ async def _generate_single_route(
             steps = _make_direction_steps(mapbox.get("steps", []))
         else:
             geometry = _straight_line_geometry(origin, destination)
-            total_dist = total_distance * 1.3
+            total_dist = total_distance * 1.3  # Roads are ~30% longer than straight line
             total_duration = _estimate_duration(total_dist, RouteMode.DRIVING)
             steps = []
 
@@ -368,57 +371,8 @@ async def _generate_single_route(
 
         cost = calculate_cost(RouteMode.DRIVING, total_dist, destination.lat, destination.lng)
 
-        primary = RouteOption(
-            id=str(uuid.uuid4())[:8],
-            label="",
-            mode=mode,
-            segments=segments,
-            total_distance_km=round(total_dist, 2),
-            total_duration_min=round(total_duration, 1),
-            cost=cost,
-            delay_info=delay_info,
-            stress_score=round(min(1.0, stress_score), 2),
-            departure_time=now.strftime("%H:%M"),
-            summary=f"Driving — {total_dist:.1f} km, {total_duration:.0f} min",
-        )
-
-        results: list[RouteOption] = [primary]
-
-        # Build alternative driving routes if available
-        if mapbox and mapbox.get("alternatives"):
-            for alt in mapbox["alternatives"]:
-                alt_dist = alt["distance_km"]
-                alt_dur = alt["duration_min"]
-                alt_steps = _make_direction_steps(alt.get("steps", []))
-                alt_cost = calculate_cost(RouteMode.DRIVING, alt_dist, destination.lat, destination.lng)
-
-                alt_option = RouteOption(
-                    id=str(uuid.uuid4())[:8],
-                    label="",
-                    mode=RouteMode.DRIVING,
-                    segments=[RouteSegment(
-                        mode=RouteMode.DRIVING,
-                        geometry=alt["geometry"],
-                        distance_km=round(alt_dist, 2),
-                        duration_min=round(alt_dur, 1),
-                        instructions="Alternative driving route",
-                        color="#60A5FA",
-                        steps=alt_steps,
-                    )],
-                    total_distance_km=round(alt_dist, 2),
-                    total_duration_min=round(alt_dur, 1),
-                    cost=alt_cost,
-                    delay_info=DelayInfo(),
-                    stress_score=round(min(1.0, stress_score), 2),
-                    departure_time=now.strftime("%H:%M"),
-                    summary=f"Driving (alt) — {alt_dist:.1f} km, {alt_dur:.0f} min",
-                )
-                results.append(alt_option)
-
-        return results
-
     elif mode == RouteMode.WALKING:
-        mapbox = await _mapbox_directions(origin, destination, "walking")
+        mapbox = await _mapbox_directions(origin, destination, "walking", http_client=http_client)
 
         if mapbox:
             geometry = mapbox["geometry"]
@@ -449,7 +403,8 @@ async def _generate_single_route(
 
     elif mode == RouteMode.HYBRID:
         return await _generate_hybrid_route(
-            origin, destination, gtfs, predictor, total_distance, is_adverse, now
+            origin, destination, gtfs, predictor, total_distance, is_adverse, now,
+            http_client=http_client,
         )
     else:
         return None
@@ -486,6 +441,7 @@ async def _generate_transit_route(
     total_distance: float,
     is_adverse: bool,
     now: datetime,
+    http_client=None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
     # Find nearest stops to origin and destination
@@ -502,13 +458,25 @@ async def _generate_transit_route(
     total_duration = 0.0
     total_dist = 0.0
 
-    # Walk to station
+    # Walk to station + walk from station — run in PARALLEL
     walk_to_dist = origin_stop["distance_km"]
     walk_to_dur = _estimate_duration(walk_to_dist, RouteMode.WALKING)
-    walk_to_geo = await _mapbox_directions(
-        origin,
-        Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"]),
-        "walking"
+    walk_from_dist = dest_stop["distance_km"]
+    walk_from_dur = _estimate_duration(walk_from_dist, RouteMode.WALKING)
+
+    walk_to_geo, walk_from_geo = await asyncio.gather(
+        _mapbox_directions(
+            origin,
+            Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"]),
+            "walking",
+            http_client=http_client,
+        ),
+        _mapbox_directions(
+            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+            destination,
+            "walking",
+            http_client=http_client,
+        ),
     )
 
     segments.append(RouteSegment(
@@ -560,15 +528,7 @@ async def _generate_transit_route(
     total_duration += transit_dur
     total_dist += transit_dist
 
-    # Walk from station
-    walk_from_dist = dest_stop["distance_km"]
-    walk_from_dur = _estimate_duration(walk_from_dist, RouteMode.WALKING)
-    walk_from_geo = await _mapbox_directions(
-        Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
-        destination,
-        "walking"
-    )
-
+    # Walk from station (already fetched above in parallel)
     segments.append(RouteSegment(
         mode=RouteMode.WALKING,
         geometry=walk_from_geo["geometry"] if walk_from_geo else _straight_line_geometry(
@@ -629,6 +589,7 @@ async def _generate_hybrid_route(
     total_distance: float,
     is_adverse: bool,
     now: datetime,
+    http_client=None,
 ) -> Optional[RouteOption]:
     """Generate a drive-to-station then transit route."""
     # Find stops near the destination
@@ -656,11 +617,23 @@ async def _generate_hybrid_route(
     total_duration = 0.0
     total_dist = 0.0
 
-    # Drive to station
-    drive_geo = await _mapbox_directions(
-        origin,
-        Coordinate(lat=park_stop["lat"], lng=park_stop["lng"]),
-        "driving-traffic"
+    # Drive to station + walk from final station — run in PARALLEL
+    walk_dist = dest_stop["distance_km"]
+    walk_dur = _estimate_duration(walk_dist, RouteMode.WALKING)
+
+    drive_geo, walk_geo = await asyncio.gather(
+        _mapbox_directions(
+            origin,
+            Coordinate(lat=park_stop["lat"], lng=park_stop["lng"]),
+            "driving-traffic",
+            http_client=http_client,
+        ),
+        _mapbox_directions(
+            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+            destination,
+            "walking",
+            http_client=http_client,
+        ),
     )
 
     drive_dist = drive_geo["distance_km"] if drive_geo else haversine(origin.lat, origin.lng, park_stop["lat"], park_stop["lng"]) * 1.3
@@ -724,15 +697,7 @@ async def _generate_hybrid_route(
     total_duration += transit_dur
     total_dist += transit_dist
 
-    # Walk from final station
-    walk_dist = dest_stop["distance_km"]
-    walk_dur = _estimate_duration(walk_dist, RouteMode.WALKING)
-    walk_geo = await _mapbox_directions(
-        Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
-        destination,
-        "walking"
-    )
-
+    # Walk from final station (already fetched above in parallel)
     segments.append(RouteSegment(
         mode=RouteMode.WALKING,
         geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(

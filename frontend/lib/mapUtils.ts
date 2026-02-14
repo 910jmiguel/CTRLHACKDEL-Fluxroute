@@ -136,8 +136,8 @@ export function drawMultimodalRoute(
 
 export function addMarkers(
   map: mapboxgl.Map,
-  origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number },
+  origin: { lat: number; lng: number } | null,
+  destination: { lat: number; lng: number } | null,
   existingMarkers: mapboxgl.Marker[]
 ): mapboxgl.Marker[] {
   // Remove existing markers
@@ -146,28 +146,32 @@ export function addMarkers(
   const markers: mapboxgl.Marker[] = [];
 
   // Origin marker (green)
-  const originEl = document.createElement("div");
-  originEl.className = "origin-marker";
-  originEl.style.cssText =
-    "width:16px;height:16px;background:#10B981;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(16,185,129,0.5)";
-  markers.push(
-    new mapboxgl.Marker(originEl)
-      .setLngLat([origin.lng, origin.lat])
-      .setPopup(new mapboxgl.Popup().setText("Origin"))
-      .addTo(map)
-  );
+  if (origin) {
+    const originEl = document.createElement("div");
+    originEl.className = "origin-marker";
+    originEl.style.cssText =
+      "width:16px;height:16px;background:#10B981;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(16,185,129,0.5)";
+    markers.push(
+      new mapboxgl.Marker(originEl)
+        .setLngLat([origin.lng, origin.lat])
+        .setPopup(new mapboxgl.Popup().setText("Origin"))
+        .addTo(map)
+    );
+  }
 
   // Destination marker (red)
-  const destEl = document.createElement("div");
-  destEl.className = "dest-marker";
-  destEl.style.cssText =
-    "width:16px;height:16px;background:#EF4444;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(239,68,68,0.5)";
-  markers.push(
-    new mapboxgl.Marker(destEl)
-      .setLngLat([destination.lng, destination.lat])
-      .setPopup(new mapboxgl.Popup().setText("Destination"))
-      .addTo(map)
-  );
+  if (destination) {
+    const destEl = document.createElement("div");
+    destEl.className = "dest-marker";
+    destEl.style.cssText =
+      "width:16px;height:16px;background:#EF4444;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(239,68,68,0.5)";
+    markers.push(
+      new mapboxgl.Marker(destEl)
+        .setLngLat([destination.lng, destination.lat])
+        .setPopup(new mapboxgl.Popup().setText("Destination"))
+        .addTo(map)
+    );
+  }
 
   return markers;
 }

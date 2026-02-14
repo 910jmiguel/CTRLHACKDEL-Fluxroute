@@ -10,7 +10,11 @@ DEFAULT_LAT = 43.6532
 DEFAULT_LNG = -79.3832
 
 
-async def get_current_weather(lat: Optional[float] = None, lng: Optional[float] = None) -> dict:
+async def get_current_weather(
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    http_client: Optional[httpx.AsyncClient] = None,
+) -> dict:
     """Fetch current weather from Open-Meteo API (no API key needed)."""
     lat = lat or DEFAULT_LAT
     lng = lng or DEFAULT_LNG
@@ -23,10 +27,15 @@ async def get_current_weather(lat: Optional[float] = None, lng: Optional[float] 
             f"&timezone=America/Toronto"
         )
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+        if http_client:
+            resp = await http_client.get(url, timeout=3.0)
             resp.raise_for_status()
             data = resp.json()
+        else:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
 
         current = data.get("current", {})
 

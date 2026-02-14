@@ -8,7 +8,13 @@
       "Bash(npx next build)",
       "Bash(git pull:*)",
       "Bash(npx next lint:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git add:*)",
+      "Bash(python -c:*)",
+      "Bash(curl:*)",
+      "Bash(python -m json.tool:*)"
     ]
   }
 }

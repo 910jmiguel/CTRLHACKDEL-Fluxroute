@@ -61,13 +61,17 @@ _TRANSIT_MODE_COLORS = {
 }
 
 
-async def check_otp_health() -> bool:
+async def check_otp_health(http_client: Optional[httpx.AsyncClient] = None) -> bool:
     """Check if OTP server is available."""
     base = _get_otp_url()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{base}/otp/routers/default/")
+        if http_client:
+            resp = await http_client.get(f"{base}/otp/routers/default/", timeout=3.0)
             return resp.status_code == 200
+        else:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{base}/otp/routers/default/")
+                return resp.status_code == 200
     except Exception:
         return False
 
@@ -77,6 +81,7 @@ async def query_otp_routes(
     destination: Coordinate,
     departure_time: Optional[datetime] = None,
     num_itineraries: int = 3,
+    http_client: Optional[httpx.AsyncClient] = None,
 ) -> list[dict]:
     """Query OTP for transit itineraries.
 
@@ -100,10 +105,15 @@ async def query_otp_routes(
     url = f"{base}/otp/routers/default/plan"
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(url, params=params)
+        if http_client:
+            resp = await http_client.get(url, params=params, timeout=5.0)
             resp.raise_for_status()
             data = resp.json()
+        else:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
 
         plan = data.get("plan")
         if not plan:

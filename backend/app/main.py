@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env before any other imports that read env vars
@@ -52,6 +53,11 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("OpenTripPlanner not available — using heuristic transit routing (fallback)")
 
+    # Shared httpx client for connection pooling across all API calls
+    http_client = httpx.AsyncClient(timeout=10.0)
+    app_state["http_client"] = http_client
+    logger.info("Shared HTTP client created (connection pooling enabled)")
+
     logger.info("Starting real-time poller...")
     poller_task = await start_realtime_poller(app_state)
     app_state["poller_task"] = poller_task
@@ -60,6 +66,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down...")
     await stop_realtime_poller(app_state)
+    await http_client.aclose()
+    logger.info("Shared HTTP client closed")
 
 
 app = FastAPI(title="FluxRoute API", version="0.1.0", lifespan=lifespan)
