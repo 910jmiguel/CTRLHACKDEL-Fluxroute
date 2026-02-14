@@ -7,7 +7,7 @@ FluxRoute requires 2 API keys to be fully functional (plus 1 optional key). This
 | API Key | Purpose | Required? | Cost |
 |---------|---------|-----------|------|
 | Mapbox Token | Map display, geocoding, directions | **CRITICAL** | Free (50k loads/month) |
-| Anthropic API Key | Claude AI chat assistant | **Yes** | Pay-per-use (~$0.003/message) |
+| Google Gemini API Key | Gemini AI chat assistant | **Yes** | Free (rate limited) / Pay-per-use |
 | Metrolinx API Key | GO Transit real-time data | Optional | Free (registration required) |
 
 ## Required API Keys
@@ -33,24 +33,23 @@ FluxRoute requires 2 API keys to be fully functional (plus 1 optional key). This
 
 ---
 
-### 2. Anthropic API Key
+### 2. Google Gemini API Key
 
-**What it does:** Powers the Claude AI chat assistant that helps users plan trips and answers transit questions.
+**What it does:** Powers the Gemini AI chat assistant that helps users plan trips and answers transit questions.
 
 **How to get it:**
 
-1. Go to [https://console.anthropic.com/](https://console.anthropic.com/)
-2. Create an account or sign in
-3. Navigate to **API Keys** → **Create Key**
-4. Copy the key starting with `sk-ant-`
+1. Go to [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click **Create API key**
+4. Copy the generated API key
 
 **Pricing:**
-- Pay-per-use model
-- Approximately $0.003 per chat message (using Claude Sonnet)
-- Free trial credits typically provided for new accounts
+- Free tier available (rate limited)
+- Pay-as-you-go for higher limits
 
 **Where to set it:**
-- `backend/.env` → `ANTHROPIC_API_KEY=sk-ant-xxxxx`
+- `backend/.env` → `GEMINI_API_KEY=your_key_here`
 
 ---
 
@@ -77,7 +76,7 @@ FluxRoute requires 2 API keys to be fully functional (plus 1 optional key). This
 ### Backend — `backend/.env`
 
 ```
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+GEMINI_API_KEY=your-api-key-here
 MAPBOX_TOKEN=pk.your-token-here
 METROLINX_API_KEY=
 ```
@@ -116,8 +115,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - Verify you restarted both servers
 
 **AI chat doesn't work:**
-- Confirm `ANTHROPIC_API_KEY` is set in `backend/.env`
-- Verify the key starts with `sk-ant-`
+- Confirm `GEMINI_API_KEY` is set in `backend/.env`
 - Check backend logs for authentication errors
 
 ---
@@ -126,4 +124,4 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 - **Never commit** `.env` or `.env.local` files to version control (both are already in `.gitignore`)
 - The Mapbox token (`pk.`) is public-safe and can be exposed in frontend code
-- The Anthropic key (`sk-ant-`) must remain server-side only
+- The Gemini API key should be kept server-side only
