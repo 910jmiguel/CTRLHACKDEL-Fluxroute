@@ -10,3 +10,4 @@ backend/data/gtfs/
 dist/
 build/
 .DS_Store
+nul
