@@ -48,14 +48,15 @@ FluxRoute is an **AI-powered multimodal transit routing application** for the Gr
 2. **Route Request** → Backend `/api/routes` endpoint
 3. **Route Generation**:
    - Transit routes: Query GTFS data for stops/schedules + Mapbox directions
-   - Driving routes: Mapbox Directions API
+   - Driving routes: Mapbox Directions API (`driving-traffic` profile with congestion annotations)
    - Walking routes: Mapbox Directions API
-   - Hybrid routes: Park-and-ride combinations
-4. **Delay Prediction** → XGBoost model predicts delays for transit segments
-5. **Cost Calculation** → Fares (TTC/GO), gas, parking costs computed
-6. **Stress Scoring** → Weighted scoring based on transfers, delays, weather, traffic
-7. **Response** → Ranked routes returned to frontend
-8. **Map Rendering** → Mapbox GL JS renders routes with live vehicle overlays
+   - Hybrid routes: Park-and-ride combinations (driving segment uses `driving-traffic` + congestion)
+4. **Traffic Analysis** → Mapbox congestion annotations (`low`/`moderate`/`heavy`/`severe`) extracted for driving/hybrid segments
+5. **Delay Prediction** → XGBoost model predicts delays for transit segments
+6. **Cost Calculation** → Fares (TTC/GO), gas, parking costs computed
+7. **Stress Scoring** → Weighted scoring based on transfers, delays, weather, and real-time traffic congestion
+8. **Response** → Ranked routes returned to frontend
+9. **Map Rendering** → Mapbox GL JS renders routes with congestion-colored driving segments and live vehicle overlays
 
 ---
 
@@ -196,9 +197,13 @@ fluxroute/
   - Generates transit, driving, walking, and hybrid route options
   - Queries GTFS for nearest stops, schedules, shapes
   - Calls Mapbox Directions API for driving/walking routes
-  - Computes stress scores, delay predictions, cost breakdowns
+  - Uses `driving-traffic` profile with `annotations=congestion` for driving and hybrid segments
+  - Extracts per-segment congestion levels (`low`/`moderate`/`heavy`/`severe`) from Mapbox response
+  - Computes stress scores using real traffic congestion data (with rush-hour heuristic fallback)
+  - Computes delay predictions and cost breakdowns
   - Returns ranked `RouteOption` list
-- **Fallback behavior:** If GTFS unavailable, uses hardcoded TTC subway stations
+- **Traffic integration:** Congestion data from Mapbox is used for stress scoring and passed through to frontend for traffic-colored route visualization
+- **Fallback behavior:** If GTFS unavailable, uses hardcoded TTC subway stations. If congestion annotations unavailable, falls back to rush-hour heuristic (7-9am, 4-7pm)
 
 #### `app/gtfs_parser.py`
 - Loads TTC GTFS static feed (stops.txt, routes.txt, trips.txt, shapes.txt, stop_times.txt)

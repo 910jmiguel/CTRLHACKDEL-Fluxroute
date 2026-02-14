@@ -100,6 +100,7 @@ The codebase reflects the pre-2024 TTC subway network (only Lines 1-4). This is 
 | Feature | Priority | Notes |
 |---------|----------|-------|
 | OpenTripPlanner integration | **P0** | Needed for real multi-agency transit routing |
+| **Real-time traffic data for driving/hybrid routes** | **P1** | Mapbox `driving-traffic` profile is used but congestion annotations are discarded — no traffic visualization, no traffic-aware stress scoring, no traffic comparison between modes |
 | Transitland API integration | **P1** | Unified discovery layer for all GTHA agencies |
 | Multi-agency GTFS data (GO, YRT, MiWay, Brampton) | **P1** | Only TTC currently loaded |
 | Real GTFS-RT feeds | **P1** | Vehicle positions + alerts from live feeds |
@@ -260,6 +261,39 @@ First thing when you wake up. Stabilize the current build before touching anythi
 ## Phase 1 — Core Functionality Lock-In | 2-3 hours | Sat 11:30 AM
 
 Lock in all existing features so they work reliably before adding new data sources.
+
+### Real-Time Traffic Integration (Driving & Hybrid Routes)
+
+Currently, the Mapbox `driving-traffic` profile is used for driving and hybrid routes, which means the **duration and path** already account for real-time traffic. However, the congestion annotation data from Mapbox is discarded. This task adds full traffic awareness across the stack.
+
+#### Backend
+
+- [ ] Update `_mapbox_directions()` in `route_engine.py` to request congestion annotations:
+  - Add `&annotations=congestion` to the Mapbox API URL
+  - Parse per-leg `congestion` values (`low`, `moderate`, `heavy`, `severe`) from the response
+  - Return congestion data alongside geometry/distance/duration
+- [ ] Add `congestion_level` (optional str) field to `RouteSegment` model in `models.py`
+- [ ] Add `traffic_summary` (optional str) field to `RouteOption` model (e.g., "Heavy traffic on Gardiner Expressway")
+- [ ] Replace hardcoded rush-hour stress penalty in `route_engine.py` with real congestion-based scoring:
+  - `severe` → +0.3 stress
+  - `heavy` → +0.2 stress
+  - `moderate` → +0.1 stress
+  - `low` → +0.0 stress
+- [ ] Compute an overall `traffic_summary` string from the dominant congestion level across segments
+- [ ] Ensure hybrid route driving segments also extract and pass through congestion data
+
+#### Frontend
+
+- [ ] Add `congestionLevel` and `trafficSummary` fields to TypeScript `RouteSegment` and `RouteOption` types in `lib/types.ts`
+- [ ] Color-code driving route polylines on the map by congestion level (green/yellow/orange/red) instead of flat blue
+- [ ] (Optional) Add Mapbox Traffic tileset layer (`mapbox://mapbox.mapbox-traffic-v1`) to `FluxMap.tsx` for general traffic visibility
+- [ ] Display traffic badge/indicator on driving and hybrid `RouteCards` (e.g., "Heavy traffic" / "Light traffic")
+- [ ] Factor traffic level into the Decision Matrix comparison display
+
+#### Fallback
+
+- [ ] If Mapbox doesn't return congestion annotations, fall back to the existing rush-hour heuristic (7-9am, 4-7pm)
+- [ ] If Mapbox API is unavailable entirely, straight-line fallback remains unchanged
 
 ### Backend Stability
 
@@ -640,6 +674,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | OTP setup takes too long | Medium | High | Skip OTP, use existing TTC-only routing (works fine for demo) |
+| Mapbox congestion annotations unavailable | Low | Low | Fall back to rush-hour heuristic (7-9am, 4-7pm) for stress scoring |
 | GTFS-RT feeds require auth we can't get | Medium | Medium | Mock data fallback already built in |
 | Gemini API rate limit during demo | Low | High | Pre-cache some chat responses; heuristic fallback |
 | Mapbox free tier exceeded | Very Low | High | Unlikely in hackathon; have Leaflet as backup plan |
@@ -662,6 +697,7 @@ Track major decisions here so the team stays aligned.
 | 4 | Adding OpenTripPlanner for routing | Industry-standard, handles multi-agency natively | Feb 14 |
 | 5 | Using Transitland for feed discovery | Unified source for all GTHA agency data | Feb 14 |
 | 6 | Keeping all fallbacks in place | Demo reliability > feature completeness | Feb 14 |
+| 7 | Adding real-time traffic data for driving/hybrid | Mapbox `driving-traffic` already used but congestion annotations discarded — need full traffic integration for proper driving vs transit comparison | Feb 14 |
 
 ---
 
