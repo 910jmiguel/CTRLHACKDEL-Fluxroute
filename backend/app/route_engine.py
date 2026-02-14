@@ -161,6 +161,70 @@ def _estimate_duration(distance_km: float, mode: RouteMode) -> float:
     return (distance_km / speed) * 60
 
 
+def _compute_congestion_summary(congestion_list: list[str]) -> tuple[str, str]:
+    """Returns (dominant_level, traffic_label) from Mapbox congestion array."""
+    if not congestion_list:
+        return ("unknown", "Unknown Traffic")
+
+    from collections import Counter
+    counts = Counter(congestion_list)
+    total = len(congestion_list)
+
+    for level, label in [
+        ("severe", "Severe Traffic"),
+        ("heavy", "Heavy Traffic"),
+        ("moderate", "Moderate Traffic"),
+    ]:
+        if counts.get(level, 0) / total > 0.3:
+            return (level, label)
+
+    return ("low", "Light Traffic")
+
+
+def _congestion_stress_score(congestion_list: list[str]) -> float:
+    """Convert congestion data into a stress score contribution (0.0 to 0.3)."""
+    if not congestion_list:
+        return 0.0
+
+    weights = {"severe": 0.3, "heavy": 0.2, "moderate": 0.1, "low": 0.0, "unknown": 0.0}
+    total = sum(weights.get(c, 0.0) for c in congestion_list)
+    return total / len(congestion_list)
+
+
+def _split_geometry_by_congestion(
+    coordinates: list[list[float]], congestion_list: list[str]
+) -> list[dict]:
+    """Split a LineString into sub-segments grouped by congestion level.
+
+    Mapbox returns one congestion value per coordinate pair (N-1 values for N coords).
+    Groups consecutive coordinates with the same level into single sub-segments.
+    """
+    if not congestion_list or len(coordinates) < 2:
+        return []
+
+    segments = []
+    current_level = congestion_list[0]
+    current_coords = [coordinates[0]]
+
+    for i, level in enumerate(congestion_list):
+        current_coords.append(coordinates[i + 1])
+
+        next_level = congestion_list[i + 1] if i + 1 < len(congestion_list) else None
+        if next_level != current_level:
+            segments.append({
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": current_coords,
+                },
+                "congestion": current_level,
+            })
+            if next_level is not None:
+                current_level = next_level
+                current_coords = [coordinates[i + 1]]  # Overlap for continuity
+
+    return segments
+
+
 async def generate_routes(
     origin: Coordinate,
     destination: Coordinate,
@@ -268,15 +332,18 @@ async def _generate_single_route(
             total_duration = _estimate_duration(total_dist, RouteMode.DRIVING)
             steps = []
 
-        # Determine traffic summary from congestion data
-        congestion_level = mapbox.get("congestion_level") if mapbox else None
-        traffic_label = ""
-        if congestion_level == "heavy":
-            traffic_label = " (Heavy traffic)"
-        elif congestion_level == "moderate":
-            traffic_label = " (Moderate traffic)"
-        elif congestion_level == "low":
-            traffic_label = " (Light traffic)"
+        # Extract raw congestion array and compute summary
+        congestion_data = mapbox.get("congestion") if mapbox else None
+        if congestion_data:
+            congestion_level, traffic_label_text = _compute_congestion_summary(congestion_data)
+            traffic_label = f" ({traffic_label_text})"
+            # Split geometry into multi-colored sub-segments
+            coords = geometry.get("coordinates", []) if isinstance(geometry, dict) else []
+            congestion_segments = _split_geometry_by_congestion(coords, congestion_data)
+        else:
+            congestion_level = None
+            traffic_label = ""
+            congestion_segments = None
 
         segments.append(RouteSegment(
             mode=RouteMode.DRIVING,
@@ -287,13 +354,13 @@ async def _generate_single_route(
             color="#3B82F6",
             steps=steps,
             congestion_level=congestion_level,
+            congestion_segments=congestion_segments,
         ))
 
         # Driving stress: use real congestion data if available, else rush-hour heuristic
-        stress_score = 0.5
-        if congestion_level:
-            stress_penalties = {"severe": 0.3, "heavy": 0.2, "moderate": 0.1, "low": 0.0}
-            stress_score += stress_penalties.get(congestion_level, 0.0)
+        stress_score = 0.3
+        if congestion_data:
+            stress_score += _congestion_stress_score(congestion_data)
         elif 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
             stress_score += 0.2
         if is_adverse:
@@ -390,14 +457,8 @@ async def _generate_single_route(
     if mode not in (RouteMode.TRANSIT, RouteMode.HYBRID):
         # Generate traffic_summary for driving routes
         traffic_summary_text = ""
-        if mode == RouteMode.DRIVING and congestion_level:
-            traffic_map = {
-                "severe": "Severe traffic congestion",
-                "heavy": "Heavy traffic",
-                "moderate": "Moderate traffic",
-                "low": "Light traffic",
-            }
-            traffic_summary_text = traffic_map.get(congestion_level, "")
+        if mode == RouteMode.DRIVING and congestion_data:
+            _, traffic_summary_text = _compute_congestion_summary(congestion_data)
 
         return RouteOption(
             id=str(uuid.uuid4())[:8],
@@ -604,7 +665,16 @@ async def _generate_hybrid_route(
 
     drive_dist = drive_geo["distance_km"] if drive_geo else haversine(origin.lat, origin.lng, park_stop["lat"], park_stop["lng"]) * 1.3
     drive_dur = drive_geo["duration_min"] if drive_geo else _estimate_duration(drive_dist, RouteMode.DRIVING)
+    drive_congestion_data = drive_geo.get("congestion") if drive_geo else None
     drive_congestion = drive_geo.get("congestion_level") if drive_geo else None
+    drive_congestion_segments = None
+
+    if drive_congestion_data:
+        drive_congestion, _ = _compute_congestion_summary(drive_congestion_data)
+        drive_geom = drive_geo["geometry"] if drive_geo else None
+        if drive_geom:
+            coords = drive_geom.get("coordinates", [])
+            drive_congestion_segments = _split_geometry_by_congestion(coords, drive_congestion_data)
 
     segments.append(RouteSegment(
         mode=RouteMode.DRIVING,
@@ -617,6 +687,7 @@ async def _generate_hybrid_route(
         color="#3B82F6",
         steps=_make_direction_steps(drive_geo.get("steps", [])) if drive_geo else [],
         congestion_level=drive_congestion,
+        congestion_segments=drive_congestion_segments,
     ))
     total_duration += drive_dur
     total_dist += drive_dist
@@ -694,10 +765,9 @@ async def _generate_hybrid_route(
     )
 
     # Use real congestion for stress if available, else rush-hour heuristic
-    stress_score = 0.35 + prediction["delay_probability"] * 0.2
-    if drive_congestion:
-        stress_penalties = {"severe": 0.3, "heavy": 0.2, "moderate": 0.1, "low": 0.0}
-        stress_score += stress_penalties.get(drive_congestion, 0.0)
+    stress_score = 0.25 + prediction["delay_probability"] * 0.2
+    if drive_congestion_data:
+        stress_score += _congestion_stress_score(drive_congestion_data)
     elif 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
         stress_score += 0.1
 
@@ -705,9 +775,8 @@ async def _generate_hybrid_route(
 
     # Traffic summary for hybrid driving segment
     hybrid_traffic = ""
-    if drive_congestion:
-        traffic_map = {"severe": "Severe traffic congestion", "heavy": "Heavy traffic", "moderate": "Moderate traffic", "low": "Light traffic"}
-        hybrid_traffic = traffic_map.get(drive_congestion, "")
+    if drive_congestion_data:
+        _, hybrid_traffic = _compute_congestion_summary(drive_congestion_data)
 
     return RouteOption(
         id=str(uuid.uuid4())[:8],

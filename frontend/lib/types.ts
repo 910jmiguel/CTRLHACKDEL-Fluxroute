@@ -24,6 +24,10 @@ export interface RouteSegment {
   color?: string;
   steps?: DirectionStep[];
   congestion_level?: string; // "low" | "moderate" | "heavy" | "severe"
+  congestion_segments?: Array<{
+    geometry: GeoJSON.LineString;
+    congestion: string;
+  }>;
 }
 
 export interface CostBreakdown {

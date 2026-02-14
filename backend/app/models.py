@@ -38,6 +38,7 @@ class RouteSegment(BaseModel):
     color: Optional[str] = None
     steps: list[DirectionStep] = Field(default_factory=list)
     congestion_level: Optional[str] = None  # "low", "moderate", "heavy", "severe"
+    congestion_segments: Optional[list[dict]] = None  # Sub-segments with per-segment congestion
 
 
 class CostBreakdown(BaseModel):

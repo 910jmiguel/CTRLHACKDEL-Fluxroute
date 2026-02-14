@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Navigation } from "lucide-react";
 import type { Coordinate, RouteOption } from "@/lib/types";
 import RouteInput from "./RouteInput";
 import RouteCards from "./RouteCards";
@@ -14,8 +14,8 @@ interface SidebarProps {
   error: string | null;
   onSearch: (origin: Coordinate, destination: Coordinate) => void;
   onSelectRoute: (route: RouteOption) => void;
-  origin: Coordinate | null;
-  destination: Coordinate | null;
+  showTraffic: boolean;
+  onToggleTraffic: () => void;
 }
 
 export default function Sidebar({
@@ -25,8 +25,8 @@ export default function Sidebar({
   error,
   onSearch,
   onSelectRoute,
-  origin,
-  destination,
+  showTraffic,
+  onToggleTraffic,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -56,7 +56,7 @@ export default function Sidebar({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <RouteInput onSearch={onSearch} loading={loading} origin={origin} destination={destination} />
+        <RouteInput onSearch={onSearch} loading={loading} />
 
         {error && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">
@@ -66,6 +66,22 @@ export default function Sidebar({
 
         {routes.length > 0 && (
           <>
+            {/* Traffic toggle */}
+            <button
+              onClick={onToggleTraffic}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${showTraffic
+                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                  : "bg-slate-800/60 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50"
+                }`}
+            >
+              <Navigation className="w-4 h-4" />
+              Traffic Layer
+              <span className={`ml-auto text-xs px-1.5 py-0.5 rounded ${showTraffic ? "bg-blue-500/30 text-blue-300" : "bg-slate-700 text-slate-500"
+                }`}>
+                {showTraffic ? "ON" : "OFF"}
+              </span>
+            </button>
+
             <DecisionMatrix routes={routes} onSelect={onSelectRoute} />
             <RouteCards
               routes={routes}

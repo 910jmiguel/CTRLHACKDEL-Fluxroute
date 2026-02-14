@@ -40,3 +40,11 @@ export const STRESS_LABELS: Record<string, string> = {
   medium: "Moderate",
   high: "Stressful",
 };
+
+export const CONGESTION_COLORS: Record<string, string> = {
+  low: "#10B981",      // Green
+  moderate: "#F59E0B", // Amber
+  heavy: "#F97316",    // Orange
+  severe: "#EF4444",   // Red
+  unknown: "#3B82F6",  // Blue (fallback)
+};

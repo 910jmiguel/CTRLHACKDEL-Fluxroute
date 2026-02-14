@@ -66,6 +66,16 @@ export default function DecisionMatrix({
             <div className="text-xs text-slate-400 mt-0.5 capitalize">
               {col.route.mode}
             </div>
+            {col.route.traffic_summary && (
+              <div className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-full ${col.route.traffic_summary.includes("Heavy") || col.route.traffic_summary.includes("Severe")
+                  ? "bg-red-500/20 text-red-400"
+                  : col.route.traffic_summary.includes("Moderate")
+                    ? "bg-amber-500/20 text-amber-400"
+                    : "bg-emerald-500/20 text-emerald-400"
+                }`}>
+                {col.route.traffic_summary}
+              </div>
+            )}
           </button>
         ))}
       </div>
