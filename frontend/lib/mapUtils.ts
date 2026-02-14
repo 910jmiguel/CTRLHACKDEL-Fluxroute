@@ -1,18 +1,10 @@
 import mapboxgl from "mapbox-gl";
 import type { RouteOption, VehiclePosition } from "./types";
-import { MODE_COLORS } from "./constants";
+import { MODE_COLORS, CONGESTION_COLORS } from "./constants";
 
 const ROUTE_SOURCE_PREFIX = "route-";
 const ROUTE_LAYER_PREFIX = "route-layer-";
 const VEHICLES_SOURCE = "vehicles-source";
-
-// Congestion-based colors for driving segments
-const CONGESTION_COLORS: Record<string, string> = {
-  low: "#10B981",      // Green
-  moderate: "#F59E0B", // Yellow
-  heavy: "#F97316",    // Orange
-  severe: "#EF4444",   // Red
-};
 
 export function clearRoutes(map: mapboxgl.Map) {
   // Remove all route layers and sources
@@ -38,45 +30,107 @@ export function drawMultimodalRoute(
   isSelected: boolean = true
 ) {
   route.segments.forEach((segment, idx) => {
-    const sourceId = `${ROUTE_SOURCE_PREFIX}${route.id}-${idx}`;
-    const layerId = `${ROUTE_LAYER_PREFIX}${route.id}-${idx}`;
+    const baseSourceId = `${ROUTE_SOURCE_PREFIX}${route.id}-${idx}`;
+    const baseLayerId = `${ROUTE_LAYER_PREFIX}${route.id}-${idx}`;
 
-    // Remove existing
-    if (map.getLayer(layerId)) map.removeLayer(layerId);
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
+    // Check if this driving segment has multi-colored congestion sub-segments
+    if (
+      segment.mode === "driving" &&
+      segment.congestion_segments &&
+      segment.congestion_segments.length > 0
+    ) {
+      // --- Dark outline layer (full geometry, underneath) ---
+      const outlineSourceId = `${baseSourceId}-outline`;
+      const outlineLayerId = `${baseLayerId}-outline`;
 
-    // Use congestion-based color for driving/hybrid driving segments
-    const color =
-      segment.mode === "driving" && segment.congestion_level
-        ? CONGESTION_COLORS[segment.congestion_level] || segment.color || MODE_COLORS[segment.mode] || "#3B82F6"
-        : segment.color || MODE_COLORS[segment.mode] || "#FFFFFF";
+      if (map.getLayer(outlineLayerId)) map.removeLayer(outlineLayerId);
+      if (map.getSource(outlineSourceId)) map.removeSource(outlineSourceId);
 
-    map.addSource(sourceId, {
-      type: "geojson",
-      data: {
-        type: "Feature",
-        properties: {},
-        geometry: segment.geometry,
-      },
-    });
+      map.addSource(outlineSourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: segment.geometry,
+        },
+      });
 
-    map.addLayer({
-      id: layerId,
-      type: "line",
-      source: sourceId,
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
-      paint: {
-        "line-color": color,
-        "line-width": isSelected ? 5 : 3,
-        "line-opacity": isSelected ? 0.9 : 0.4,
-        ...(segment.mode === "walking"
-          ? { "line-dasharray": [2, 2] }
-          : {}),
-      },
-    });
+      map.addLayer({
+        id: outlineLayerId,
+        type: "line",
+        source: outlineSourceId,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#1a1a2e",
+          "line-width": isSelected ? 8 : 5,
+          "line-opacity": isSelected ? 0.9 : 0.4,
+        },
+      });
+
+      // --- Colored sub-segment layers (on top) ---
+      segment.congestion_segments.forEach((sub, subIdx) => {
+        const subSourceId = `${baseSourceId}-cong-${subIdx}`;
+        const subLayerId = `${baseLayerId}-cong-${subIdx}`;
+
+        if (map.getLayer(subLayerId)) map.removeLayer(subLayerId);
+        if (map.getSource(subSourceId)) map.removeSource(subSourceId);
+
+        const subColor =
+          CONGESTION_COLORS[sub.congestion] || CONGESTION_COLORS.unknown;
+
+        map.addSource(subSourceId, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: { congestion: sub.congestion },
+            geometry: sub.geometry,
+          },
+        });
+
+        map.addLayer({
+          id: subLayerId,
+          type: "line",
+          source: subSourceId,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": subColor,
+            "line-width": isSelected ? 5 : 3,
+            "line-opacity": isSelected ? 0.9 : 0.5,
+          },
+        });
+      });
+    } else {
+      // --- Standard single-color segment (non-driving or no congestion data) ---
+      if (map.getLayer(baseLayerId)) map.removeLayer(baseLayerId);
+      if (map.getSource(baseSourceId)) map.removeSource(baseSourceId);
+
+      const color =
+        segment.color || MODE_COLORS[segment.mode] || "#FFFFFF";
+
+      map.addSource(baseSourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: segment.geometry,
+        },
+      });
+
+      map.addLayer({
+        id: baseLayerId,
+        type: "line",
+        source: baseSourceId,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": color,
+          "line-width": isSelected ? 5 : 3,
+          "line-opacity": isSelected ? 0.9 : 0.4,
+          ...(segment.mode === "walking"
+            ? { "line-dasharray": [2, 2] }
+            : {}),
+        },
+      });
+    }
   });
 }
 

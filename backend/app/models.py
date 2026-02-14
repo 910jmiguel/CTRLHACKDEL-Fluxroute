@@ -29,6 +29,7 @@ class RouteSegment(BaseModel):
     transit_route_id: Optional[str] = None
     color: Optional[str] = None
     congestion_level: Optional[str] = None  # "low", "moderate", "heavy", "severe"
+    congestion_segments: Optional[list[dict]] = None  # Sub-segments with per-segment congestion
 
 
 class CostBreakdown(BaseModel):

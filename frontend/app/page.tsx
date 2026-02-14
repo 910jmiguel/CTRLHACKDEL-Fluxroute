@@ -25,6 +25,7 @@ export default function Home() {
   const [origin, setOrigin] = useState<Coordinate | null>(null);
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
+  const [showTraffic, setShowTraffic] = useState(true);
 
   // Always keep UI in dark mode (map still uses time-based theme)
   useEffect(() => {
@@ -71,6 +72,8 @@ export default function Home() {
           error={error}
           onSearch={handleSearch}
           onSelectRoute={selectRoute}
+          showTraffic={showTraffic}
+          onToggleTraffic={() => setShowTraffic(!showTraffic)}
         />
 
         {/* Map */}
@@ -82,6 +85,7 @@ export default function Home() {
             destination={destination}
             vehicles={vehicles}
             theme={theme}
+            showTraffic={showTraffic}
           />
 
           {/* Loading overlay */}

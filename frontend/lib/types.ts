@@ -15,6 +15,10 @@ export interface RouteSegment {
   transit_route_id?: string;
   color?: string;
   congestion_level?: string; // "low" | "moderate" | "heavy" | "severe"
+  congestion_segments?: Array<{
+    geometry: GeoJSON.LineString;
+    congestion: string;
+  }>;
 }
 
 export interface CostBreakdown {
