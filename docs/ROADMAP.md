@@ -64,7 +64,7 @@ Sun Feb 16  ~1 AM    ── Phase 5 (Final Submission Prep)
 | Issue | Severity | Details |
 |-------|----------|---------|
 | **TTC subway lines outdated** | **High** | Line 3 (Scarborough RT) closed Nov 2023 but still hardcoded; Line 5 (Eglinton) and Line 6 (Finch West) are now operational but missing entirely. Affects 7+ files across backend and frontend — see detailed breakdown below. |
-| ML model file missing | **Medium** | `delay_model.joblib` not generated — heuristic works but less accurate |
+| ~~ML model file missing~~ | **Done** | `delay_model.joblib` generated — XGBoost model trained and serving predictions |
 | ~~Documentation outdated~~ | **Done** | CLAUDE.md and README updated to reference Gemini (fixed Feb 15 3AM) |
 | Only TTC data | **High** | No GO Transit, MiWay, YRT, or Brampton Transit data |
 | GTFS-RT uses mock data | **High** | Real-time feeds not connected (mock vehicles/alerts) |
@@ -104,7 +104,7 @@ The codebase reflects the pre-2024 TTC subway network (only Lines 1-4). This is 
 | Transitland API integration | **P1** | Unified discovery layer for all GTHA agencies |
 | Multi-agency GTFS data (GO, YRT, MiWay, Brampton) | **P1** | Only TTC currently loaded |
 | Real GTFS-RT feeds | **P1** | Vehicle positions + alerts from live feeds |
-| Trained XGBoost model | **P1** | Need to run training pipeline |
+| ~~Trained XGBoost model~~ | **Done** | Model trained and serving predictions |
 | Google Routes API for last-mile | **P2** | Currently using Mapbox for everything |
 | Community reporting | **P3** | Stretch goal |
 | Voice copilot | **P3** | Stretch goal — skip unless time permits |
@@ -227,32 +227,32 @@ First thing when you wake up. Stabilize the current build before touching anythi
 
 ### Environment & Config
 
-- [ ] Verify `backend/.env` exists with correct keys:
+- [x] Verify `backend/.env` exists with correct keys:
   ```
   GEMINI_API_KEY=your-gemini-key
   MAPBOX_TOKEN=pk.your-mapbox-token
   ```
-- [ ] Verify `frontend/.env.local` exists with correct keys:
+- [x] Verify `frontend/.env.local` exists with correct keys:
   ```
   NEXT_PUBLIC_MAPBOX_TOKEN=pk.your-mapbox-token
   NEXT_PUBLIC_API_URL=http://localhost:8000
   ```
-- [ ] Confirm backend starts without errors: `cd backend && python3 -m uvicorn app.main:app --reload`
-- [ ] Confirm frontend starts without errors: `cd frontend && npm run dev`
-- [ ] Test health endpoint: `curl http://localhost:8000/api/health`
+- [x] Confirm backend starts without errors: `cd backend && python3 -m uvicorn app.main:app --reload`
+- [x] Confirm frontend starts without errors: `cd frontend && npm run dev`
+- [x] Test health endpoint: `curl http://localhost:8000/api/health`
 
 ### Quick Bug Fixes
 
-- [ ] Fix any import errors or startup crashes (check terminal output)
-- [ ] Verify the map renders at `http://localhost:3000`
-- [ ] Verify geocoder (origin/destination input) works
-- [ ] Test a route search end-to-end: enter origin → destination → see routes on map
-- [ ] Verify chat assistant sends/receives messages
+- [x] Fix any import errors or startup crashes (check terminal output)
+- [x] Verify the map renders at `http://localhost:3000`
+- [x] Verify geocoder (origin/destination input) works
+- [x] Test a route search end-to-end: enter origin → destination → see routes on map
+- [x] Verify chat assistant sends/receives messages
 
 ### Git Housekeeping
 
-- [ ] Commit current uncommitted changes (`.gitignore`, `README.md`, `package-lock.json`)
-- [ ] Create a `stable-mvp` tag or branch as a safety checkpoint
+- [x] Commit current uncommitted changes (`.gitignore`, `README.md`, `package-lock.json`)
+- [x] Create a `stable-mvp` tag or branch as a safety checkpoint
 
 **Exit Criteria:** App runs locally, routes appear on map, chat works. You have a stable baseline to build on.
 
@@ -297,39 +297,39 @@ Currently, the Mapbox `driving-traffic` profile is used for driving and hybrid r
 
 ### Backend Stability
 
-- [ ] Train the XGBoost ML model:
+- [x] Train the XGBoost ML model:
   ```bash
   cd backend && python3 -m ml.train_model
   ```
   Verify `backend/ml/delay_model.joblib` is generated.
-- [ ] Restart backend and confirm ML predictor loads in "ML mode" (check logs for "Loaded XGBoost model")
-- [ ] Test delay prediction endpoint:
+- [x] Restart backend and confirm ML predictor loads in "ML mode" (check logs for "Loaded XGBoost model")
+- [x] Test delay prediction endpoint:
   ```bash
   curl "http://localhost:8000/api/predict-delay?line=Line+1&hour=8&day_of_week=0"
   ```
-- [ ] Test route generation returns delay info with ML predictions (not just heuristic)
-- [ ] Verify Gemini chat assistant responds with tool use (ask it "What's the fastest route from Union Station to Finch?")
-- [ ] Test weather endpoint returns real data: `curl http://localhost:8000/api/weather`
+- [x] Test route generation returns delay info with ML predictions (not just heuristic)
+- [x] Verify Gemini chat assistant responds with tool use (ask it "What's the fastest route from Union Station to Finch?")
+- [x] Test weather endpoint returns real data: `curl http://localhost:8000/api/weather`
 
 ### Frontend Stability
 
-- [ ] Verify route cards display correctly (duration, cost, delay badge, summary)
-- [ ] Verify Decision Matrix picks correct winners (Fastest/Thrifty/Zen)
-- [ ] Verify CostBreakdown expands and shows fare/gas/parking
-- [ ] Verify DelayIndicator colors are correct (green <30%, yellow 30-60%, red >60%)
-- [ ] Verify LiveAlerts banner rotates alerts
-- [ ] Verify vehicle markers appear on map (even if mock data)
-- [ ] Test sidebar collapse/expand on different screen sizes
-- [ ] Verify route selection highlights the route on the map
+- [x] Verify route cards display correctly (duration, cost, delay badge, summary)
+- [x] Verify Decision Matrix picks correct winners (Fastest/Thrifty/Zen)
+- [x] Verify CostBreakdown expands and shows fare/gas/parking
+- [x] Verify DelayIndicator colors are correct (green <30%, yellow 30-60%, red >60%)
+- [x] Verify LiveAlerts banner rotates alerts
+- [x] Verify vehicle markers appear on map (even if mock data)
+- [x] Test sidebar collapse/expand on different screen sizes
+- [x] Verify route selection highlights the route on the map
 
 ### Bug Hunt Checklist
 
-- [ ] Check browser console for JavaScript errors
-- [ ] Check backend terminal for Python exceptions
-- [ ] Test with various origin/destination pairs (not just downtown)
-- [ ] Test edge case: origin and destination very close together
-- [ ] Test edge case: origin and destination very far apart (across GTA)
-- [ ] Verify no CORS errors in browser network tab
+- [x] Check browser console for JavaScript errors
+- [x] Check backend terminal for Python exceptions
+- [x] Test with various origin/destination pairs (not just downtown)
+- [x] Test edge case: origin and destination very close together
+- [x] Test edge case: origin and destination very far apart (across GTA)
+- [x] Verify no CORS errors in browser network tab
 
 **Exit Criteria:** All existing features work reliably. ML model is trained and serving real predictions. No crashes on typical usage.
 
@@ -455,16 +455,16 @@ Improve the intelligence layer now that real data is flowing. **Grab dinner firs
 
 ### ML Delay Predictor
 
-- [ ] Verify XGBoost model is loaded and serving predictions
-- [ ] Test predictions for different lines, times, and days:
+- [x] Verify XGBoost model is loaded and serving predictions
+- [x] Test predictions for different lines, times, and days:
   ```bash
   # Rush hour Monday on Line 1
   curl "http://localhost:8000/api/predict-delay?line=Line+1&hour=8&day_of_week=0"
   # Weekend afternoon on Line 2
   curl "http://localhost:8000/api/predict-delay?line=Line+2&hour=14&day_of_week=5"
   ```
-- [ ] Verify delay predictions integrate into route responses (check `delay_info` in route JSON)
-- [ ] Ensure weather data feeds into delay predictions (precipitation → higher delay probability)
+- [x] Verify delay predictions integrate into route responses (check `delay_info` in route JSON)
+- [x] Ensure weather data feeds into delay predictions (precipitation → higher delay probability)
 - [ ] Tune stress scoring weights if they feel off during testing:
   - Transfers: 0.1 per transfer
   - Delay probability: 0.3 weight
@@ -475,26 +475,26 @@ Improve the intelligence layer now that real data is flowing. **Grab dinner firs
 
 ### Gemini AI Chat Assistant
 
-- [ ] Test chat with route-related questions:
+- [x] Test chat with route-related questions:
   - "What's the fastest way to get from Union to Finch?"
   - "Is there any delays on Line 1 right now?"
   - "Should I drive or take transit to the airport?"
-- [ ] Verify tool use works (Gemini calls get_routes, predict_delay, etc.)
-- [ ] Test chat retains context across messages (conversation history)
-- [ ] Verify suggested actions appear and are relevant
+- [x] Verify tool use works (Gemini calls get_routes, predict_delay, etc.)
+- [x] Test chat retains context across messages (conversation history)
+- [x] Verify suggested actions appear and are relevant
 - [ ] If OTP is integrated, update chat tools to use real routing data
-- [ ] Test error handling: what happens if Gemini API key is invalid or rate-limited?
+- [x] Test error handling: what happens if Gemini API key is invalid or rate-limited?
 - [ ] Add transit-specific system prompt enhancements if needed (e.g., GTHA knowledge, fare info for all agencies)
 
 ### Data Quality
 
-- [ ] Spot-check a few routes for sanity:
+- [x] Spot-check a few routes for sanity:
   - Duration reasonable? (not 0 min or 999 min)
   - Distance reasonable?
   - Cost breakdown makes sense?
   - Route geometry actually follows roads/rails on the map?
 - [ ] Verify routes from multiple agencies appear (if OTP integrated)
-- [ ] Check that hybrid routes (park & ride) make geographic sense
+- [x] Check that hybrid routes (park & ride) make geographic sense
 
 **Exit Criteria:** ML predictions feel realistic. Chat assistant gives helpful transit advice. Route data passes the "sniff test" — nothing obviously wrong.
 

@@ -17,6 +17,7 @@ Built for **CTRL+HACK+DEL Hackathon 2025**.
 - **Stress Scoring** — Each route gets a stress score based on transfers, delays, traffic, and weather
 - **AI Chat Assistant** — Google Gemini-powered assistant with tool use for route planning, delay checks, and transit tips
 - **Weather Integration** — Real-time weather from Open-Meteo API, factored into delay predictions and route scoring
+- **Time-Based Map Theme** — Map style automatically adapts to time of day (dawn, day, dusk, night) for optimal readability
 - **Dark Theme UI** — Glassmorphism design with Mapbox dark-v11 map style
 
 ---
@@ -86,7 +87,8 @@ fluxroute/
 │   │   └── mapUtils.ts          # Map drawing utilities
 │   ├── hooks/
 │   │   ├── useRoutes.ts         # Route fetching and selection state
-│   │   └── useChat.ts           # Chat message state management
+│   │   ├── useChat.ts           # Chat message state management
+│   │   └── useTimeBasedTheme.ts # Automatic map theme switching (dawn/day/dusk/night)
 │   └── package.json
 ├── docs/
 │   ├── ROADMAP.md               # Hackathon roadmap & checklist
