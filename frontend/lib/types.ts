@@ -5,6 +5,14 @@ export interface Coordinate {
   lng: number;
 }
 
+export interface DirectionStep {
+  instruction: string;
+  distance_km: number;
+  duration_min: number;
+  maneuver_type: string;
+  maneuver_modifier: string;
+}
+
 export interface RouteSegment {
   mode: RouteMode;
   geometry: GeoJSON.LineString;
@@ -14,6 +22,7 @@ export interface RouteSegment {
   transit_line?: string;
   transit_route_id?: string;
   color?: string;
+  steps?: DirectionStep[];
 }
 
 export interface CostBreakdown {

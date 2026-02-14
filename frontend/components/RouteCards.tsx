@@ -4,6 +4,7 @@ import { Clock, MapPin, DollarSign, Train, Car, Footprints, Repeat } from "lucid
 import type { RouteOption } from "@/lib/types";
 import DelayIndicator from "./DelayIndicator";
 import CostBreakdown from "./CostBreakdown";
+import DirectionSteps from "./DirectionSteps";
 
 interface RouteCardsProps {
   routes: RouteOption[];
@@ -95,6 +96,11 @@ export default function RouteCards({
                   {route.summary}
                 </div>
               )}
+
+              {(() => {
+                const allSteps = route.segments.flatMap(s => s.steps || []);
+                return allSteps.length > 0 ? <DirectionSteps steps={allSteps} /> : null;
+              })()}
             </button>
           );
         })}

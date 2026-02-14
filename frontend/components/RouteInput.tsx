@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { MapPin, Navigation, Search, X } from "lucide-react";
 import type { Coordinate } from "@/lib/types";
 import { MAPBOX_TOKEN } from "@/lib/constants";
@@ -8,6 +8,8 @@ import { MAPBOX_TOKEN } from "@/lib/constants";
 interface RouteInputProps {
   onSearch: (origin: Coordinate, destination: Coordinate) => void;
   loading: boolean;
+  origin?: Coordinate | null;
+  destination?: Coordinate | null;
 }
 
 interface GeocoderResult {
@@ -15,7 +17,20 @@ interface GeocoderResult {
   center: [number, number];
 }
 
-export default function RouteInput({ onSearch, loading }: RouteInputProps) {
+async function reverseGeocode(coord: Coordinate): Promise<string> {
+  if (!MAPBOX_TOKEN) return `${coord.lat.toFixed(4)}, ${coord.lng.toFixed(4)}`;
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${coord.lng},${coord.lat}.json?access_token=${MAPBOX_TOKEN}&limit=1`
+    );
+    const data = await res.json();
+    return data.features?.[0]?.place_name || `${coord.lat.toFixed(4)}, ${coord.lng.toFixed(4)}`;
+  } catch {
+    return `${coord.lat.toFixed(4)}, ${coord.lng.toFixed(4)}`;
+  }
+}
+
+export default function RouteInput({ onSearch, loading, origin, destination }: RouteInputProps) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
   const [originCoord, setOriginCoord] = useState<Coordinate | null>(null);
@@ -27,6 +42,37 @@ export default function RouteInput({ onSearch, loading }: RouteInputProps) {
   const [focusedField, setFocusedField] = useState<
     "origin" | "dest" | null
   >(null);
+
+  const lastExternalOrigin = useRef<Coordinate | null | undefined>(undefined);
+  const lastExternalDest = useRef<Coordinate | null | undefined>(undefined);
+
+  // Sync external origin (from map click) into text field
+  useEffect(() => {
+    if (
+      origin &&
+      (lastExternalOrigin.current?.lat !== origin.lat ||
+        lastExternalOrigin.current?.lng !== origin.lng)
+    ) {
+      lastExternalOrigin.current = origin;
+      setOriginCoord(origin);
+      setOriginText(`${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`);
+      reverseGeocode(origin).then((name) => setOriginText(name));
+    }
+  }, [origin]);
+
+  // Sync external destination (from map click) into text field
+  useEffect(() => {
+    if (
+      destination &&
+      (lastExternalDest.current?.lat !== destination.lat ||
+        lastExternalDest.current?.lng !== destination.lng)
+    ) {
+      lastExternalDest.current = destination;
+      setDestCoord(destination);
+      setDestText(`${destination.lat.toFixed(4)}, ${destination.lng.toFixed(4)}`);
+      reverseGeocode(destination).then((name) => setDestText(name));
+    }
+  }, [destination]);
 
   const geocode = useCallback(
     async (query: string): Promise<GeocoderResult[]> => {

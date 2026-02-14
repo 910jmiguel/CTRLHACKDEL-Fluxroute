@@ -10,6 +10,7 @@ from app.models import (
     Coordinate,
     CostBreakdown,
     DelayInfo,
+    DirectionStep,
     RouteMode,
     RouteOption,
     RouteSegment,
@@ -26,21 +27,55 @@ def _get_mapbox_token() -> str:
 MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
 
 
+def _parse_steps(legs: list[dict]) -> list[dict]:
+    """Extract turn-by-turn steps from Mapbox legs."""
+    steps = []
+    for leg in legs:
+        for step in leg.get("steps", []):
+            maneuver = step.get("maneuver", {})
+            steps.append({
+                "instruction": maneuver.get("instruction", ""),
+                "distance_km": round(step.get("distance", 0) / 1000, 2),
+                "duration_min": round(step.get("duration", 0) / 60, 1),
+                "maneuver_type": maneuver.get("type", ""),
+                "maneuver_modifier": maneuver.get("modifier", ""),
+            })
+    return steps
+
+
+def _parse_route(route_data: dict) -> dict:
+    """Parse a single Mapbox route into our format."""
+    legs = route_data.get("legs", [])
+    return {
+        "geometry": route_data["geometry"],
+        "distance_km": route_data["distance"] / 1000,
+        "duration_min": route_data["duration"] / 60,
+        "steps": _parse_steps(legs),
+    }
+
+
 async def _mapbox_directions(
     origin: Coordinate,
     destination: Coordinate,
     profile: str = "driving-traffic",
+    alternatives: bool = False,
 ) -> Optional[dict]:
     """Call Mapbox Directions API. Returns route data or None on failure."""
     token = _get_mapbox_token()
     if not token or token == "your-mapbox-token-here":
+        logger.info(
+            "Mapbox token missing or placeholder — falling back to straight-line geometry. "
+            "Set MAPBOX_TOKEN in backend/.env"
+        )
         return None
 
     url = (
         f"{MAPBOX_DIRECTIONS_URL}/{profile}/"
         f"{origin.lng},{origin.lat};{destination.lng},{destination.lat}"
-        f"?geometries=geojson&overview=full&access_token={token}"
+        f"?geometries=geojson&overview=full&steps=true&access_token={token}"
     )
+    if alternatives:
+        url += "&alternatives=true"
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -50,14 +85,26 @@ async def _mapbox_directions(
 
         routes = data.get("routes", [])
         if not routes:
+            logger.warning(
+                "Mapbox returned 200 but empty routes array for %s: "
+                "origin=(%s, %s) dest=(%s, %s)",
+                profile, origin.lat, origin.lng, destination.lat, destination.lng,
+            )
             return None
 
-        route = routes[0]
-        return {
-            "geometry": route["geometry"],
-            "distance_km": route["distance"] / 1000,
-            "duration_min": route["duration"] / 60,
-        }
+        result = _parse_route(routes[0])
+
+        # Include alternatives if requested and available
+        if alternatives and len(routes) > 1:
+            result["alternatives"] = [_parse_route(r) for r in routes[1:2]]
+
+        return result
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "Mapbox API HTTP error (%s): status=%s body=%s",
+            profile, e.response.status_code, e.response.text[:300],
+        )
+        return None
     except Exception as e:
         logger.warning(f"Mapbox API call failed ({profile}): {e}")
         return None
@@ -116,11 +163,14 @@ async def generate_routes(
             if mode == RouteMode.WALKING and total_distance > 5.0:
                 continue  # Skip walking for long distances
 
-            route = await _generate_single_route(
+            result = await _generate_single_route(
                 origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now
             )
-            if route:
-                routes.append(route)
+            if result:
+                if isinstance(result, list):
+                    routes.extend(result)
+                else:
+                    routes.append(result)
         except Exception as e:
             logger.error(f"Failed to generate {mode} route: {e}")
 
@@ -128,6 +178,11 @@ async def generate_routes(
     _label_routes(routes)
 
     return routes
+
+
+def _make_direction_steps(raw_steps: list[dict]) -> list[DirectionStep]:
+    """Convert raw step dicts to DirectionStep models."""
+    return [DirectionStep(**s) for s in raw_steps]
 
 
 async def _generate_single_route(
@@ -139,8 +194,8 @@ async def _generate_single_route(
     total_distance: float,
     is_adverse: bool,
     now: datetime,
-) -> Optional[RouteOption]:
-    """Generate a single route option."""
+) -> Optional[RouteOption | list[RouteOption]]:
+    """Generate route option(s). Driving may return a list with alternatives."""
 
     segments: list[RouteSegment] = []
     total_duration = 0.0
@@ -154,16 +209,18 @@ async def _generate_single_route(
         )
 
     elif mode == RouteMode.DRIVING:
-        mapbox = await _mapbox_directions(origin, destination, "driving-traffic")
+        mapbox = await _mapbox_directions(origin, destination, "driving-traffic", alternatives=True)
 
         if mapbox:
             geometry = mapbox["geometry"]
             total_dist = mapbox["distance_km"]
             total_duration = mapbox["duration_min"]
+            steps = _make_direction_steps(mapbox.get("steps", []))
         else:
             geometry = _straight_line_geometry(origin, destination)
-            total_dist = total_distance * 1.3  # Roads are ~30% longer than straight line
+            total_dist = total_distance * 1.3
             total_duration = _estimate_duration(total_dist, RouteMode.DRIVING)
+            steps = []
 
         segments.append(RouteSegment(
             mode=RouteMode.DRIVING,
@@ -172,6 +229,7 @@ async def _generate_single_route(
             duration_min=round(total_duration, 1),
             instructions="Drive to destination",
             color="#3B82F6",
+            steps=steps,
         ))
 
         # Driving stress: base 0.5, higher in rush hour
@@ -183,6 +241,55 @@ async def _generate_single_route(
 
         cost = calculate_cost(RouteMode.DRIVING, total_dist, destination.lat, destination.lng)
 
+        primary = RouteOption(
+            id=str(uuid.uuid4())[:8],
+            label="",
+            mode=mode,
+            segments=segments,
+            total_distance_km=round(total_dist, 2),
+            total_duration_min=round(total_duration, 1),
+            cost=cost,
+            delay_info=delay_info,
+            stress_score=round(min(1.0, stress_score), 2),
+            departure_time=now.strftime("%H:%M"),
+            summary=f"Driving — {total_dist:.1f} km, {total_duration:.0f} min",
+        )
+
+        results: list[RouteOption] = [primary]
+
+        # Build alternative driving routes if available
+        if mapbox and mapbox.get("alternatives"):
+            for alt in mapbox["alternatives"]:
+                alt_dist = alt["distance_km"]
+                alt_dur = alt["duration_min"]
+                alt_steps = _make_direction_steps(alt.get("steps", []))
+                alt_cost = calculate_cost(RouteMode.DRIVING, alt_dist, destination.lat, destination.lng)
+
+                alt_option = RouteOption(
+                    id=str(uuid.uuid4())[:8],
+                    label="",
+                    mode=RouteMode.DRIVING,
+                    segments=[RouteSegment(
+                        mode=RouteMode.DRIVING,
+                        geometry=alt["geometry"],
+                        distance_km=round(alt_dist, 2),
+                        duration_min=round(alt_dur, 1),
+                        instructions="Alternative driving route",
+                        color="#60A5FA",
+                        steps=alt_steps,
+                    )],
+                    total_distance_km=round(alt_dist, 2),
+                    total_duration_min=round(alt_dur, 1),
+                    cost=alt_cost,
+                    delay_info=DelayInfo(),
+                    stress_score=round(min(1.0, stress_score), 2),
+                    departure_time=now.strftime("%H:%M"),
+                    summary=f"Driving (alt) — {alt_dist:.1f} km, {alt_dur:.0f} min",
+                )
+                results.append(alt_option)
+
+        return results
+
     elif mode == RouteMode.WALKING:
         mapbox = await _mapbox_directions(origin, destination, "walking")
 
@@ -190,10 +297,12 @@ async def _generate_single_route(
             geometry = mapbox["geometry"]
             total_dist = mapbox["distance_km"]
             total_duration = mapbox["duration_min"]
+            steps = _make_direction_steps(mapbox.get("steps", []))
         else:
             geometry = _straight_line_geometry(origin, destination)
             total_dist = total_distance * 1.2
             total_duration = _estimate_duration(total_dist, RouteMode.WALKING)
+            steps = []
 
         segments.append(RouteSegment(
             mode=RouteMode.WALKING,
@@ -202,6 +311,7 @@ async def _generate_single_route(
             duration_min=round(total_duration, 1),
             instructions="Walk to destination",
             color="#10B981",
+            steps=steps,
         ))
 
         stress_score = 0.1
@@ -277,6 +387,7 @@ async def _generate_transit_route(
         duration_min=round(walk_to_geo["duration_min"] if walk_to_geo else walk_to_dur, 1),
         instructions=f"Walk to {origin_stop['stop_name']} station",
         color="#10B981",
+        steps=_make_direction_steps(walk_to_geo.get("steps", [])) if walk_to_geo else [],
     ))
     total_duration += walk_to_geo["duration_min"] if walk_to_geo else walk_to_dur
     total_dist += walk_to_geo["distance_km"] if walk_to_geo else walk_to_dist
@@ -334,6 +445,7 @@ async def _generate_transit_route(
         duration_min=round(walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur, 1),
         instructions=f"Walk from {dest_stop['stop_name']} station to destination",
         color="#10B981",
+        steps=_make_direction_steps(walk_from_geo.get("steps", [])) if walk_from_geo else [],
     ))
     total_duration += walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur
     total_dist += walk_from_geo["distance_km"] if walk_from_geo else walk_from_dist
@@ -430,6 +542,7 @@ async def _generate_hybrid_route(
         duration_min=round(drive_dur, 1),
         instructions=f"Drive to {park_stop['stop_name']} station (Park & Ride)",
         color="#3B82F6",
+        steps=_make_direction_steps(drive_geo.get("steps", [])) if drive_geo else [],
     ))
     total_duration += drive_dur
     total_dist += drive_dist
@@ -484,6 +597,7 @@ async def _generate_hybrid_route(
         duration_min=round(walk_geo["duration_min"] if walk_geo else walk_dur, 1),
         instructions=f"Walk from {dest_stop['stop_name']} to destination",
         color="#10B981",
+        steps=_make_direction_steps(walk_geo.get("steps", [])) if walk_geo else [],
     ))
     total_duration += walk_geo["duration_min"] if walk_geo else walk_dur
     total_dist += walk_geo["distance_km"] if walk_geo else walk_dist

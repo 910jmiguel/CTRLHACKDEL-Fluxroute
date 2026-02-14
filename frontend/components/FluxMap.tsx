@@ -20,6 +20,7 @@ interface FluxMapProps {
   destination: { lat: number; lng: number } | null;
   vehicles: VehiclePosition[];
   theme: MapTheme;
+  onMapClick?: (coord: { lat: number; lng: number }) => void;
 }
 
 export default function FluxMap({
@@ -29,6 +30,7 @@ export default function FluxMap({
   destination,
   vehicles,
   theme,
+  onMapClick,
 }: FluxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -50,8 +52,17 @@ export default function FluxMap({
     });
 
     map.current.addControl(
-      new mapboxgl.NavigationControl({ showCompass: false }),
-      "bottom-right"
+      new mapboxgl.NavigationControl({ showCompass: true }),
+      "top-right"
+    );
+
+    map.current.addControl(
+      new mapboxgl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: false,
+        showUserHeading: false,
+      }),
+      "top-right"
     );
 
     map.current.on("load", () => {
@@ -64,11 +75,36 @@ export default function FluxMap({
     };
   }, []);
 
+  // Resize map when container size changes (e.g. sidebar collapse/expand)
+  useEffect(() => {
+    if (!mapContainer.current || !map.current || !mapLoaded) return;
+
+    const resize = () => map.current?.resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mapContainer.current);
+    return () => ro.disconnect();
+  }, [mapLoaded]);
+
   // Apply theme when it changes
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
     map.current.setConfigProperty("basemap", "lightPreset", theme);
   }, [theme, mapLoaded]);
+
+  // Click handler for setting origin/destination on map (always active when onMapClick provided)
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !onMapClick) return;
+
+    const handler = (e: mapboxgl.MapMouseEvent) => {
+      const coord = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+      onMapClick(coord);
+    };
+
+    map.current.on("click", handler);
+    return () => {
+      map.current?.off("click", handler);
+    };
+  }, [mapLoaded, onMapClick]);
 
   // Draw routes when they change
   useEffect(() => {
@@ -90,9 +126,15 @@ export default function FluxMap({
     }
   }, [routes, selectedRoute, mapLoaded]);
 
-  // Update markers
+  // Update markers (show origin and/or destination when at least one is set)
   useEffect(() => {
-    if (!map.current || !mapLoaded || !origin || !destination) return;
+    if (!map.current || !mapLoaded) return;
+
+    if (!origin && !destination) {
+      markers.current.forEach((m) => m.remove());
+      markers.current = [];
+      return;
+    }
 
     markers.current = addMarkers(
       map.current,

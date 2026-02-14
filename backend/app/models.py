@@ -19,6 +19,14 @@ class Coordinate(BaseModel):
     lng: float
 
 
+class DirectionStep(BaseModel):
+    instruction: str = ""
+    distance_km: float = 0.0
+    duration_min: float = 0.0
+    maneuver_type: str = ""
+    maneuver_modifier: str = ""
+
+
 class RouteSegment(BaseModel):
     mode: RouteMode
     geometry: dict  # GeoJSON LineString
@@ -28,6 +36,7 @@ class RouteSegment(BaseModel):
     transit_line: Optional[str] = None
     transit_route_id: Optional[str] = None
     color: Optional[str] = None
+    steps: list[DirectionStep] = Field(default_factory=list)
 
 
 class CostBreakdown(BaseModel):

@@ -14,6 +14,8 @@ interface SidebarProps {
   error: string | null;
   onSearch: (origin: Coordinate, destination: Coordinate) => void;
   onSelectRoute: (route: RouteOption) => void;
+  origin: Coordinate | null;
+  destination: Coordinate | null;
 }
 
 export default function Sidebar({
@@ -23,6 +25,8 @@ export default function Sidebar({
   error,
   onSearch,
   onSelectRoute,
+  origin,
+  destination,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -52,7 +56,7 @@ export default function Sidebar({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <RouteInput onSearch={onSearch} loading={loading} />
+        <RouteInput onSearch={onSearch} loading={loading} origin={origin} destination={destination} />
 
         {error && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">
