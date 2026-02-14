@@ -63,6 +63,7 @@ Sun Feb 16  ~1 AM    ── Phase 5 (Final Submission Prep)
 
 | Issue | Severity | Details |
 |-------|----------|---------|
+| **TTC subway lines outdated** | **High** | Line 3 (Scarborough RT) closed Nov 2023 but still hardcoded; Line 5 (Eglinton) and Line 6 (Finch West) are now operational but missing entirely. Affects 7+ files across backend and frontend — see detailed breakdown below. |
 | ML model file missing | **Medium** | `delay_model.joblib` not generated — heuristic works but less accurate |
 | ~~Documentation outdated~~ | **Done** | CLAUDE.md and README updated to reference Gemini (fixed Feb 15 3AM) |
 | Only TTC data | **High** | No GO Transit, MiWay, YRT, or Brampton Transit data |
@@ -71,6 +72,28 @@ Sun Feb 16  ~1 AM    ── Phase 5 (Final Submission Prep)
 | Transit routing is nearest-stop heuristic | **Medium** | Not a real graph search — misses optimal transfers |
 | API keys in `.env.local` | **Low** | Should be `.env` (gitignored) — minor file naming issue |
 | Git has uncommitted changes | **Low** | `.gitignore`, `README.md`, `package-lock.json` modified |
+
+#### TTC Subway Line Data — Detailed Breakdown
+
+The codebase reflects the pre-2024 TTC subway network (only Lines 1-4). This is **stale static data** that needs to be corrected:
+
+**Line 3 (Scarborough RT) — REMOVE:** Permanently closed Nov 19, 2023. Replaced by bus shuttle. All 5 hardcoded stations (Scarborough Centre, McCowan, Lawrence East, Ellesmere, Midland) must be removed from subway data.
+
+**Line 5 (Eglinton Crosstown LRT) — ADD:** Now operational. Needs stations with coordinates, line color (orange), route shape, delay heuristics, and mock realtime data.
+
+**Line 6 (Finch West LRT) — ADD:** Now operational. Needs stations with coordinates, line color, route shape, delay heuristics, and mock realtime data.
+
+**Files requiring updates (7+ files):**
+
+| File | Changes Needed |
+|------|---------------|
+| `backend/app/gtfs_parser.py` | Remove 5 Line 3 stations; add all Line 5 & 6 stations with lat/lng coordinates |
+| `backend/app/ml_predictor.py` | Remove Line 3 from `LINE_MAP`, base delays, and `line_names`; add Lines 5 & 6 with appropriate heuristic delay values |
+| `backend/app/gtfs_realtime.py` | Remove Line 3 from mock `SUBWAY_LINES`; add Lines 5 & 6 with coordinates, colors, and mock alerts |
+| `backend/app/gemini_agent.py` | Update `SYSTEM_PROMPT`: change "4 lines" to "5 lines", remove Line 3 description, add Lines 5 & 6 |
+| `backend/app/route_engine.py` | Update `line_colors` dict: remove key `"3"`, add `"5"` and `"6"` with correct TTC colors |
+| `frontend/lib/constants.ts` | Update `TTC_COLORS`: remove `"3"`, add `"5"` and `"6"` |
+| `CLAUDE.md` | Update all TTC line references throughout documentation |
 
 ### What's Missing Entirely
 
