@@ -7,7 +7,8 @@
       "Bash(npx tsc --noEmit)",
       "Bash(npx next build)",
       "Bash(git pull:*)",
-      "Bash(npx next lint:*)"
+      "Bash(npx next lint:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
