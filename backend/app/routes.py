@@ -83,12 +83,12 @@ async def predict_delay(
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """Chat with Claude AI assistant."""
-    from app.claude_agent import chat_with_claude
+    """Chat with Gemini AI assistant."""
+    from app.gemini_agent import chat_with_gemini
 
     state = _get_state()
     try:
-        response = await chat_with_claude(
+        response = await chat_with_gemini(
             message=request.message,
             history=request.history,
             context=request.context,

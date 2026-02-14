@@ -5,7 +5,7 @@ pandas
 scikit-learn
 xgboost
 joblib
-anthropic
+google-generativeai
 python-dotenv
 pydantic
 gtfs-realtime-bindings

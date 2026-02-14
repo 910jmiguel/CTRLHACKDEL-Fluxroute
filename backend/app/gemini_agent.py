@@ -3,13 +3,14 @@ import logging
 import os
 from typing import Optional
 
-from anthropic import AsyncAnthropic
+import google.generativeai as genai
+from google.generativeai.types import FunctionDeclaration, Tool
 
 from app.models import ChatMessage, ChatResponse
 
-logger = logging.getLogger("fluxroute.claude")
+logger = logging.getLogger("fluxroute.gemini")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 SYSTEM_PROMPT = """You are FluxRoute Assistant, an AI-powered Toronto transit expert built into the FluxRoute multimodal routing app.
 
@@ -29,17 +30,18 @@ Key knowledge:
 You have access to tools to get routes, predict delays, check alerts, and get weather.
 Keep responses concise (2-3 sentences max unless the user asks for detail)."""
 
-TOOLS = [
+# Tool definitions adapted for Gemini
+tools_definitions = [
     {
         "name": "get_routes",
         "description": "Get multimodal route options between two locations in Toronto. Returns transit, driving, walking, and hybrid routes.",
-        "input_schema": {
-            "type": "object",
+        "parameters": {
+            "type": "OBJECT",
             "properties": {
-                "origin_lat": {"type": "number", "description": "Origin latitude"},
-                "origin_lng": {"type": "number", "description": "Origin longitude"},
-                "dest_lat": {"type": "number", "description": "Destination latitude"},
-                "dest_lng": {"type": "number", "description": "Destination longitude"},
+                "origin_lat": {"type": "NUMBER", "description": "Origin latitude"},
+                "origin_lng": {"type": "NUMBER", "description": "Origin longitude"},
+                "dest_lat": {"type": "NUMBER", "description": "Destination latitude"},
+                "dest_lng": {"type": "NUMBER", "description": "Destination longitude"},
             },
             "required": ["origin_lat", "origin_lng", "dest_lat", "dest_lng"],
         },
@@ -47,12 +49,12 @@ TOOLS = [
     {
         "name": "predict_delay",
         "description": "Predict delay probability for a TTC subway line at a given time.",
-        "input_schema": {
-            "type": "object",
+        "parameters": {
+            "type": "OBJECT",
             "properties": {
-                "line": {"type": "string", "description": "TTC line (e.g. 'Line 1', '1', 'YU')"},
-                "hour": {"type": "integer", "description": "Hour of day (0-23)"},
-                "day_of_week": {"type": "integer", "description": "Day of week (0=Monday, 6=Sunday)"},
+                "line": {"type": "STRING", "description": "TTC line (e.g. 'Line 1', '1', 'YU')"},
+                "hour": {"type": "INTEGER", "description": "Hour of day (0-23)"},
+                "day_of_week": {"type": "INTEGER", "description": "Day of week (0=Monday, 6=Sunday)"},
             },
             "required": ["line"],
         },
@@ -60,21 +62,20 @@ TOOLS = [
     {
         "name": "get_service_alerts",
         "description": "Get current TTC service alerts and disruptions.",
-        "input_schema": {
-            "type": "object",
+        "parameters": {
+            "type": "OBJECT",
             "properties": {},
         },
     },
     {
         "name": "get_weather",
         "description": "Get current weather conditions in Toronto.",
-        "input_schema": {
-            "type": "object",
+        "parameters": {
+            "type": "OBJECT",
             "properties": {},
         },
     },
 ]
-
 
 async def _execute_tool(tool_name: str, tool_input: dict, app_state: dict) -> str:
     """Execute a tool call and return the result as a string."""
@@ -83,9 +84,18 @@ async def _execute_tool(tool_name: str, tool_input: dict, app_state: dict) -> st
             from app.route_engine import generate_routes
             from app.models import Coordinate
 
+            # Sanitize inputs (Gemini sometimes passes strings for numbers)
+            try:
+                origin_lat = float(tool_input["origin_lat"])
+                origin_lng = float(tool_input["origin_lng"])
+                dest_lat = float(tool_input["dest_lat"])
+                dest_lng = float(tool_input["dest_lng"])
+            except (ValueError, TypeError):
+                 return json.dumps({"error": "Invalid coordinates provided"})
+
             routes = await generate_routes(
-                origin=Coordinate(lat=tool_input["origin_lat"], lng=tool_input["origin_lng"]),
-                destination=Coordinate(lat=tool_input["dest_lat"], lng=tool_input["dest_lng"]),
+                origin=Coordinate(lat=origin_lat, lng=origin_lng),
+                destination=Coordinate(lat=dest_lat, lng=dest_lng),
                 gtfs=app_state.get("gtfs", {}),
                 predictor=app_state.get("predictor"),
             )
@@ -110,8 +120,8 @@ async def _execute_tool(tool_name: str, tool_input: dict, app_state: dict) -> st
                 return json.dumps({"error": "Predictor not available"})
             result = predictor.predict(
                 line=tool_input.get("line", "1"),
-                hour=tool_input.get("hour"),
-                day_of_week=tool_input.get("day_of_week"),
+                hour=int(tool_input.get("hour")) if tool_input.get("hour") is not None else None,
+                day_of_week=int(tool_input.get("day_of_week")) if tool_input.get("day_of_week") is not None else None,
             )
             return json.dumps(result, indent=2)
 
@@ -136,91 +146,108 @@ async def _execute_tool(tool_name: str, tool_input: dict, app_state: dict) -> st
         return json.dumps({"error": str(e)})
 
 
-async def chat_with_claude(
+async def chat_with_gemini(
     message: str,
     history: list[ChatMessage],
     context: Optional[dict],
     app_state: dict,
 ) -> ChatResponse:
-    """Chat with Claude using tool use for transit queries."""
-    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "your-anthropic-api-key-here":
+    """Chat with Gemini using tool use for transit queries."""
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "your-api-key-here":
         return ChatResponse(
-            message="AI chat is not configured. Please set the ANTHROPIC_API_KEY environment variable to enable the AI assistant.",
+            message="AI chat is not configured. Please set the GEMINI_API_KEY environment variable to enable the AI assistant.",
             suggested_actions=["Get routes", "Check delays"],
         )
 
-    client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-
-    # Build message history
-    messages = []
-    for msg in history[-10:]:  # Last 10 messages for context
-        messages.append({"role": msg.role, "content": msg.content})
-
-    # Add context if available
-    user_content = message
-    if context:
-        user_content = f"{message}\n\n[Current context: {json.dumps(context)}]"
-
-    messages.append({"role": "user", "content": user_content})
-
     try:
-        # Initial API call
-        response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
-            messages=messages,
+        genai.configure(api_key=GEMINI_API_KEY)
+        
+        # Initialize model with tools
+        model = genai.GenerativeModel(
+            model_name='gemini-flash-latest', 
+            system_instruction=SYSTEM_PROMPT,
+            tools=tools_definitions
         )
 
-        # Handle tool use loop (max 3 iterations)
+        # Build chat history
+        chat_history = []
+        for msg in history[-10:]:
+            role = "user" if msg.role == "user" else "model"
+            chat_history.append({"role": role, "parts": [msg.content]})
+
+        # Add context if available
+        user_content = message
+        if context:
+            user_content = f"{message}\n\n[Current context: {json.dumps(context)}]"
+
+        chat = model.start_chat(history=chat_history)
+        
+        # Send message
+        response = chat.send_message(user_content)
+        
+        # Handle tool calls
+        # Gemini handles the loop implicitly if we use automatic function calling, 
+        # but here we are using the manual approach or we need to handle the response parts.
+        # Actually, with the 'tools' parameter, Gemini returns a function call part.
+        
+        final_text = ""
+        function_calls_made = False
+
+        # We need to handle potential multiple turns of tool use
+        # The Python SDK's automatic function calling (enable_automatic_function_calling=True) 
+        # would need the actual functions to be passed. Since we have _execute_tool, 
+        # we might need to handle the parts manually.
+        
+        current_response = response
+        
+        # Simple loop for tool execution (Gemini 1.5 style)
         for _ in range(3):
-            if response.stop_reason != "tool_use":
+            part = current_response.candidates[0].content.parts[0]
+            
+            if part.function_call:
+                function_calls_made = True
+                tool_name = part.function_call.name
+                tool_args = dict(part.function_call.args)
+                
+                logger.info(f"Gemini requested tool: {tool_name}")
+                
+                tool_result = await _execute_tool(tool_name, tool_args, app_state)
+                
+                # Send result back to model
+                current_response = chat.send_message(
+                    genai.protos.Content(
+                        parts=[genai.protos.Part(
+                            function_response=genai.protos.FunctionResponse(
+                                name=tool_name,
+                                response={'result': tool_result}
+                            )
+                        )]
+                    )
+                )
+            else:
+                # Text response
+                final_text = current_response.text
                 break
 
-            # Extract tool calls
-            tool_results = []
-            assistant_content = response.content
+        if not final_text and function_calls_made:
+             # If we ended after tool calls without text (unlikely with loop break), get default
+             if current_response.text:
+                 final_text = current_response.text
+        
+        if not final_text:
+            final_text = current_response.text
 
-            for block in response.content:
-                if block.type == "tool_use":
-                    result = await _execute_tool(block.name, block.input, app_state)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-
-            # Send tool results back
-            messages.append({"role": "assistant", "content": assistant_content})
-            messages.append({"role": "user", "content": tool_results})
-
-            response = await client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
-                messages=messages,
-            )
-
-        # Extract final text
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                final_text += block.text
-
-        # Generate suggested actions based on the conversation
+        # Generate suggested actions
         suggested = _generate_suggestions(message, final_text)
 
         return ChatResponse(message=final_text, suggested_actions=suggested)
 
     except Exception as e:
-        logger.error(f"Claude API error: {e}")
+        logger.error(f"Gemini API error: {e}")
         return ChatResponse(
             message="I'm having trouble connecting to my AI backend. The rest of FluxRoute still works — try using the route planner directly!",
             suggested_actions=["Plan a route", "Check delays", "View alerts"],
         )
-
 
 def _generate_suggestions(user_msg: str, response: str) -> list[str]:
     """Generate contextual suggested actions."""
