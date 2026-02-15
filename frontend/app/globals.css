@@ -25,7 +25,9 @@
   --input-bg: rgba(30, 41, 59, 0.6);
 
   --panel-bg: rgba(15, 23, 42, 0.85);
-  --topbar-bg: rgba(15, 23, 42, 0.8);
+  --topbar-bg: rgba(30, 41, 59, 0.6);
+  --actions-bg: rgba(30, 41, 59, 0.6);
+  --actions-border: rgba(71, 85, 105, 0.5);
 }
 
 /* ─── Light Theme ─── */
@@ -48,7 +50,9 @@
   --input-bg: rgba(255, 255, 255, 0.9);
 
   --panel-bg: rgba(255, 255, 255, 0.9);
-  --topbar-bg: rgba(255, 255, 255, 0.85);
+  --topbar-bg: rgba(241, 245, 249, 0.8);
+  --actions-bg: rgba(241, 245, 249, 0.8);
+  --actions-border: rgba(203, 213, 225, 0.5);
 }
 
 .landing-theme {
@@ -246,12 +250,47 @@ h1,
   background: rgba(37, 99, 235, 0.1) !important;
 }
 
+/* ─── Mapbox Controls Overrides — Common (Glass Effect) ─── */
+.mapboxgl-ctrl-group {
+  background-color: var(--glass-bg) !important;
+  border: 1px solid var(--glass-border) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}
+
+.mapboxgl-ctrl-group>button {
+  border-bottom-color: var(--glass-border) !important;
+}
+
+/* ─── Mapbox Controls — Dark Theme Specifics ─── */
+[data-theme="dark"] .mapboxgl-ctrl-icon {
+  filter: invert(1) brightness(200%);
+  /* White icons */
+}
+
+[data-theme="dark"] .mapboxgl-ctrl-group>button:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ─── Mapbox Controls — Light Theme Specifics ─── */
+[data-theme="light"] .mapboxgl-ctrl-icon {
+  filter: opacity(0.7);
+  /* Dark grey icons */
+}
+
+[data-theme="light"] .mapboxgl-ctrl-group>button:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
 /* ─── Animations ─── */
 @keyframes pulse-glow {
+
   0%,
   100% {
     opacity: 0.4;
   }
+
   50% {
     opacity: 1;
   }
@@ -266,6 +305,7 @@ h1,
     transform: translateY(20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -280,6 +320,7 @@ h1,
   from {
     transform: translateX(100%);
   }
+
   to {
     transform: translateX(0);
   }
@@ -293,6 +334,7 @@ h1,
   from {
     transform: translateX(0);
   }
+
   to {
     transform: translateX(100%);
   }
@@ -306,6 +348,7 @@ h1,
   from {
     transform: translateY(100%);
   }
+
   to {
     transform: translateY(0);
   }
@@ -319,6 +362,7 @@ h1,
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -329,19 +373,31 @@ h1,
 }
 
 @keyframes btn-shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
 }
 
 .btn-shimmer {
   background-size: 200% auto;
-  background-image: linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.08) 25%, rgba(168,85,247,0.12) 50%, rgba(59,130,246,0.08) 75%, transparent 100%);
+  background-image: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.08) 25%, rgba(168, 85, 247, 0.12) 50%, rgba(59, 130, 246, 0.08) 75%, transparent 100%);
   animation: btn-shimmer 3s linear infinite;
 }
 
 @keyframes modal-enter {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .modal-enter {
@@ -349,8 +405,13 @@ h1,
 }
 
 @keyframes backdrop-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .backdrop-fade {
@@ -358,8 +419,15 @@ h1,
 }
 
 @keyframes stagger-in {
-  from { transform: translateY(8px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .stagger-in {
@@ -367,8 +435,15 @@ h1,
 }
 
 @keyframes expand-in {
-  from { max-height: 0; opacity: 0; }
-  to { max-height: 80px; opacity: 1; }
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+
+  to {
+    max-height: 80px;
+    opacity: 1;
+  }
 }
 
 .expand-in {
@@ -377,8 +452,15 @@ h1,
 }
 
 @keyframes border-glow {
-  0%, 100% { border-color: rgba(59,130,246,0.5); }
-  50% { border-color: rgba(168,85,247,0.5); }
+
+  0%,
+  100% {
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+
+  50% {
+    border-color: rgba(168, 85, 247, 0.5);
+  }
 }
 
 .border-glow {
@@ -391,6 +473,7 @@ h1,
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
+
   .slide-up,
   .slide-in-right,
   .slide-out-right,
@@ -412,6 +495,7 @@ h1,
   0% {
     transform: translateX(-1000px);
   }
+
   100% {
     transform: translateX(100vw);
   }
@@ -427,6 +511,7 @@ h1,
   0% {
     transform: translateX(100vw);
   }
+
   100% {
     transform: translateX(-1000px);
   }
@@ -439,10 +524,12 @@ h1,
 }
 
 @keyframes starTwinkle {
+
   0%,
   100% {
     opacity: 0.2;
   }
+
   50% {
     opacity: 0.8;
   }
@@ -453,10 +540,12 @@ h1,
 }
 
 @keyframes windowTwinkle {
+
   0%,
   100% {
     opacity: 0.2;
   }
+
   50% {
     opacity: 0.7;
   }
@@ -467,11 +556,13 @@ h1,
 }
 
 @keyframes beaconPulse {
+
   0%,
   100% {
     opacity: 0.3;
     r: 3;
   }
+
   50% {
     opacity: 1;
     r: 5;
@@ -483,10 +574,12 @@ h1,
 }
 
 @keyframes ctaGlow {
+
   0%,
   100% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 60px rgba(59, 130, 246, 0.1);
   }
+
   50% {
     box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 0 80px rgba(59, 130, 246, 0.15);
   }

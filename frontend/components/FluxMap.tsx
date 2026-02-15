@@ -658,7 +658,7 @@ export default function FluxMap({
   }, [showTraffic, routes, mapLoaded]);
 
   return (
-    <div ref={mapContainer} className="w-full h-full">
+    <div ref={mapContainer} className="w-full h-full" data-theme={theme}>
       {!MAPBOX_TOKEN && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900 z-10">
           <div className="glass-card p-6 text-center max-w-md">

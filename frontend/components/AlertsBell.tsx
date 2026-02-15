@@ -11,7 +11,7 @@ export default function AlertsBell({ count, onClick }: AlertsBellProps) {
   return (
     <button
       onClick={onClick}
-      className="relative p-2 rounded-lg hover:bg-[var(--surface-hover)] transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      className="relative p-2 rounded-md hover:bg-[var(--surface-hover)] transition-colors text-[var(--text-primary)] opacity-80 hover:opacity-100"
       aria-label={`${count} service alert${count !== 1 ? "s" : ""}`}
       title={`${count} service alert${count !== 1 ? "s" : ""}`}
     >
