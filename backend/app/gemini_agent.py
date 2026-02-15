@@ -3,8 +3,8 @@ import logging
 import os
 from typing import Optional
 
-import google.generativeai as genai
-from google.generativeai.types import FunctionDeclaration, Tool
+from google import genai
+from google.genai import types
 
 from app.models import ChatMessage, ChatResponse
 
@@ -402,82 +402,89 @@ async def chat_with_gemini(
         )
 
     try:
-        genai.configure(api_key=api_key)
-        
-        # Initialize model with tools
-        model = genai.GenerativeModel(
-            model_name='gemini-2.0-flash',
+        client = genai.Client(api_key=api_key)
+
+        # Build tools for the new SDK
+        gemini_tools = [types.Tool(function_declarations=tools_definitions)]
+
+        config = types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            tools=tools_definitions
+            tools=gemini_tools,
         )
 
         # Build chat history
         chat_history = []
         for msg in history[-10:]:
             role = "user" if msg.role == "user" else "model"
-            chat_history.append({"role": role, "parts": [msg.content]})
+            chat_history.append(
+                types.Content(role=role, parts=[types.Part(text=msg.content)])
+            )
 
         # Add context if available
         user_content = message
         if context:
             user_content = f"{message}\n\n[Current context: {json.dumps(context)}]"
 
-        chat = model.start_chat(history=chat_history)
-        
-        # Send message
-        response = chat.send_message(user_content)
-        
-        # Handle tool calls
-        # Gemini handles the loop implicitly if we use automatic function calling, 
-        # but here we are using the manual approach or we need to handle the response parts.
-        # Actually, with the 'tools' parameter, Gemini returns a function call part.
-        
-        final_text = ""
-        function_calls_made = False
+        # Create async chat
+        chat = client.aio.chats.create(
+            model="gemini-2.5-flash",
+            config=config,
+            history=chat_history,
+        )
 
-        # We need to handle potential multiple turns of tool use
-        # The Python SDK's automatic function calling (enable_automatic_function_calling=True) 
-        # would need the actual functions to be passed. Since we have _execute_tool, 
-        # we might need to handle the parts manually.
-        
-        current_response = response
-        
-        # Simple loop for tool execution (Gemini 1.5 style)
+        # Send message
+        response = await chat.send_message(user_content)
+
+        # Handle tool calls (up to 3 rounds)
         for _ in range(3):
-            part = current_response.candidates[0].content.parts[0]
-            
-            if part.function_call:
-                function_calls_made = True
-                tool_name = part.function_call.name
-                tool_args = dict(part.function_call.args)
-                
-                logger.info(f"Gemini requested tool: {tool_name}")
-                
-                tool_result = await _execute_tool(tool_name, tool_args, app_state)
-                
-                # Send result back to model
-                current_response = chat.send_message(
-                    genai.protos.Content(
-                        parts=[genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name=tool_name,
-                                response={'result': tool_result}
-                            )
-                        )]
-                    )
-                )
-            else:
-                # Text response
-                final_text = current_response.text
+            candidates = getattr(response, "candidates", None)
+            if not candidates or not candidates[0].content or not candidates[0].content.parts:
                 break
 
-        if not final_text and function_calls_made:
-             # If we ended after tool calls without text (unlikely with loop break), get default
-             if current_response.text:
-                 final_text = current_response.text
-        
+            # Find function_call in any part (model may emit thinking parts before it)
+            fn_part = None
+            for p in candidates[0].content.parts:
+                if getattr(p, "function_call", None):
+                    fn_part = p
+                    break
+
+            if fn_part is None:
+                break  # no tool call — text response ready
+
+            tool_name = fn_part.function_call.name
+            tool_args = dict(fn_part.function_call.args)
+
+            logger.info(f"Gemini requested tool: {tool_name}")
+
+            tool_result = await _execute_tool(tool_name, tool_args, app_state)
+
+            # Parse JSON string result into dict for the model
+            try:
+                parsed_result = json.loads(tool_result)
+            except (json.JSONDecodeError, TypeError):
+                parsed_result = {"result": tool_result}
+
+            if not isinstance(parsed_result, dict):
+                parsed_result = {"data": parsed_result}
+
+            # Send function response back
+            response = await chat.send_message(
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        name=tool_name,
+                        response=parsed_result,
+                    )
+                )
+            )
+
+        # Extract final text
+        try:
+            final_text = response.text or ""
+        except Exception:
+            final_text = ""
+
         if not final_text:
-            final_text = current_response.text
+            final_text = "I processed your request but couldn't generate a complete response. Try asking again!"
 
         # Generate suggested actions
         suggested = _generate_suggestions(message, final_text)
