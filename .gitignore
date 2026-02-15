@@ -3,7 +3,14 @@ __pycache__/
 .env
 .env.*
 .env.local
-*.joblib
+# ML Data
+backend/data/*.csv
+backend/data/*.xlsx
+backend/data/raw_downloads/
+
+# ML Model (keep the model binary)
+!backend/ml/delay_model.joblib
+
 backend/data/gtfs/
 backend/data/gtfs-go/
 backend/data/gtfs-yrt/
