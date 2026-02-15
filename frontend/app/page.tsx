@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Coordinate, VehiclePosition, TransitLinesData } from "@/lib/types";
+import type { Coordinate, VehiclePosition, TransitLinesData, RouteOption } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useTimeBasedTheme } from "@/hooks/useTimeBasedTheme";
 import { getVehicles, getTransitLines } from "@/lib/api";
@@ -10,16 +10,21 @@ import FluxMap from "@/components/FluxMap";
 import ChatAssistant from "@/components/ChatAssistant";
 import LiveAlerts from "@/components/LiveAlerts";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import RouteBuilderModal from "@/components/RouteBuilderModal";
 
 export default function Home() {
   const {
     routes,
+    filteredRoutes,
     selectedRoute,
     loading,
     error,
+    activeFilter,
+    setActiveFilter,
     fetchRoutes,
     selectRoute,
     clearRoutes,
+    addCustomRoute,
   } = useRoutes();
 
   const { theme } = useTimeBasedTheme();
@@ -29,6 +34,8 @@ export default function Home() {
   const [showTraffic, setShowTraffic] = useState(true);
   const [transitLines, setTransitLines] = useState<TransitLinesData | null>(null);
   const [originLabel, setOriginLabel] = useState<string | null>(null);
+  const [showRouteBuilder, setShowRouteBuilder] = useState(false);
+  const [customizeBaseRoute, setCustomizeBaseRoute] = useState<RouteOption | null>(null);
 
   const prevOriginRef = useRef<Coordinate | null>(null);
   const prevDestRef = useRef<Coordinate | null>(null);
@@ -110,6 +117,17 @@ export default function Home() {
     }
   }, [origin, destination, fetchRoutes]);
 
+  const handleCustomize = useCallback((route: RouteOption) => {
+    setCustomizeBaseRoute(route);
+    setShowRouteBuilder(true);
+  }, []);
+
+  const handleCustomRouteCalculated = useCallback((route: RouteOption) => {
+    addCustomRoute(route);
+    setShowRouteBuilder(false);
+    setCustomizeBaseRoute(null);
+  }, [addCustomRoute]);
+
   // Keep refs in sync (no auto-search — routes are fetched only via Find Routes or swap)
   useEffect(() => {
     prevOriginRef.current = origin;
@@ -145,11 +163,14 @@ export default function Home() {
         {/* Sidebar */}
         <Sidebar
           routes={routes}
+          filteredRoutes={filteredRoutes}
           selectedRoute={selectedRoute}
           loading={loading}
           error={error}
           onSearch={handleSearch}
           onSelectRoute={selectRoute}
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
           showTraffic={showTraffic}
           onToggleTraffic={() => setShowTraffic(!showTraffic)}
           originLabel={originLabel}
@@ -159,6 +180,7 @@ export default function Home() {
           onClearDestination={handleClearDestination}
           onSwap={handleSwap}
           onClearRoutes={clearRoutes}
+          onCustomize={handleCustomize}
         />
 
         {/* Map */}
@@ -184,6 +206,17 @@ export default function Home() {
         {/* Chat assistant */}
         <ChatAssistant />
       </div>
+
+      {/* Route Builder Modal */}
+      {showRouteBuilder && (
+        <RouteBuilderModal
+          baseRoute={customizeBaseRoute}
+          origin={origin}
+          destination={destination}
+          onClose={() => { setShowRouteBuilder(false); setCustomizeBaseRoute(null); }}
+          onRouteCalculated={handleCustomRouteCalculated}
+        />
+      )}
     </div>
   );
 }

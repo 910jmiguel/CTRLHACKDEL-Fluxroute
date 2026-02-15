@@ -122,3 +122,32 @@ export interface TransitLinesData {
   lines: GeoJSON.FeatureCollection;
   stations: GeoJSON.FeatureCollection;
 }
+
+export interface CustomSegmentRequest {
+  mode: RouteMode;
+  line_id?: string;
+  start_station_id?: string;
+  end_station_id?: string;
+  origin?: Coordinate;
+  destination?: Coordinate;
+}
+
+export interface CustomRouteRequest {
+  segments: CustomSegmentRequest[];
+  trip_origin: Coordinate;
+  trip_destination: Coordinate;
+}
+
+export interface LineStop {
+  stop_id: string;
+  stop_name: string;
+  lat: number;
+  lng: number;
+}
+
+export interface LineInfo {
+  line_id: string;
+  line_name: string;
+  color: string;
+  stops: LineStop[];
+}

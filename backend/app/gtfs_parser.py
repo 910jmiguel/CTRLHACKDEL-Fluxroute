@@ -427,6 +427,29 @@ def _generate_mock_departures(stop_id: str, limit: int) -> list[dict]:
     return results
 
 
+TTC_LINE_INFO = {
+    "1": {"name": "Line 1 Yonge-University", "color": "#FFCC00"},
+    "2": {"name": "Line 2 Bloor-Danforth", "color": "#00A651"},
+    "4": {"name": "Line 4 Sheppard", "color": "#A8518A"},
+    "5": {"name": "Line 5 Eglinton", "color": "#FF6600"},
+    "6": {"name": "Line 6 Finch West", "color": "#8B4513"},
+}
+
+
+def get_line_stations(gtfs: dict, line_id: str) -> list[dict]:
+    """Get ordered list of stations for a TTC rapid transit line.
+
+    Returns list of {stop_id, stop_name, lat, lng} in route order.
+    """
+    # Use hardcoded stations (reliable order)
+    stations = [
+        {"stop_id": s["stop_id"], "stop_name": s["stop_name"], "lat": s["stop_lat"], "lng": s["stop_lon"]}
+        for s in TTC_SUBWAY_STATIONS
+        if str(s.get("route_id")) == str(line_id)
+    ]
+    return stations
+
+
 def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Optional[dict]:
     """Find a transit route connecting two stops."""
     stops = gtfs["stops"]

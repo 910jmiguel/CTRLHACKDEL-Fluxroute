@@ -148,3 +148,32 @@ class VehiclePosition(BaseModel):
     bearing: Optional[float] = None
     speed: Optional[float] = None
     timestamp: Optional[int] = None
+
+
+class CustomSegmentRequest(BaseModel):
+    mode: RouteMode
+    line_id: Optional[str] = None  # e.g. "1", "2", "4", "5"
+    start_station_id: Optional[str] = None
+    end_station_id: Optional[str] = None
+    origin: Optional[Coordinate] = None
+    destination: Optional[Coordinate] = None
+
+
+class CustomRouteRequest(BaseModel):
+    segments: list[CustomSegmentRequest]
+    trip_origin: Coordinate
+    trip_destination: Coordinate
+
+
+class LineStop(BaseModel):
+    stop_id: str
+    stop_name: str
+    lat: float
+    lng: float
+
+
+class LineStopsResponse(BaseModel):
+    line_id: str
+    line_name: str
+    color: str
+    stops: list[LineStop]

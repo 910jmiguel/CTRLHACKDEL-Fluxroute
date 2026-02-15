@@ -8,6 +8,53 @@ import logging
 
 logger = logging.getLogger("fluxroute.parking")
 
+# GO lines with limited service — only run weekday peak hours
+# Richmond Hill GO line: weekday mornings southbound (~6-9am), weekday evenings northbound (~3:30-7pm)
+LIMITED_SERVICE_GO_LINES = {
+    "Richmond Hill": {
+        "stations": ["Richmond Hill GO", "Langstaff GO", "Old Cummer GO", "Oriole GO"],
+        "weekday_only": True,
+        # Approximate service windows (southbound AM, northbound PM)
+        "service_hours": {"am_start": 6, "am_end": 9, "pm_start": 15, "pm_end": 19},
+    },
+}
+
+_LIMITED_STATION_TO_LINE: dict[str, str] = {}
+for _line_name, _info in LIMITED_SERVICE_GO_LINES.items():
+    for _stn in _info["stations"]:
+        _LIMITED_STATION_TO_LINE[_stn] = _line_name
+
+
+def is_station_on_suspended_line(station_name: str, now=None) -> bool:
+    """Check if a station is on a GO line that is NOT currently running.
+
+    Richmond Hill line only runs weekday peak hours. Returns True if the
+    station should be excluded (line not running right now).
+    """
+    line_name = _LIMITED_STATION_TO_LINE.get(station_name)
+    if not line_name:
+        return False  # Not a limited-service station
+
+    from datetime import datetime
+    now = now or datetime.now()
+    info = LIMITED_SERVICE_GO_LINES[line_name]
+
+    # Weekend — no service
+    if info.get("weekday_only") and now.weekday() >= 5:
+        return True
+
+    # Weekday — check if within service hours
+    hours = info.get("service_hours", {})
+    hour = now.hour
+    am_running = hours.get("am_start", 0) <= hour < hours.get("am_end", 0)
+    pm_running = hours.get("pm_start", 0) <= hour < hours.get("pm_end", 0)
+
+    if not am_running and not pm_running:
+        return True  # Outside service hours
+
+    return False  # Line is running right now
+
+
 # Station parking database: name -> parking info
 # TTC Park & Ride lots are free; GO stations typically $4/day
 STATION_PARKING: dict[str, dict] = {
