@@ -221,8 +221,9 @@ export default function RouteCards({
   routes,
   selectedRoute,
   onSelect,
-  onCustomize,
+  onCustomize: _onCustomize,
 }: RouteCardsProps) {
+  void _onCustomize;
   if (routes.length === 0) {
     return (
       <div className="text-center text-[var(--text-muted)] text-sm py-6">

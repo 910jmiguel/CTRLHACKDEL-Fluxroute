@@ -177,3 +177,92 @@ body {
 .slide-up {
   animation: slide-up 0.3s ease-out;
 }
+
+/* ─── Landing Page Animations ─── */
+
+/* GO Train: left → right */
+@keyframes trainMoveRight {
+  0% {
+    transform: translateX(-500px);
+  }
+  100% {
+    transform: translateX(calc(100vw + 500px));
+  }
+}
+
+.train-go {
+  animation: trainMoveRight 18s linear infinite;
+}
+
+/* Subway: right → left */
+@keyframes trainMoveLeft {
+  0% {
+    transform: translateX(calc(100vw + 400px));
+  }
+  100% {
+    transform: translateX(-400px);
+  }
+}
+
+.train-subway {
+  animation: trainMoveLeft 22s linear infinite;
+  animation-delay: 4s;
+}
+
+/* Star twinkle */
+@keyframes starTwinkle {
+  0%, 100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.star-twinkle {
+  animation: starTwinkle 3s ease-in-out infinite;
+}
+
+/* Window lights twinkle */
+@keyframes windowTwinkle {
+  0%, 100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.window-twinkle {
+  animation: windowTwinkle 4s ease-in-out infinite;
+}
+
+/* CN Tower beacon pulse */
+@keyframes beaconPulse {
+  0%, 100% {
+    opacity: 0.3;
+    r: 3;
+  }
+  50% {
+    opacity: 1;
+    r: 5;
+  }
+}
+
+.cn-beacon {
+  animation: beaconPulse 2s ease-in-out infinite;
+}
+
+/* CTA button glow */
+@keyframes ctaGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 60px rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 0 80px rgba(59, 130, 246, 0.15);
+  }
+}
+
+.cta-glow {
+  animation: ctaGlow 3s ease-in-out infinite;
+}
