@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
-import type { RouteOption, VehiclePosition, TransitLinesData } from "@/lib/types";
+import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "@/lib/types";
 import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
 import {
@@ -12,6 +12,8 @@ import {
   fitToRoute,
   updateVehicles,
   drawTransitOverlay,
+  drawIsochrone,
+  clearIsochrone,
 } from "@/lib/mapUtils";
 
 interface FluxMapProps {
@@ -23,6 +25,9 @@ interface FluxMapProps {
   theme: MapTheme;
   showTraffic: boolean;
   transitLines: TransitLinesData | null;
+  isochroneData?: IsochroneResponse | null;
+  userPosition?: { lat: number; lng: number; bearing: number | null } | null;
+  isNavigating?: boolean;
   onMapClick?: (coord: { lat: number; lng: number }) => void;
   onGeolocate?: (coord: { lat: number; lng: number }) => void;
   onMarkerDrag?: (type: "origin" | "destination", coord: { lat: number; lng: number }) => void;
@@ -37,6 +42,9 @@ export default function FluxMap({
   theme,
   showTraffic,
   transitLines,
+  isochroneData,
+  userPosition,
+  isNavigating,
   onMapClick,
   onGeolocate,
   onMarkerDrag,
@@ -99,11 +107,15 @@ export default function FluxMap({
     return () => ro.disconnect();
   }, [mapLoaded]);
 
-  // Apply theme when it changes
+  // Apply dawn light preset on load (Mapbox Standard style)
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
-    map.current.setConfigProperty("basemap", "lightPreset", theme);
-  }, [theme, mapLoaded]);
+    try {
+      map.current.setConfigProperty("basemap", "lightPreset", "dawn");
+    } catch {
+      // setConfigProperty not supported on classic styles (dark-v11, etc.)
+    }
+  }, [mapLoaded]);
 
   // Click handler for setting origin/destination on map
   useEffect(() => {
@@ -305,6 +317,175 @@ export default function FluxMap({
     updateVehicles(map.current, vehicles);
   }, [vehicles, mapLoaded]);
 
+  // Draw/clear isochrone polygons
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    if (isochroneData) {
+      drawIsochrone(map.current, isochroneData);
+    } else {
+      clearIsochrone(map.current);
+    }
+  }, [isochroneData, mapLoaded]);
+
+  const [showRecenter, setShowRecenter] = useState(false);
+
+  // Track whether we were previously navigating (to detect stop → cleanup)
+  const wasNavigatingRef = useRef(false);
+  // Track whether user has manually interacted with map during navigation
+  const userInteractedRef = useRef(false);
+  // Store last known bearing for smooth rotation
+  const lastBearingRef = useRef(0);
+  // Pulse animation frame ID
+  const pulseAnimRef = useRef<number | null>(null);
+
+  // Set up / tear down user location layers when navigation starts/stops
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
+
+    if (isNavigating) {
+      wasNavigatingRef.current = true;
+      userInteractedRef.current = false;
+
+      // Listen for user interaction to pause auto-follow
+      const onInteraction = () => {
+        userInteractedRef.current = true;
+        setShowRecenter(true);
+      };
+      m.on("dragstart", onInteraction);
+
+      // Create source + layers if they don't exist
+      if (!m.getSource("user-location")) {
+        m.addSource("user-location", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+
+        // Pulsing outer ring (animated via paint transitions)
+        m.addLayer({
+          id: "user-location-pulse",
+          type: "circle",
+          source: "user-location",
+          paint: {
+            "circle-radius": 12,
+            "circle-color": "#4285F4",
+            "circle-opacity": 0.3,
+            "circle-stroke-width": 0,
+          },
+        });
+
+        // Solid blue dot with white border
+        m.addLayer({
+          id: "user-location-dot",
+          type: "circle",
+          source: "user-location",
+          paint: {
+            "circle-radius": 7,
+            "circle-color": "#4285F4",
+            "circle-opacity": 1,
+            "circle-stroke-width": 2.5,
+            "circle-stroke-color": "#ffffff",
+          },
+        });
+
+        // Heading cone (directional indicator)
+        m.addLayer({
+          id: "user-location-heading",
+          type: "circle",
+          source: "user-location",
+          paint: {
+            "circle-radius": 28,
+            "circle-color": "#4285F4",
+            "circle-opacity": 0.08,
+            "circle-stroke-width": 0,
+          },
+        });
+      }
+
+      // Start pulse animation
+      let growing = true;
+      const animatePulse = () => {
+        if (!m.getLayer("user-location-pulse")) return;
+        const currentRadius = growing ? 20 : 12;
+        m.setPaintProperty("user-location-pulse", "circle-radius", currentRadius);
+        m.setPaintProperty("user-location-pulse", "circle-opacity", growing ? 0.1 : 0.3);
+        growing = !growing;
+        pulseAnimRef.current = window.setTimeout(() => {
+          pulseAnimRef.current = requestAnimationFrame(animatePulse);
+        }, 1200) as unknown as number;
+      };
+      pulseAnimRef.current = requestAnimationFrame(animatePulse);
+
+      return () => {
+        m.off("dragstart", onInteraction);
+        if (pulseAnimRef.current !== null) {
+          cancelAnimationFrame(pulseAnimRef.current);
+          clearTimeout(pulseAnimRef.current);
+          pulseAnimRef.current = null;
+        }
+      };
+    } else if (wasNavigatingRef.current) {
+      // Navigation just stopped — clean up
+      wasNavigatingRef.current = false;
+      setShowRecenter(false);
+
+      if (m.getLayer("user-location-heading")) m.removeLayer("user-location-heading");
+      if (m.getLayer("user-location-dot")) m.removeLayer("user-location-dot");
+      if (m.getLayer("user-location-pulse")) m.removeLayer("user-location-pulse");
+      if (m.getSource("user-location")) m.removeSource("user-location");
+
+      if (pulseAnimRef.current !== null) {
+        cancelAnimationFrame(pulseAnimRef.current);
+        clearTimeout(pulseAnimRef.current);
+        pulseAnimRef.current = null;
+      }
+
+      // Smoothly reset to flat top-down view
+      m.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+    }
+  }, [isNavigating, mapLoaded]);
+
+  // Update user position on the map (separate effect to avoid re-creating layers)
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !isNavigating || !userPosition) return;
+    const m = map.current;
+
+    const source = m.getSource("user-location") as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    source.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [userPosition.lng, userPosition.lat],
+          },
+          properties: {},
+        },
+      ],
+    });
+
+    // Update bearing smoothly — keep last bearing if GPS doesn't provide one
+    if (userPosition.bearing !== null) {
+      lastBearingRef.current = userPosition.bearing;
+    }
+
+    // Only auto-follow if user hasn't panned away
+    if (!userInteractedRef.current) {
+      m.easeTo({
+        center: [userPosition.lng, userPosition.lat],
+        bearing: lastBearingRef.current,
+        pitch: 55,
+        zoom: Math.max(m.getZoom(), 15.5),
+        duration: 1000,
+        easing: (t) => t * (2 - t), // ease-out quadratic
+      });
+    }
+  }, [userPosition, isNavigating, mapLoaded]);
+
   // Manage traffic tileset layer
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
@@ -426,6 +607,23 @@ export default function FluxMap({
             </p>
           </div>
         </div>
+      )}
+
+      {/* Re-center button during navigation */}
+      {isNavigating && showRecenter && (
+        <button
+          onClick={() => {
+            userInteractedRef.current = false;
+            setShowRecenter(false);
+          }}
+          className="absolute top-20 right-3 z-20 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-3 shadow-lg transition-all duration-200 animate-pulse"
+          title="Re-center on your location"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+          </svg>
+        </button>
       )}
 
       {/* Traffic Legend - Positioned bottom-right to avoid Mapbox logo */}

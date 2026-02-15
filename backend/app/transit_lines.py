@@ -28,11 +28,11 @@ _ROUTE_TYPE_MODE = {
 
 # Fallback colors for TTC lines
 _TTC_LINE_COLORS = {
-    "1": "#FFCC00",  # Line 1 Yonge-University
-    "2": "#00A651",  # Line 2 Bloor-Danforth
-    "4": "#A8518A",  # Line 4 Sheppard
-    "5": "#FF6600",  # Line 5 Eglinton Crosstown
-    "6": "#8B4513",  # Line 6 Finch West
+    "1": "#F0CC49",  # Line 1 Yonge-University
+    "2": "#549F4D",  # Line 2 Bloor-Danforth
+    "4": "#9C246E",  # Line 4 Sheppard
+    "5": "#DE7731",  # Line 5 Eglinton Crosstown
+    "6": "#959595",  # Line 6 Finch West
 }
 
 _TTC_MODE_MAP = {

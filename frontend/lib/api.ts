@@ -11,6 +11,7 @@ import type {
   TransitLinesData,
   LineInfo,
   CustomRouteRequest,
+  StopSearchResult,
 } from "./types";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -94,6 +95,11 @@ export async function healthCheck() {
 
 export async function getLineStops(lineId: string): Promise<LineInfo> {
   return fetchApi<LineInfo>(`/line-stops/${lineId}`);
+}
+
+export async function searchStops(query: string): Promise<{ stops: StopSearchResult[] }> {
+  const params = new URLSearchParams({ query });
+  return fetchApi<{ stops: StopSearchResult[] }>(`/stops/search?${params}`);
 }
 
 export async function calculateCustomRoute(request: CustomRouteRequest): Promise<RouteOption> {

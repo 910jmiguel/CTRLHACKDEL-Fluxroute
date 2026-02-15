@@ -16,7 +16,8 @@
       "Bash(curl:*)",
       "Bash(python -m json.tool:*)",
       "Bash(git push:*)",
-      "Bash(python3 -m uvicorn:*)"
+      "Bash(python3 -m uvicorn:*)",
+      "Bash(git clean:*)"
     ]
   }
 }

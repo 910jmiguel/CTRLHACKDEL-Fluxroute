@@ -12,11 +12,11 @@ export const TORONTO_BOUNDS: [[number, number], [number, number]] = [
 export const MAP_STYLE = "mapbox://styles/mapbox/standard";
 
 export const TTC_COLORS: Record<string, string> = {
-  "1": "#FFCC00", // Line 1 Yonge-University (Yellow)
-  "2": "#00A651", // Line 2 Bloor-Danforth (Green)
-  "4": "#A8518A", // Line 4 Sheppard (Purple)
-  "5": "#FF6600", // Line 5 Eglinton Crosstown (Orange)
-  "6": "#8B4513", // Line 6 Finch West (Brown)
+  "1": "#F0CC49", // Line 1 Yonge-University (Yellow)
+  "2": "#549F4D", // Line 2 Bloor-Danforth (Green)
+  "4": "#9C246E", // Line 4 Sheppard (Purple)
+  "5": "#DE7731", // Line 5 Eglinton Crosstown (Orange)
+  "6": "#959595", // Line 6 Finch West (Grey)
 };
 
 export const MODE_COLORS: Record<string, string> = {
