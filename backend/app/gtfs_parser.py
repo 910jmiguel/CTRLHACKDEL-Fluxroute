@@ -150,7 +150,9 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 def load_gtfs_data() -> dict:
     """Load GTFS static data from files, falling back to hardcoded stations."""
     data = {"stops": pd.DataFrame(), "routes": pd.DataFrame(), "shapes": pd.DataFrame(),
-            "trips": pd.DataFrame(), "stop_times": pd.DataFrame(), "using_fallback": False}
+            "trips": pd.DataFrame(), "stop_times": pd.DataFrame(),
+            "calendar": pd.DataFrame(), "calendar_dates": pd.DataFrame(),
+            "using_fallback": False}
 
     files = {
         "stops": "stops.txt",
@@ -158,6 +160,8 @@ def load_gtfs_data() -> dict:
         "shapes": "shapes.txt",
         "trips": "trips.txt",
         "stop_times": "stop_times.txt",
+        "calendar": "calendar.txt",
+        "calendar_dates": "calendar_dates.txt",
     }
 
     columns_map = {
@@ -166,6 +170,8 @@ def load_gtfs_data() -> dict:
         "trips": ["route_id", "service_id", "trip_id", "trip_headsign", "shape_id"],
         "shapes": ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"],
         "routes": ["route_id", "route_short_name", "route_long_name", "route_color", "route_type"],
+        "calendar": ["service_id", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "start_date", "end_date"],
+        "calendar_dates": ["service_id", "date", "exception_type"],
     }
 
     try:
@@ -473,8 +479,86 @@ def _get_fallback_shape(gtfs: dict, route_id: str) -> Optional[dict]:
     return {"type": "LineString", "coordinates": coordinates}
 
 
-def get_next_departures(gtfs: dict, stop_id: str, limit: int = 5) -> list[dict]:
-    """Get next departures from a stop, handling GTFS 25:00:00 time format."""
+def _parse_gtfs_time(t: str) -> int:
+    """Parse GTFS time like '25:30:00' to minutes since midnight."""
+    try:
+        parts = str(t).split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+    except (ValueError, IndexError):
+        return 0
+
+
+def _format_gtfs_time(minutes: int) -> str:
+    """Format minutes since midnight to HH:MM (normalizing 25:00+ to 01:00+)."""
+    h, m = divmod(minutes % 1440, 60)
+    return f"{h:02d}:{m:02d}"
+
+
+def get_active_service_ids(gtfs: dict, date: Optional[datetime] = None) -> set:
+    """Get service IDs active on the given date (or today).
+
+    Uses calendar.txt (day-of-week + date range) and calendar_dates.txt (exceptions).
+    Falls back to returning all service_ids from trips if no calendar data.
+    """
+    if date is None:
+        date = datetime.now()
+
+    calendar = gtfs.get("calendar", pd.DataFrame())
+    calendar_dates = gtfs.get("calendar_dates", pd.DataFrame())
+    trips = gtfs.get("trips", pd.DataFrame())
+
+    if calendar.empty:
+        # Permissive fallback: return all service_ids from trips
+        if not trips.empty and "service_id" in trips.columns:
+            return set(trips["service_id"].unique())
+        return set()
+
+    # Day-of-week column names
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    today_day = day_names[date.weekday()]
+    today_int = int(date.strftime("%Y%m%d"))
+
+    active = set()
+    for _, row in calendar.iterrows():
+        try:
+            start = int(row.get("start_date", 0))
+            end = int(row.get("end_date", 99999999))
+            if start <= today_int <= end and int(row.get(today_day, 0)) == 1:
+                active.add(row["service_id"])
+        except (ValueError, TypeError):
+            continue
+
+    # Apply calendar_dates exceptions
+    if not calendar_dates.empty and "date" in calendar_dates.columns:
+        for _, row in calendar_dates.iterrows():
+            try:
+                exc_date = int(row["date"])
+                if exc_date != today_int:
+                    continue
+                exc_type = int(row.get("exception_type", 0))
+                sid = row["service_id"]
+                if exc_type == 1:
+                    active.add(sid)
+                elif exc_type == 2:
+                    active.discard(sid)
+            except (ValueError, TypeError):
+                continue
+
+    # If calendar data exists but nothing matched, fall back to all service_ids
+    if not active and not trips.empty and "service_id" in trips.columns:
+        return set(trips["service_id"].unique())
+
+    return active
+
+
+def get_next_departures(
+    gtfs: dict, stop_id: str, limit: int = 5,
+    route_id: Optional[str] = None, service_ids: Optional[set] = None,
+) -> list[dict]:
+    """Get next departures from a stop, handling GTFS 25:00:00 time format.
+
+    Optionally filter by route_id and active service_ids for more accurate results.
+    """
     stop_times = gtfs.get("stop_times", pd.DataFrame())
     if stop_times.empty:
         return _generate_mock_departures(stop_id, limit)
@@ -486,29 +570,62 @@ def get_next_departures(gtfs: dict, stop_id: str, limit: int = 5) -> list[dict]:
     if stop_deps.empty:
         return _generate_mock_departures(stop_id, limit)
 
-    def parse_gtfs_time(t: str) -> int:
-        """Parse GTFS time like '25:30:00' to minutes since midnight."""
-        try:
-            parts = str(t).split(":")
-            return int(parts[0]) * 60 + int(parts[1])
-        except (ValueError, IndexError):
-            return 0
+    # Filter by service_ids (active services for today)
+    trips_df = gtfs.get("trips", pd.DataFrame())
+    if service_ids and not trips_df.empty and "service_id" in trips_df.columns:
+        active_trips = trips_df[trips_df["service_id"].isin(service_ids)]
+        if route_id is not None:
+            active_trips = active_trips[active_trips["route_id"].astype(str) == str(route_id)]
+        active_trip_ids = set(active_trips["trip_id"])
+        if active_trip_ids:
+            stop_deps = stop_deps[stop_deps["trip_id"].isin(active_trip_ids)]
+    elif route_id is not None and not trips_df.empty:
+        route_trips = trips_df[trips_df["route_id"].astype(str) == str(route_id)]
+        route_trip_ids = set(route_trips["trip_id"])
+        if route_trip_ids:
+            stop_deps = stop_deps[stop_deps["trip_id"].isin(route_trip_ids)]
 
-    stop_deps["dep_minutes"] = stop_deps["departure_time"].apply(parse_gtfs_time)
+    if stop_deps.empty:
+        return _generate_mock_departures(stop_id, limit)
+
+    stop_deps["dep_minutes"] = stop_deps["departure_time"].apply(_parse_gtfs_time)
     upcoming = stop_deps[stop_deps["dep_minutes"] >= current_minutes].nsmallest(limit, "dep_minutes")
 
     results = []
     for _, row in upcoming.iterrows():
         mins = row["dep_minutes"]
-        h, m = divmod(mins % 1440, 60)
         results.append({
             "stop_id": str(stop_id),
             "trip_id": str(row.get("trip_id", "")),
-            "departure_time": f"{h:02d}:{m:02d}",
+            "departure_time": _format_gtfs_time(mins),
             "minutes_until": mins - current_minutes,
         })
 
     return results if results else _generate_mock_departures(stop_id, limit)
+
+
+def get_trip_arrival_at_stop(gtfs: dict, trip_id: str, stop_id: str) -> Optional[str]:
+    """Look up arrival time for a specific trip at a specific stop.
+
+    Returns formatted "HH:MM" string or None if not found.
+    """
+    stop_times = gtfs.get("stop_times", pd.DataFrame())
+    if stop_times.empty:
+        return None
+
+    match = stop_times[
+        (stop_times["trip_id"].astype(str) == str(trip_id)) &
+        (stop_times["stop_id"].astype(str) == str(stop_id))
+    ]
+    if match.empty:
+        return None
+
+    arrival = match.iloc[0].get("arrival_time")
+    if pd.isna(arrival):
+        return None
+
+    minutes = _parse_gtfs_time(str(arrival))
+    return _format_gtfs_time(minutes)
 
 
 def _generate_mock_departures(stop_id: str, limit: int) -> list[dict]:

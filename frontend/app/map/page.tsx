@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { Coordinate, VehiclePosition, TransitLinesData, RouteOption, IsochroneResponse, ServiceAlert, ThemeMode, ViewMode } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useNavigation } from "@/hooks/useNavigation";
@@ -254,6 +254,18 @@ export default function MapPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Filter vehicles to only show lines used by the selected route
+  const filteredVehicles = useMemo(() => {
+    if (!selectedRoute) return vehicles;
+    const lineIds = new Set(
+      selectedRoute.segments
+        .filter((s) => s.mode === "transit" && s.transit_route_id)
+        .map((s) => s.transit_route_id!)
+    );
+    if (lineIds.size === 0) return vehicles;
+    return vehicles.filter((v) => v.route_id && lineIds.has(v.route_id));
+  }, [vehicles, selectedRoute]);
+
   // Map theme preset
   const mapTheme = theme === "light" ? "day" as const : "dawn" as const;
 
@@ -321,7 +333,7 @@ export default function MapPage() {
                 : routes}
               origin={origin}
               destination={destination}
-              vehicles={vehicles}
+              vehicles={filteredVehicles}
               theme={mapTheme}
               showTraffic={showTraffic}
               transitLines={transitLines}

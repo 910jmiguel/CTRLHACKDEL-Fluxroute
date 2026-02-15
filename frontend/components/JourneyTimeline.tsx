@@ -26,6 +26,25 @@ function getLineId(seg: RouteSegment): string | null {
   return TTC_LINE_LOGOS[id] ? id : null;
 }
 
+function ScheduleSourceBadge({ source }: { source?: string }) {
+  if (!source) return null;
+  const styles: Record<string, string> = {
+    "gtfs-rt": "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    "gtfs-static": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    "estimated": "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  };
+  const labels: Record<string, string> = {
+    "gtfs-rt": "Live",
+    "gtfs-static": "Sched",
+    "estimated": "Est.",
+  };
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${styles[source] || styles.estimated}`}>
+      {labels[source] || source}
+    </span>
+  );
+}
+
 function CongestionBadge({ level }: { level?: string }) {
   if (!level || level === "low") return null;
   const colors: Record<string, string> = {
@@ -213,6 +232,17 @@ export default function JourneyTimeline({
                     )}
                   </div>
 
+                  {/* Schedule times for transit segments */}
+                  {isTransit && seg.departure_time && (
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px]">
+                      <span className="font-geist-mono text-[var(--text-primary)]">
+                        Depart {seg.departure_time}
+                        {seg.arrival_time && <> → Arrive {seg.arrival_time}</>}
+                      </span>
+                      <ScheduleSourceBadge source={seg.schedule_source} />
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-3 mt-0.5 text-[11px] text-[var(--text-muted)]">
                     <span className="font-geist-mono">{Math.round(seg.duration_min)} min</span>
                     <span className="font-geist-mono">
@@ -222,6 +252,19 @@ export default function JourneyTimeline({
                     </span>
                     {seg.congestion_level && <CongestionBadge level={seg.congestion_level} />}
                   </div>
+
+                  {/* Next departures for transit */}
+                  {isTransit && seg.next_departures && seg.next_departures.length > 0 && (
+                    <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                      <span className="opacity-70">Next: </span>
+                      <span className="font-geist-mono">
+                        {seg.next_departures.slice(0, 3).map((d) => d.departure_time).join(", ")}
+                      </span>
+                      {seg.next_departures.length > 3 && (
+                        <span className="opacity-50"> (+{seg.next_departures.length - 3} more)</span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Expandable directions */}
                   {hasSteps && (

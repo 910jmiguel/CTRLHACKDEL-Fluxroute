@@ -39,6 +39,13 @@ class RouteSegment(BaseModel):
     steps: list[DirectionStep] = Field(default_factory=list)
     congestion_level: Optional[str] = None  # "low", "moderate", "heavy", "severe"
     congestion_segments: Optional[list[dict]] = None  # Sub-segments with per-segment congestion
+    departure_time: Optional[str] = None       # "08:47" — depart boarding stop
+    arrival_time: Optional[str] = None         # "08:59" — arrive alighting stop
+    trip_id: Optional[str] = None              # GTFS trip_id
+    board_stop_id: Optional[str] = None        # GTFS stop_id (boarding)
+    alight_stop_id: Optional[str] = None       # GTFS stop_id (alighting)
+    next_departures: Optional[list[dict]] = None  # [{departure_time, minutes_until}]
+    schedule_source: Optional[str] = None      # "gtfs-rt" | "gtfs-static" | "estimated"
 
 
 class CostBreakdown(BaseModel):

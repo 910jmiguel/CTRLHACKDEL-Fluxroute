@@ -31,6 +31,13 @@ export interface RouteSegment {
     geometry: GeoJSON.LineString;
     congestion: string;
   }>;
+  departure_time?: string;
+  arrival_time?: string;
+  trip_id?: string;
+  board_stop_id?: string;
+  alight_stop_id?: string;
+  next_departures?: Array<{ departure_time: string; minutes_until: number }>;
+  schedule_source?: string;  // "gtfs-rt" | "gtfs-static" | "estimated"
 }
 
 export interface CostBreakdown {

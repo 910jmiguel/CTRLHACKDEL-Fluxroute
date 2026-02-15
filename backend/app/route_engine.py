@@ -17,7 +17,11 @@ from app.models import (
     RouteSegment,
 )
 from app.cost_calculator import calculate_cost, calculate_hybrid_cost
-from app.gtfs_parser import find_nearest_stops, find_nearest_rapid_transit_stations, haversine, find_transit_route
+from app.gtfs_parser import (
+    find_nearest_stops, find_nearest_rapid_transit_stations, haversine,
+    find_transit_route, get_active_service_ids, get_next_departures,
+    get_trip_arrival_at_stop,
+)
 from app.ml_predictor import DelayPredictor
 from app.models import ParkingInfo
 from app.otp_client import query_otp_routes, parse_otp_itinerary, find_park_and_ride_stations
@@ -304,6 +308,7 @@ async def generate_routes(
             origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now,
             http_client=http_client,
             weather=weather,
+            app_state=app_state,
         ))
 
     # Run single-mode routes + hybrid in parallel
@@ -338,6 +343,7 @@ async def _generate_single_route(
     now: datetime,
     http_client=None,
     weather: Optional[dict] = None,
+    app_state: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a single route option."""
 
@@ -353,6 +359,7 @@ async def _generate_single_route(
             origin, destination, gtfs, predictor, total_distance, is_adverse, now,
             http_client=http_client,
             weather=weather,
+            app_state=app_state,
         )
 
     elif mode == RouteMode.DRIVING:
@@ -465,6 +472,85 @@ async def _generate_single_route(
     return None
 
 
+def _enrich_transit_segment(
+    seg: RouteSegment,
+    gtfs: dict,
+    route_id,
+    origin_stop: dict,
+    dest_stop: dict,
+    now: datetime,
+    app_state: Optional[dict] = None,
+) -> None:
+    """Enrich a transit segment with schedule data (departure/arrival times, next departures).
+
+    Checks GTFS-RT trip updates first, falls back to GTFS static, then estimated.
+    Mutates the segment in place.
+    """
+    service_ids = get_active_service_ids(gtfs)
+    rid = str(route_id) if route_id else None
+
+    departures = get_next_departures(
+        gtfs, origin_stop["stop_id"], limit=5, route_id=rid, service_ids=service_ids,
+    )
+
+    if not departures:
+        # Estimated fallback
+        seg.schedule_source = "estimated"
+        dep_minutes = now.hour * 60 + now.minute + 3  # ~3 min from now
+        seg.departure_time = f"{(dep_minutes // 60) % 24:02d}:{dep_minutes % 60:02d}"
+        arr_minutes = dep_minutes + round(seg.duration_min)
+        seg.arrival_time = f"{(arr_minutes // 60) % 24:02d}:{arr_minutes % 60:02d}"
+        return
+
+    # Store next departures for display
+    seg.next_departures = [
+        {"departure_time": d["departure_time"], "minutes_until": d["minutes_until"]}
+        for d in departures
+    ]
+
+    # Pick the first upcoming departure
+    best = departures[0]
+    trip_id = best.get("trip_id", "")
+    seg.trip_id = trip_id
+    seg.departure_time = best["departure_time"]
+    seg.schedule_source = "gtfs-static"
+
+    # Check GTFS-RT trip updates for real-time override
+    trip_updates = (app_state or {}).get("trip_updates", {})
+    rt_dep = trip_updates.get((trip_id, origin_stop["stop_id"]))
+    rt_arr = trip_updates.get((trip_id, dest_stop["stop_id"]))
+
+    if rt_dep and rt_dep.get("departure"):
+        from datetime import timezone
+        dep_dt = datetime.fromtimestamp(rt_dep["departure"], tz=timezone.utc)
+        # Convert to local time (Toronto is UTC-5 or UTC-4)
+        import time as _time
+        offset = _time.timezone if _time.daylight == 0 else _time.altzone
+        dep_local_minutes = dep_dt.hour * 60 + dep_dt.minute - (offset // 60)
+        seg.departure_time = f"{(dep_local_minutes // 60) % 24:02d}:{dep_local_minutes % 60:02d}"
+        seg.schedule_source = "gtfs-rt"
+
+    if rt_arr and rt_arr.get("arrival"):
+        from datetime import timezone
+        import time as _time
+        arr_dt = datetime.fromtimestamp(rt_arr["arrival"], tz=timezone.utc)
+        offset = _time.timezone if _time.daylight == 0 else _time.altzone
+        arr_local_minutes = arr_dt.hour * 60 + arr_dt.minute - (offset // 60)
+        seg.arrival_time = f"{(arr_local_minutes // 60) % 24:02d}:{arr_local_minutes % 60:02d}"
+        seg.schedule_source = "gtfs-rt"
+    else:
+        # Use static GTFS arrival
+        arrival = get_trip_arrival_at_stop(gtfs, trip_id, dest_stop["stop_id"])
+        if arrival:
+            seg.arrival_time = arrival
+        else:
+            # Estimate from departure + duration
+            dep_parts = seg.departure_time.split(":")
+            dep_minutes = int(dep_parts[0]) * 60 + int(dep_parts[1])
+            arr_minutes = dep_minutes + round(seg.duration_min)
+            seg.arrival_time = f"{(arr_minutes // 60) % 24:02d}:{arr_minutes % 60:02d}"
+
+
 async def _generate_transit_route(
     origin: Coordinate,
     destination: Coordinate,
@@ -475,6 +561,7 @@ async def _generate_transit_route(
     now: datetime,
     http_client=None,
     weather: Optional[dict] = None,
+    app_state: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
     # Find nearest stops — progressive radius expansion for suburban origins
@@ -570,7 +657,8 @@ async def _generate_transit_route(
     line_colors = {"1": "#F0CC49", "2": "#549F4D", "4": "#9C246E", "5": "#DE7731", "6": "#959595"}
     color = line_colors.get(str(route_id), "#F0CC49")
 
-    segments.append(RouteSegment(
+    # Build transit segment with schedule enrichment
+    transit_seg = RouteSegment(
         mode=RouteMode.TRANSIT,
         geometry=transit_geometry,
         distance_km=round(transit_dist, 2),
@@ -579,7 +667,14 @@ async def _generate_transit_route(
         transit_line=line_name,
         transit_route_id=str(route_id) if route_id else None,
         color=color,
-    ))
+        board_stop_id=origin_stop["stop_id"],
+        alight_stop_id=dest_stop["stop_id"],
+    )
+
+    # Enrich with schedule data
+    _enrich_transit_segment(transit_seg, gtfs, route_id, origin_stop, dest_stop, now, app_state)
+
+    segments.append(transit_seg)
     total_duration += transit_dur
     total_dist += transit_dist
 
@@ -664,6 +759,26 @@ async def _generate_transit_route(
         cost.gas = round(extra_gas_cost, 2)
         cost.total = round(cost.fare + cost.gas + cost.parking, 2)
 
+    # Compute route-level departure/arrival from transit segment schedule
+    route_departure = now.strftime("%H:%M")
+    route_arrival = None
+    transit_segs = [s for s in segments if s.mode == RouteMode.TRANSIT]
+    if transit_segs and transit_segs[0].departure_time:
+        # Route departs when user leaves (now), arrives = last transit arrival + walk time after
+        first_transit_dep = transit_segs[0].departure_time
+        # Walk time before first transit
+        walk_before = sum(s.duration_min for s in segments if s == segments[0] and s.mode != RouteMode.TRANSIT)
+        # Compute arrival from first transit departure + remaining duration
+        try:
+            dep_parts = first_transit_dep.split(":")
+            dep_min = int(dep_parts[0]) * 60 + int(dep_parts[1])
+            # Remaining duration after transit departure = transit_dur + walk_after
+            walk_after = sum(s.duration_min for s in segments[len(segments)-1:] if s.mode != RouteMode.TRANSIT)
+            arr_min = dep_min + round(transit_dur) + round(walk_after)
+            route_arrival = f"{(arr_min // 60) % 24:02d}:{arr_min % 60:02d}"
+        except (ValueError, IndexError):
+            pass
+
     return RouteOption(
         id=str(uuid.uuid4())[:8],
         label="",
@@ -674,7 +789,8 @@ async def _generate_transit_route(
         cost=cost,
         delay_info=delay_info,
         stress_score=round(min(1.0, stress_score), 2),
-        departure_time=now.strftime("%H:%M"),
+        departure_time=route_departure,
+        arrival_time=route_arrival,
         summary=f"Transit via {origin_stop['stop_name']} → {dest_stop['stop_name']}",
     )
 
@@ -1117,7 +1233,7 @@ async def _build_single_hybrid_route(
             line_colors = {"1": "#F0CC49", "2": "#549F4D", "4": "#9C246E", "5": "#DE7731", "6": "#959595"}
             color = line_colors.get(str(route_id), "#F0CC49")
 
-            transit_segments.append(RouteSegment(
+            hybrid_transit_seg = RouteSegment(
                 mode=RouteMode.TRANSIT,
                 geometry=transit_geometry,
                 distance_km=round(transit_dist, 2),
@@ -1126,7 +1242,13 @@ async def _build_single_hybrid_route(
                 transit_line=transit_label,
                 transit_route_id=str(route_id) if route_id else None,
                 color=color,
-            ))
+                board_stop_id=park_stop["stop_id"],
+                alight_stop_id=dest_stop["stop_id"],
+            )
+            _enrich_transit_segment(
+                hybrid_transit_seg, gtfs, route_id, park_stop, dest_stop, now,
+            )
+            transit_segments.append(hybrid_transit_seg)
 
             # Walk from final station
             walk_dist = dest_stop["distance_km"]
