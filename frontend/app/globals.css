@@ -197,36 +197,35 @@ body {
 /* GO Train: left → right */
 @keyframes trainMoveRight {
   0% {
-    transform: translateX(-1200px);
+    transform: translateX(-1500px);
   }
 
   100% {
-    transform: translateX(calc(100vw + 1200px));
+    transform: translateX(calc(100vw + 1500px));
   }
 }
 
 .train-go {
   left: 0;
-  transform: translateX(-1200px);
-  animation: trainMoveRight 18s linear infinite;
+  transform: translateX(-1500px);
+  animation: trainMoveRight 20s linear infinite;
 }
 
 /* Subway: right → left */
 @keyframes trainMoveLeft {
   0% {
-    transform: translateX(calc(100vw + 1200px));
+    transform: translateX(calc(100vw + 1500px));
   }
 
   100% {
-    transform: translateX(-1200px);
+    transform: translateX(-1500px);
   }
 }
 
 .train-subway {
   left: 0;
-  transform: translateX(calc(100vw + 1200px));
-  animation: trainMoveLeft 22s linear infinite;
-  animation-delay: 4s;
+  transform: translateX(calc(100vw + 1500px));
+  animation: trainMoveLeft 20s linear infinite;
 }
 
 /* Star twinkle */
