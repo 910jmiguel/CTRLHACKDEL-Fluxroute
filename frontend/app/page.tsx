@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Coordinate, VehiclePosition, TransitLinesData, RouteOption } from "@/lib/types";
+import type { Coordinate, VehiclePosition, TransitLinesData, RouteOption, IsochroneResponse } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
+import { useNavigation } from "@/hooks/useNavigation";
 import { useTimeBasedTheme } from "@/hooks/useTimeBasedTheme";
 import { getVehicles, getTransitLines } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
@@ -10,6 +11,7 @@ import FluxMap from "@/components/FluxMap";
 import ChatAssistant from "@/components/ChatAssistant";
 import LiveAlerts from "@/components/LiveAlerts";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import NavigationView from "@/components/NavigationView";
 import RouteBuilderModal from "@/components/RouteBuilderModal";
 
 export default function Home() {
@@ -36,6 +38,41 @@ export default function Home() {
   const [originLabel, setOriginLabel] = useState<string | null>(null);
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
   const [customizeBaseRoute, setCustomizeBaseRoute] = useState<RouteOption | null>(null);
+  const [isochroneData, setIsochroneData] = useState<IsochroneResponse | null>(null);
+
+  const navigation = useNavigation({
+    onReroute: (newRoute) => {
+      console.log("Navigation: rerouted", newRoute);
+    },
+    onArrival: () => {
+      console.log("Navigation: arrived at destination");
+    },
+    onError: (err) => {
+      console.error("Navigation error:", err);
+    },
+  });
+
+  const handleStartNavigation = useCallback(() => {
+    if (destination) {
+      if (origin) {
+        navigation.startNavigation(origin, destination);
+      } else if ("geolocation" in navigator) {
+        // Auto-geolocate if no origin set
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const geoOrigin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setOriginLabel("Current Location");
+            setOrigin(geoOrigin);
+            navigation.startNavigation(geoOrigin, destination);
+          },
+          (err) => {
+            console.error("Geolocation failed:", err.message);
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+    }
+  }, [origin, destination, navigation.startNavigation]);
 
   const prevOriginRef = useRef<Coordinate | null>(null);
   const prevDestRef = useRef<Coordinate | null>(null);
@@ -155,6 +192,24 @@ export default function Home() {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
+      {/* Navigation HUD overlay */}
+      <NavigationView
+        isNavigating={navigation.isNavigating}
+        currentInstruction={navigation.currentInstruction}
+        nextInstruction={navigation.nextInstruction}
+        stepIndex={navigation.stepIndex}
+        totalSteps={navigation.totalSteps}
+        remainingDistanceKm={navigation.remainingDistanceKm}
+        totalDistanceKm={navigation.totalDistanceKm}
+        remainingDurationMin={navigation.remainingDurationMin}
+        eta={navigation.eta}
+        speedLimit={navigation.speedLimit}
+        voiceMuted={navigation.voiceMuted}
+        laneGuidance={navigation.laneGuidance}
+        onStopNavigation={navigation.stopNavigation}
+        onToggleVoice={navigation.toggleVoice}
+      />
+
       {/* Top alert banner */}
       <LiveAlerts />
 
@@ -181,22 +236,34 @@ export default function Home() {
           onSwap={handleSwap}
           onClearRoutes={clearRoutes}
           onCustomize={handleCustomize}
+          onStartNavigation={selectedRoute && origin && destination ? handleStartNavigation : undefined}
+          isNavigating={navigation.isNavigating}
+          isochroneData={isochroneData}
+          onIsochroneLoaded={setIsochroneData}
+          onClearIsochrone={() => setIsochroneData(null)}
         />
 
         {/* Map */}
         <div className="flex-1 relative">
           <FluxMap
-            selectedRoute={selectedRoute}
-            routes={routes}
+            selectedRoute={navigation.isNavigating && navigation.navigationRoute
+              ? navigation.navigationRoute.route
+              : selectedRoute}
+            routes={navigation.isNavigating && navigation.navigationRoute
+              ? [navigation.navigationRoute.route]
+              : routes}
             origin={origin}
             destination={destination}
             vehicles={vehicles}
             theme={theme}
             showTraffic={showTraffic}
             transitLines={transitLines}
-            onMapClick={handleMapClick}
+            isochroneData={isochroneData}
+            userPosition={navigation.currentPosition}
+            isNavigating={navigation.isNavigating}
+            onMapClick={navigation.isNavigating ? undefined : handleMapClick}
             onGeolocate={handleGeolocate}
-            onMarkerDrag={handleMarkerDrag}
+            onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
           />
 
           {/* Loading overlay */}
