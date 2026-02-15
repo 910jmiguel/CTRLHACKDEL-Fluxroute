@@ -61,7 +61,7 @@ async def _mapbox_directions(
                 resp.raise_for_status()
                 data = resp.json()
             else:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0")) as client:
                     resp = await client.get(url)
                     resp.raise_for_status()
                     data = resp.json()
@@ -567,8 +567,8 @@ async def _generate_transit_route(
     route_id = origin_stop.get("route_id") or (transit_route.get("route_id") if transit_route else None)
 
     # Determine transit line color
-    line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
-    color = line_colors.get(str(route_id), "#FFCC00")
+    line_colors = {"1": "#F0CC49", "2": "#549F4D", "4": "#9C246E", "5": "#DE7731", "6": "#959595"}
+    color = line_colors.get(str(route_id), "#F0CC49")
 
     segments.append(RouteSegment(
         mode=RouteMode.TRANSIT,
@@ -1099,7 +1099,7 @@ async def _build_single_hybrid_route(
                 duration_min=round(transit_dur, 1),
                 instructions=f"Take transit to destination",
                 transit_line=transit_label,
-                color="#FFCC00",
+                color="#F0CC49",
             )]
         else:
             # Build heuristic transit + walk segments
@@ -1114,8 +1114,8 @@ async def _build_single_hybrid_route(
                 else _straight_line_geometry(station_coord, Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]))
             )
 
-            line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
-            color = line_colors.get(str(route_id), "#FFCC00")
+            line_colors = {"1": "#F0CC49", "2": "#549F4D", "4": "#9C246E", "5": "#DE7731", "6": "#959595"}
+            color = line_colors.get(str(route_id), "#F0CC49")
 
             transit_segments.append(RouteSegment(
                 mode=RouteMode.TRANSIT,
@@ -1277,12 +1277,23 @@ async def calculate_custom_route(
             seg_origin = seg_req.origin or prev_end_coord or request.trip_origin
             seg_dest = seg_req.destination
 
-            # If no explicit destination, use trip destination for last segment
+            # If no explicit destination, look ahead to next transit segment's start
             if not seg_dest:
                 if i == len(request.segments) - 1:
                     seg_dest = request.trip_destination
                 else:
-                    continue
+                    # Look ahead for the next transit segment's start station
+                    for j in range(i + 1, len(request.segments)):
+                        future_seg = request.segments[j]
+                        if future_seg.mode == RouteMode.TRANSIT and future_seg.start_station_id:
+                            future_stations = get_line_stations(gtfs, future_seg.line_id) if future_seg.line_id else []
+                            future_start = next((s for s in future_stations if s["stop_id"] == future_seg.start_station_id), None)
+                            if future_start:
+                                seg_dest = Coordinate(lat=future_start["lat"], lng=future_start["lng"])
+                            break
+                    # If still no destination, use trip destination
+                    if not seg_dest:
+                        seg_dest = request.trip_destination
 
             profile = "driving-traffic" if seg_req.mode == RouteMode.DRIVING else "walking"
             mapbox = await _mapbox_directions(seg_origin, seg_dest, profile, http_client=http_client)
@@ -1361,7 +1372,7 @@ async def calculate_custom_route(
 
             line_info = TTC_LINE_INFO.get(seg_req.line_id, {})
             line_name = line_info.get("name", f"Line {seg_req.line_id}")
-            line_color = line_info.get("color", "#FFCC00")
+            line_color = line_info.get("color", "#F0CC49")
 
             segments.append(RouteSegment(
                 mode=RouteMode.TRANSIT,
@@ -1475,3 +1486,244 @@ def _label_routes(routes: list[RouteOption]) -> None:
                 route.label = f"Hybrid {hybrid_count}" if hybrid_count > 1 else "Hybrid"
         else:
             route.label = route.mode.value.title()
+
+
+async def calculate_custom_route_v2(
+    request,  # CustomRouteRequestV2
+    gtfs: dict,
+    predictor: DelayPredictor,
+    http_client=None,
+    weather: Optional[dict] = None,
+) -> RouteOption:
+    """Calculate a user-defined custom route using V2 suggestion-based segments.
+
+    Transit segments receive board/alight coords directly from the suggestion
+    the user picked. Driving/walking segments auto-compute destinations by
+    looking ahead in the chain.
+    """
+    now = datetime.now()
+    segments: list[RouteSegment] = []
+    total_dist = 0.0
+    total_dur = 0.0
+    total_fare = 0.0
+    total_gas = 0.0
+    delay_info = DelayInfo()
+    stress_score = 0.2
+
+    prev_end_coord: Optional[Coordinate] = None
+
+    # Fix 1: Insert initial walk from origin to first transit segment's board coord
+    # (if the first segment is transit, there's no explicit walk/drive before it)
+    if request.segments and request.segments[0].mode == RouteMode.TRANSIT and request.segments[0].board_coord:
+        first_board = request.segments[0].board_coord
+        walk_dist = haversine(request.trip_origin.lat, request.trip_origin.lng, first_board.lat, first_board.lng)
+        if walk_dist > 0.05:  # More than 50m gap
+            walk_geo = await _mapbox_directions(request.trip_origin, first_board, "walking", http_client=http_client)
+            w_dist = walk_geo["distance_km"] if walk_geo else walk_dist
+            w_dur = walk_geo["duration_min"] if walk_geo else _estimate_duration(walk_dist, RouteMode.WALKING)
+            segments.append(RouteSegment(
+                mode=RouteMode.WALKING,
+                geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(request.trip_origin, first_board),
+                distance_km=round(w_dist, 2),
+                duration_min=round(w_dur, 1),
+                instructions=f"Walk to {request.segments[0].board_stop_name or 'transit stop'}",
+                color="#10B981",
+            ))
+            total_dist += w_dist
+            total_dur += w_dur
+            prev_end_coord = first_board
+
+    for i, seg_req in enumerate(request.segments):
+        if seg_req.mode in (RouteMode.DRIVING, RouteMode.WALKING):
+            seg_origin = prev_end_coord or request.trip_origin
+
+            # Look ahead to next transit segment's board coord
+            seg_dest = None
+            for j in range(i + 1, len(request.segments)):
+                future_seg = request.segments[j]
+                if future_seg.mode == RouteMode.TRANSIT and future_seg.board_coord:
+                    seg_dest = future_seg.board_coord
+                    break
+
+            if not seg_dest:
+                seg_dest = request.trip_destination
+
+            profile = "driving-traffic" if seg_req.mode == RouteMode.DRIVING else "walking"
+            mapbox = await _mapbox_directions(seg_origin, seg_dest, profile, http_client=http_client)
+
+            if mapbox:
+                dist = mapbox["distance_km"]
+                dur = mapbox["duration_min"]
+                geometry = mapbox["geometry"]
+                steps = _make_direction_steps(mapbox.get("steps", []))
+            else:
+                dist = haversine(seg_origin.lat, seg_origin.lng, seg_dest.lat, seg_dest.lng) * 1.3
+                dur = _estimate_duration(dist, seg_req.mode)
+                geometry = _straight_line_geometry(seg_origin, seg_dest)
+                steps = []
+
+            color = "#3B82F6" if seg_req.mode == RouteMode.DRIVING else "#10B981"
+            action = "Drive" if seg_req.mode == RouteMode.DRIVING else "Walk"
+
+            segments.append(RouteSegment(
+                mode=seg_req.mode,
+                geometry=geometry,
+                distance_km=round(dist, 2),
+                duration_min=round(dur, 1),
+                instructions=f"{action} segment",
+                color=color,
+                steps=steps,
+            ))
+            total_dist += dist
+            total_dur += dur
+
+            if seg_req.mode == RouteMode.DRIVING:
+                total_gas += dist * 0.12
+
+            prev_end_coord = seg_dest
+
+        elif seg_req.mode == RouteMode.TRANSIT:
+            if not seg_req.board_coord or not seg_req.alight_coord:
+                continue
+
+            board_coord = seg_req.board_coord
+            alight_coord = seg_req.alight_coord
+
+            # Auto-insert walking transfer if gap from previous segment end
+            if prev_end_coord:
+                walk_dist = haversine(prev_end_coord.lat, prev_end_coord.lng, board_coord.lat, board_coord.lng)
+                if walk_dist > 0.05:
+                    walk_geo = await _mapbox_directions(prev_end_coord, board_coord, "walking", http_client=http_client)
+                    w_dist = walk_geo["distance_km"] if walk_geo else walk_dist
+                    w_dur = walk_geo["duration_min"] if walk_geo else _estimate_duration(walk_dist, RouteMode.WALKING)
+                    segments.append(RouteSegment(
+                        mode=RouteMode.WALKING,
+                        geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(prev_end_coord, board_coord),
+                        distance_km=round(w_dist, 2),
+                        duration_min=round(w_dur, 1),
+                        instructions=f"Walk to {seg_req.board_stop_name or 'transit stop'}",
+                        color="#10B981",
+                    ))
+                    total_dist += w_dist
+                    total_dur += w_dur
+
+            # Fix 2: Use find_transit_route with stop_ids when available
+            t_dist = None
+            t_dur = None
+            t_geom = None
+
+            if seg_req.board_stop_id and seg_req.alight_stop_id:
+                transit_route = find_transit_route(gtfs, seg_req.board_stop_id, seg_req.alight_stop_id)
+                if transit_route:
+                    t_dist = transit_route["distance_km"]
+                    t_dur = transit_route["estimated_duration_min"]
+                    t_geom = transit_route.get("geometry")
+
+            # Fallback: haversine with per-mode speed and 1.4x road/track multiplier
+            if t_dist is None:
+                straight_dist = haversine(board_coord.lat, board_coord.lng, alight_coord.lat, alight_coord.lng)
+                t_dist = straight_dist * 1.4  # Approximate real track/road distance
+
+                # Fix 3: Per-mode speed estimates instead of generic 25 km/h
+                transit_mode_str = (seg_req.transit_mode or "").upper()
+                speed_map = {"SUBWAY": 35, "BUS": 20, "TRAM": 18, "RAIL": 40}
+                speed = speed_map.get(transit_mode_str, 25)
+                t_dur = (t_dist / speed) * 60
+
+            if t_geom is None:
+                t_geom = _straight_line_geometry(board_coord, alight_coord)
+                if seg_req.route_id:
+                    from app.gtfs_parser import get_route_shape
+                    shape = get_route_shape(gtfs, seg_req.route_id)
+                    if shape:
+                        t_geom = shape
+
+            display_name = seg_req.display_name or f"Route {seg_req.route_id or '?'}"
+            line_color = seg_req.color or "#FFCC00"
+            board_name = seg_req.board_stop_name or "Board"
+            alight_name = seg_req.alight_stop_name or "Alight"
+
+            segments.append(RouteSegment(
+                mode=RouteMode.TRANSIT,
+                geometry=t_geom,
+                distance_km=round(t_dist, 2),
+                duration_min=round(t_dur, 1),
+                instructions=f"Take {display_name} from {board_name} to {alight_name}",
+                transit_line=display_name,
+                transit_route_id=seg_req.route_id,
+                color=line_color,
+            ))
+            total_dist += t_dist
+            total_dur += t_dur
+
+            # Delay prediction
+            pred_line = seg_req.route_id or "1"
+            pred_mode = "subway"
+            transit_mode_str = (seg_req.transit_mode or "").upper()
+            if transit_mode_str == "BUS":
+                pred_mode = "bus"
+            elif transit_mode_str in ("TRAM", "STREETCAR"):
+                pred_mode = "streetcar"
+
+            _w = weather or {}
+            prediction = predictor.predict(
+                line=pred_line,
+                hour=now.hour,
+                day_of_week=now.weekday(),
+                month=now.month,
+                temperature=_w.get("temperature"),
+                precipitation=_w.get("precipitation"),
+                snowfall=_w.get("snowfall"),
+                wind_speed=_w.get("wind_speed"),
+                mode=pred_mode,
+            )
+            if prediction["delay_probability"] > delay_info.probability:
+                delay_info = DelayInfo(
+                    probability=prediction["delay_probability"],
+                    expected_minutes=prediction["expected_delay_minutes"],
+                    confidence=prediction["confidence"],
+                    factors=prediction["contributing_factors"],
+                )
+            stress_score += prediction["delay_probability"] * 0.15
+
+            total_fare = 3.35  # TTC flat fare
+            prev_end_coord = alight_coord
+
+    # Add final walk to destination if needed
+    if prev_end_coord:
+        final_dist = haversine(prev_end_coord.lat, prev_end_coord.lng, request.trip_destination.lat, request.trip_destination.lng)
+        if final_dist > 0.05:
+            walk_geo = await _mapbox_directions(prev_end_coord, request.trip_destination, "walking", http_client=http_client)
+            w_dist = walk_geo["distance_km"] if walk_geo else final_dist
+            w_dur = walk_geo["duration_min"] if walk_geo else _estimate_duration(final_dist, RouteMode.WALKING)
+            segments.append(RouteSegment(
+                mode=RouteMode.WALKING,
+                geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(prev_end_coord, request.trip_destination),
+                distance_km=round(w_dist, 2),
+                duration_min=round(w_dur, 1),
+                instructions="Walk to destination",
+                color="#10B981",
+            ))
+            total_dist += w_dist
+            total_dur += w_dur
+
+    cost = CostBreakdown(
+        fare=round(total_fare, 2),
+        gas=round(total_gas, 2),
+        parking=0.0,
+        total=round(total_fare + total_gas, 2),
+    )
+
+    return RouteOption(
+        id=str(uuid.uuid4())[:8],
+        label="Custom Route",
+        mode=RouteMode.TRANSIT,
+        segments=segments,
+        total_distance_km=round(total_dist, 2),
+        total_duration_min=round(total_dur, 1),
+        cost=cost,
+        delay_info=delay_info,
+        stress_score=round(min(1.0, stress_score), 2),
+        departure_time=now.strftime("%H:%M"),
+        summary=f"Custom Route — {total_dist:.1f} km, {total_dur:.0f} min",
+    )

@@ -39,6 +39,7 @@ TTC_SUBWAY_STATIONS = [
     {"stop_id": "YU_SPAD", "stop_name": "Spadina", "stop_lat": 43.6672, "stop_lon": -79.4037, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_DUPO", "stop_name": "Dupont", "stop_lat": 43.6748, "stop_lon": -79.4069, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_STCW", "stop_name": "St Clair West", "stop_lat": 43.6841, "stop_lon": -79.4150, "route_id": "1", "line": "Line 1 Yonge-University"},
+    {"stop_id": "YU_CDRV", "stop_name": "Cedarvale", "stop_lat": 43.6888, "stop_lon": -79.4224, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_GLNC", "stop_name": "Glencairn", "stop_lat": 43.7089, "stop_lon": -79.4412, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_LWST", "stop_name": "Lawrence West", "stop_lat": 43.7158, "stop_lon": -79.4440, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_YKDL", "stop_name": "Yorkdale", "stop_lat": 43.7245, "stop_lon": -79.4479, "route_id": "1", "line": "Line 1 Yonge-University"},
@@ -46,6 +47,8 @@ TTC_SUBWAY_STATIONS = [
     {"stop_id": "YU_DWPK", "stop_name": "Downsview Park", "stop_lat": 43.7452, "stop_lon": -79.4784, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_SHPW", "stop_name": "Sheppard West", "stop_lat": 43.7494, "stop_lon": -79.4618, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_FNWT", "stop_name": "Finch West", "stop_lat": 43.7653, "stop_lon": -79.4910, "route_id": "1", "line": "Line 1 Yonge-University"},
+    {"stop_id": "YU_YKUN", "stop_name": "York University", "stop_lat": 43.7735, "stop_lon": -79.5009, "route_id": "1", "line": "Line 1 Yonge-University"},
+    {"stop_id": "YU_PNVL", "stop_name": "Pioneer Village", "stop_lat": 43.7778, "stop_lon": -79.5105, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_HW407", "stop_name": "Highway 407", "stop_lat": 43.7831, "stop_lon": -79.5231, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_VMC", "stop_name": "Vaughan Metropolitan Centre", "stop_lat": 43.7943, "stop_lon": -79.5273, "route_id": "1", "line": "Line 1 Yonge-University"},
     # Line 2 Bloor-Danforth (BD)
@@ -86,24 +89,50 @@ TTC_SUBWAY_STATIONS = [
     {"stop_id": "SH_BESS", "stop_name": "Bessarion", "stop_lat": 43.7693, "stop_lon": -79.3763, "route_id": "4", "line": "Line 4 Sheppard"},
     {"stop_id": "SH_LESL", "stop_name": "Leslie", "stop_lat": 43.7710, "stop_lon": -79.3659, "route_id": "4", "line": "Line 4 Sheppard"},
     {"stop_id": "SH_DNML", "stop_name": "Don Mills", "stop_lat": 43.7757, "stop_lon": -79.3461, "route_id": "4", "line": "Line 4 Sheppard"},
-    # Line 5 Eglinton Crosstown LRT
+    # Line 5 Eglinton Crosstown LRT (25 stations: Mount Dennis → Kennedy)
+    {"stop_id": "EC_MTDN", "stop_name": "Mount Dennis", "stop_lat": 43.6870, "stop_lon": -79.5018, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_KEEL", "stop_name": "Keelesdale", "stop_lat": 43.6891, "stop_lon": -79.4836, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_CRST", "stop_name": "Caledonia", "stop_lat": 43.6907, "stop_lon": -79.4686, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_DFFR", "stop_name": "Dufferin", "stop_lat": 43.6938, "stop_lon": -79.4414, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_FAIR", "stop_name": "Fairbank", "stop_lat": 43.6955, "stop_lon": -79.4315, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_OAKW", "stop_name": "Oakwood", "stop_lat": 43.6967, "stop_lon": -79.4245, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_CDVL", "stop_name": "Cedarvale", "stop_lat": 43.6998, "stop_lon": -79.4362, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_FHLS", "stop_name": "Forest Hill", "stop_lat": 43.6996, "stop_lon": -79.4147, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_CHPL", "stop_name": "Chaplin", "stop_lat": 43.7013, "stop_lon": -79.4062, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_AVEN", "stop_name": "Avenue", "stop_lat": 43.7033, "stop_lon": -79.3983, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_EGLN", "stop_name": "Eglinton", "stop_lat": 43.7057, "stop_lon": -79.3984, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_MTPL", "stop_name": "Mount Pleasant", "stop_lat": 43.7077, "stop_lon": -79.3892, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_LIRD", "stop_name": "Leaside", "stop_lat": 43.7080, "stop_lon": -79.3670, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_LAER", "stop_name": "Laird", "stop_lat": 43.7083, "stop_lon": -79.3580, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_BAYO", "stop_name": "Bayview", "stop_lat": 43.7085, "stop_lon": -79.3490, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_SCNC", "stop_name": "Science Centre", "stop_lat": 43.7090, "stop_lon": -79.3388, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_AMES", "stop_name": "Aga Khan Park & Museum", "stop_lat": 43.7228, "stop_lon": -79.3310, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_ODNN", "stop_name": "O'Connor", "stop_lat": 43.7230, "stop_lon": -79.3230, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_FRMH", "stop_name": "Ferrand", "stop_lat": 43.7230, "stop_lon": -79.3150, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_PHRM", "stop_name": "Pharmacy", "stop_lat": 43.7233, "stop_lon": -79.2980, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_HKME", "stop_name": "Hakimi Lebovic", "stop_lat": 43.7235, "stop_lon": -79.2815, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_WNFR", "stop_name": "Winferd", "stop_lat": 43.7240, "stop_lon": -79.2770, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_IONV", "stop_name": "Ionview", "stop_lat": 43.7260, "stop_lon": -79.2722, "route_id": "5", "line": "Line 5 Eglinton"},
+    {"stop_id": "EC_SLVR", "stop_name": "Sloane", "stop_lat": 43.7285, "stop_lon": -79.2681, "route_id": "5", "line": "Line 5 Eglinton"},
     {"stop_id": "EC_KNDY", "stop_name": "Kennedy", "stop_lat": 43.7326, "stop_lon": -79.2637, "route_id": "5", "line": "Line 5 Eglinton"},
-    # Line 6 Finch West LRT
+    # Line 6 Finch West LRT (18 stations: Finch West → Humber College)
     {"stop_id": "FW_FNCH", "stop_name": "Finch West", "stop_lat": 43.7649, "stop_lon": -79.4912, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_KEYS", "stop_name": "Keele", "stop_lat": 43.7645, "stop_lon": -79.4970, "route_id": "6", "line": "Line 6 Finch West"},
     {"stop_id": "FW_DRFT", "stop_name": "Driftwood", "stop_lat": 43.7641, "stop_lon": -79.5089, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_JANE", "stop_name": "Jane", "stop_lat": 43.7639, "stop_lon": -79.5140, "route_id": "6", "line": "Line 6 Finch West"},
     {"stop_id": "FW_SNTN", "stop_name": "Sentinel", "stop_lat": 43.7638, "stop_lon": -79.5213, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_PRKS", "stop_name": "Pearldale", "stop_lat": 43.7637, "stop_lon": -79.5265, "route_id": "6", "line": "Line 6 Finch West"},
     {"stop_id": "FW_SGWY", "stop_name": "Signet", "stop_lat": 43.7635, "stop_lon": -79.5352, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_NORW", "stop_name": "Norwood", "stop_lat": 43.7633, "stop_lon": -79.5400, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_WTSN", "stop_name": "Weston", "stop_lat": 43.7631, "stop_lon": -79.5450, "route_id": "6", "line": "Line 6 Finch West"},
     {"stop_id": "FW_MTNR", "stop_name": "Martin Grove", "stop_lat": 43.7630, "stop_lon": -79.5520, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_GRBY", "stop_name": "Goreway", "stop_lat": 43.7628, "stop_lon": -79.5570, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_ALBW", "stop_name": "Albion", "stop_lat": 43.7627, "stop_lon": -79.5590, "route_id": "6", "line": "Line 6 Finch West"},
     {"stop_id": "FW_KPLG", "stop_name": "Kipling", "stop_lat": 43.7625, "stop_lon": -79.5650, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_MSHL", "stop_name": "Milvan", "stop_lat": 43.7624, "stop_lon": -79.5710, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_WLBY", "stop_name": "Westmore", "stop_lat": 43.7623, "stop_lon": -79.5770, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_NRSK", "stop_name": "Norse", "stop_lat": 43.7622, "stop_lon": -79.5830, "route_id": "6", "line": "Line 6 Finch West"},
+    {"stop_id": "FW_HMWY", "stop_name": "Highway 27", "stop_lat": 43.7621, "stop_lon": -79.5890, "route_id": "6", "line": "Line 6 Finch West"},
     {"stop_id": "FW_HMBR", "stop_name": "Humber College", "stop_lat": 43.7620, "stop_lon": -79.5940, "route_id": "6", "line": "Line 6 Finch West"},
 ]
 
@@ -500,11 +529,11 @@ def _generate_mock_departures(stop_id: str, limit: int) -> list[dict]:
 
 
 TTC_LINE_INFO = {
-    "1": {"name": "Line 1 Yonge-University", "color": "#FFCC00"},
-    "2": {"name": "Line 2 Bloor-Danforth", "color": "#00A651"},
-    "4": {"name": "Line 4 Sheppard", "color": "#A8518A"},
-    "5": {"name": "Line 5 Eglinton", "color": "#FF6600"},
-    "6": {"name": "Line 6 Finch West", "color": "#8B4513"},
+    "1": {"name": "Line 1 Yonge-University", "color": "#F0CC49"},
+    "2": {"name": "Line 2 Bloor-Danforth", "color": "#549F4D"},
+    "4": {"name": "Line 4 Sheppard", "color": "#9C246E"},
+    "5": {"name": "Line 5 Eglinton", "color": "#DE7731"},
+    "6": {"name": "Line 6 Finch West", "color": "#959595"},
 }
 
 
@@ -520,6 +549,74 @@ def get_line_stations(gtfs: dict, line_id: str) -> list[dict]:
         if str(s.get("route_id")) == str(line_id)
     ]
     return stations
+
+
+def get_intermediate_stops(gtfs: dict, route_id: str, board_stop_id: str, alight_stop_id: str) -> list[dict]:
+    """Get ordered list of intermediate stops between board and alight (inclusive).
+
+    Uses TTC_SUBWAY_STATIONS for subway lines, falls back to stop_times+trips for bus/streetcar.
+    Returns list of {stop_id, stop_name, lat, lng}.
+    """
+    # Try hardcoded subway stations first (reliable order)
+    line_stations = [
+        s for s in TTC_SUBWAY_STATIONS
+        if str(s.get("route_id")) == str(route_id)
+    ]
+    if line_stations:
+        board_idx = next((i for i, s in enumerate(line_stations) if s["stop_id"] == board_stop_id), None)
+        alight_idx = next((i for i, s in enumerate(line_stations) if s["stop_id"] == alight_stop_id), None)
+        if board_idx is not None and alight_idx is not None:
+            lo, hi = min(board_idx, alight_idx), max(board_idx, alight_idx)
+            subset = line_stations[lo:hi + 1]
+            if board_idx > alight_idx:
+                subset = list(reversed(subset))
+            return [
+                {"stop_id": s["stop_id"], "stop_name": s["stop_name"],
+                 "lat": s["stop_lat"], "lng": s["stop_lon"]}
+                for s in subset
+            ]
+
+    # Fallback: use GTFS stop_times to find ordered stops on a trip for this route
+    stop_times_df = gtfs.get("stop_times", pd.DataFrame())
+    trips_df = gtfs.get("trips", pd.DataFrame())
+    stops_df = gtfs.get("stops", pd.DataFrame())
+
+    if stop_times_df.empty or trips_df.empty or stops_df.empty:
+        return []
+
+    route_trips = trips_df[trips_df["route_id"].astype(str) == str(route_id)]
+    if route_trips.empty:
+        return []
+
+    # Try each trip until we find one that visits both stops in order
+    for _, trip_row in route_trips.head(20).iterrows():
+        trip_id = trip_row["trip_id"]
+        trip_st = stop_times_df[stop_times_df["trip_id"] == trip_id].sort_values("stop_sequence")
+        stop_ids_in_trip = list(trip_st["stop_id"].astype(str))
+
+        board_pos = next((i for i, sid in enumerate(stop_ids_in_trip) if sid == str(board_stop_id)), None)
+        alight_pos = next((i for i, sid in enumerate(stop_ids_in_trip) if sid == str(alight_stop_id)), None)
+
+        if board_pos is not None and alight_pos is not None and board_pos < alight_pos:
+            subset_ids = stop_ids_in_trip[board_pos:alight_pos + 1]
+            lat_col = "stop_lat" if "stop_lat" in stops_df.columns else "latitude"
+            lng_col = "stop_lon" if "stop_lon" in stops_df.columns else "longitude"
+
+            result = []
+            for sid in subset_ids:
+                row = stops_df[stops_df["stop_id"].astype(str) == sid]
+                if not row.empty:
+                    r = row.iloc[0]
+                    result.append({
+                        "stop_id": sid,
+                        "stop_name": str(r.get("stop_name", "Unknown")),
+                        "lat": float(r[lat_col]),
+                        "lng": float(r[lng_col]),
+                    })
+            if result:
+                return result
+
+    return []
 
 
 def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Optional[dict]:
@@ -540,37 +637,58 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
     origin_row = origin_stop.iloc[0]
     dest_row = dest_stop.iloc[0]
 
-    distance = haversine(origin_row[lat_col], origin_row[lng_col], dest_row[lat_col], dest_row[lng_col])
-
     # Check if same line (for fallback data)
     same_line = (origin_row.get("route_id") is not None and
                  origin_row.get("route_id") == dest_row.get("route_id"))
 
-    # Build route info
+    route_id_str = str(origin_row.get("route_id", ""))
+
+    # Get intermediate stops for accurate distance and geometry
+    intermediate = get_intermediate_stops(gtfs, route_id_str, origin_stop_id, dest_stop_id)
+
+    if len(intermediate) >= 2:
+        # Sum haversine between consecutive intermediate stops for real track distance
+        distance = 0.0
+        for k in range(len(intermediate) - 1):
+            distance += haversine(
+                intermediate[k]["lat"], intermediate[k]["lng"],
+                intermediate[k + 1]["lat"], intermediate[k + 1]["lng"],
+            )
+        # Build geometry as polyline through all intermediate stops
+        geometry = {
+            "type": "LineString",
+            "coordinates": [[s["lng"], s["lat"]] for s in intermediate],
+        }
+    else:
+        # Fallback to straight-line haversine
+        distance = haversine(origin_row[lat_col], origin_row[lng_col], dest_row[lat_col], dest_row[lng_col])
+        # Try full route shape
+        shape = get_route_shape(gtfs, route_id_str)
+        if shape:
+            geometry = shape
+        else:
+            geometry = {
+                "type": "LineString",
+                "coordinates": [
+                    [origin_row[lng_col], origin_row[lat_col]],
+                    [dest_row[lng_col], dest_row[lat_col]],
+                ]
+            }
+
+    # Estimate duration: ~30 km/h average subway speed
+    estimated_duration = round(distance / 0.5, 1)  # distance / (30 km/h / 60 min)
+
     route_info = {
         "origin_stop": origin_stop_id,
         "dest_stop": dest_stop_id,
         "origin_name": origin_row.get("stop_name", "Unknown"),
         "dest_name": dest_row.get("stop_name", "Unknown"),
         "distance_km": round(distance, 2),
-        "estimated_duration_min": round(distance / 0.5, 1),  # ~30 km/h average subway speed
+        "estimated_duration_min": estimated_duration,
         "line": origin_row.get("line", "Unknown"),
-        "route_id": str(origin_row.get("route_id", "")),
+        "route_id": route_id_str,
         "transfers": 0 if same_line else 1,
+        "geometry": geometry,
     }
-
-    # Try to get geometry
-    shape = get_route_shape(gtfs, str(origin_row.get("route_id", "")))
-    if shape:
-        route_info["geometry"] = shape
-    else:
-        # Straight line fallback
-        route_info["geometry"] = {
-            "type": "LineString",
-            "coordinates": [
-                [origin_row[lng_col], origin_row[lat_col]],
-                [dest_row[lng_col], dest_row[lat_col]],
-            ]
-        }
 
     return route_info

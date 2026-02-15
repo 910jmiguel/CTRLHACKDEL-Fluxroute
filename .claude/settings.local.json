@@ -17,7 +17,12 @@
       "Bash(python -m json.tool:*)",
       "Bash(git push:*)",
       "Bash(python3 -m uvicorn:*)",
-      "Bash(git clean:*)"
+      "Bash(lsof:*)",
+      "Bash(xargs:*)",
+      "Bash(npm run dev:*)",
+      "Bash(git clean:*)",
+      "Bash(python3:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

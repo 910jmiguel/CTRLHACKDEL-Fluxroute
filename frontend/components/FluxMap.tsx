@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import type { RouteOption, VehiclePosition, TransitLinesData } from "@/lib/types";
+import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "@/lib/types";
 import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
+import type { TransitLineVisibility } from "./MapLayersControl";
 import {
   clearRoutes,
   drawMultimodalRoute,
@@ -12,6 +13,8 @@ import {
   fitToRoute,
   updateVehicles,
   drawTransitOverlay,
+  drawIsochrone,
+  clearIsochrone,
 } from "@/lib/mapUtils";
 
 interface FluxMapProps {
@@ -23,6 +26,11 @@ interface FluxMapProps {
   theme: MapTheme;
   showTraffic: boolean;
   transitLines: TransitLinesData | null;
+  transitLineVisibility?: TransitLineVisibility;
+  showVehicles?: boolean;
+  isochroneData?: IsochroneResponse | null;
+  userPosition?: { lat: number; lng: number; bearing: number | null } | null;
+  isNavigating?: boolean;
   onMapClick?: (coord: { lat: number; lng: number }) => void;
   onGeolocate?: (coord: { lat: number; lng: number }) => void;
   onMarkerDrag?: (type: "origin" | "destination", coord: { lat: number; lng: number }) => void;
@@ -34,9 +42,15 @@ export default function FluxMap({
   origin,
   destination,
   vehicles,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   theme,
   showTraffic,
   transitLines,
+  transitLineVisibility,
+  showVehicles = true,
+  isochroneData,
+  userPosition,
+  isNavigating,
   onMapClick,
   onGeolocate,
   onMarkerDrag,
@@ -99,11 +113,16 @@ export default function FluxMap({
     return () => ro.disconnect();
   }, [mapLoaded]);
 
-  // Apply theme when it changes
+  // Apply light preset based on theme prop
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
-    map.current.setConfigProperty("basemap", "lightPreset", theme);
-  }, [theme, mapLoaded]);
+    try {
+      const preset = theme === "day" ? "day" : theme === "dusk" ? "dusk" : theme === "night" ? "night" : "dawn";
+      map.current.setConfigProperty("basemap", "lightPreset", preset);
+    } catch {
+      // setConfigProperty not supported on classic styles (dark-v11, etc.)
+    }
+  }, [mapLoaded, theme]);
 
   // Click handler for setting origin/destination on map
   useEffect(() => {
@@ -191,6 +210,55 @@ export default function FluxMap({
     };
   }, [transitLines, mapLoaded]);
 
+  // Apply transit line visibility filters
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !transitLines || !transitLineVisibility) return;
+    const m = map.current;
+
+    // Build filter for lines
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lineConditions: any[] = [];
+    if (transitLineVisibility.line1) lineConditions.push(["all", ["==", ["get", "mode"], "SUBWAY"], ["==", ["get", "shortName"], "1"]]);
+    if (transitLineVisibility.line2) lineConditions.push(["all", ["==", ["get", "mode"], "SUBWAY"], ["==", ["get", "shortName"], "2"]]);
+    if (transitLineVisibility.line4) lineConditions.push(["all", ["==", ["get", "mode"], "SUBWAY"], ["==", ["get", "shortName"], "4"]]);
+    if (transitLineVisibility.line5) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "5"]]);
+    if (transitLineVisibility.line6) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "6"]]);
+    if (transitLineVisibility.streetcars) lineConditions.push(["==", ["get", "mode"], "TRAM"]);
+
+    // Also allow RAIL mode through (GO trains etc.) if any line is visible
+    const anyVisible = Object.values(transitLineVisibility).some(Boolean);
+    if (anyVisible) lineConditions.push(["==", ["get", "mode"], "RAIL"]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filter: any = lineConditions.length > 0
+      ? ["any", ...lineConditions]
+      : ["==", "mode", "__none__"]; // Hide everything
+
+    try {
+      for (const layerId of ["transit-lines-casing", "transit-lines-layer"]) {
+        if (m.getLayer(layerId)) m.setFilter(layerId, filter);
+      }
+      for (const layerId of ["transit-stations-layer", "transit-station-labels"]) {
+        if (m.getLayer(layerId)) m.setFilter(layerId, filter);
+      }
+    } catch (err) {
+      console.warn("Failed to apply transit filters:", err);
+    }
+  }, [transitLineVisibility, transitLines, mapLoaded]);
+
+  // Toggle vehicle layer visibility
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
+    try {
+      if (m.getLayer("vehicles-layer")) {
+        m.setLayoutProperty("vehicles-layer", "visibility", showVehicles ? "visible" : "none");
+      }
+    } catch {
+      // Layer may not exist yet
+    }
+  }, [showVehicles, mapLoaded, vehicles]);
+
   // Draw routes when they change
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
@@ -225,58 +293,66 @@ export default function FluxMap({
       severe: "Severe Traffic — significant delays",
     };
 
+    // Track all registered listeners for cleanup
+    const registeredListeners: Array<{ layerId: string; event: string; handler: (e: mapboxgl.MapMouseEvent) => void }> = [];
+
     const style = m.getStyle();
     if (style?.layers) {
       style.layers.forEach((layer) => {
         if (layer.id.startsWith("route-layer-congestion-")) {
-          // ... (existing congestion logic) ...
-          m.on("mouseenter", layer.id, (e) => {
+          const onEnter = (e: mapboxgl.MapMouseEvent) => {
             m.getCanvas().style.cursor = "pointer";
             if (e.features && e.features[0]) {
               const congestion = e.features[0].properties?.congestion as string;
               const desc = congestionDescriptions[congestion] || congestion;
               popup.setLngLat(e.lngLat).setHTML(desc).addTo(m!);
             }
-          });
-          m.on("mouseleave", layer.id, () => {
+          };
+          const onLeave = () => {
             m.getCanvas().style.cursor = "";
             popup.remove();
-          });
+          };
+          m.on("mouseenter", layer.id, onEnter);
+          m.on("mouseleave", layer.id, onLeave);
+          registeredListeners.push({ layerId: layer.id, event: "mouseenter", handler: onEnter });
+          registeredListeners.push({ layerId: layer.id, event: "mouseleave", handler: onLeave });
         }
       });
     }
 
     // Road Closure Tooltips
     ["road-closure-line", "road-closure-symbol"].forEach((layerId) => {
-      // Only register if layer exists (might be added async, but we are in useEffect depending on showTraffic)
-      // Actually, these events bind even if layer doesn't exist yet? No.
-      // But we just added them in the same render cycle (effectively).
-      // Safer to check if getLayer returns something, but 'on' listener doesn't throw.
-      m.on("mouseenter", layerId, (e) => {
+      const onEnter = (e: mapboxgl.MapMouseEvent) => {
         m.getCanvas().style.cursor = "pointer";
         if (e.features && e.features[0]) {
           const props = e.features[0].properties;
           if (props) {
             const road = props.road || "Road Closure";
             const desc = props.description || props.reason || "No details available";
-            const time = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
+            const endDate = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
 
             popup.setLngLat(e.lngLat).setHTML(
-              `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${time}`
+              `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${endDate}`
             ).addTo(m!);
           }
         }
-      });
-      m.on("mouseleave", layerId, () => {
+      };
+      const onLeave = () => {
         m.getCanvas().style.cursor = "";
         popup.remove();
-      });
+      };
+      m.on("mouseenter", layerId, onEnter);
+      m.on("mouseleave", layerId, onLeave);
+      registeredListeners.push({ layerId, event: "mouseenter", handler: onEnter });
+      registeredListeners.push({ layerId, event: "mouseleave", handler: onLeave });
     });
-
-
 
     return () => {
       popup.remove();
+      // Clean up all registered listeners to prevent memory leaks
+      for (const { layerId, event, handler } of registeredListeners) {
+        m.off(event, layerId, handler);
+      }
     };
   }, [routes, selectedRoute, mapLoaded]);
 
@@ -304,6 +380,174 @@ export default function FluxMap({
     if (!map.current || !mapLoaded || vehicles.length === 0) return;
     updateVehicles(map.current, vehicles);
   }, [vehicles, mapLoaded]);
+
+  // Draw/clear isochrone polygons
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    if (isochroneData) {
+      drawIsochrone(map.current, isochroneData);
+    } else {
+      clearIsochrone(map.current);
+    }
+  }, [isochroneData, mapLoaded]);
+
+  const [showRecenter, setShowRecenter] = useState(false);
+
+  // Track whether we were previously navigating (to detect stop → cleanup)
+  const wasNavigatingRef = useRef(false);
+  // Track whether user has manually interacted with map during navigation
+  const userInteractedRef = useRef(false);
+  // Store last known bearing for smooth rotation
+  const lastBearingRef = useRef(0);
+  // Pulse animation frame ID
+  const pulseAnimRef = useRef<number | null>(null);
+
+  // Set up / tear down user location layers when navigation starts/stops
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
+
+    if (isNavigating) {
+      wasNavigatingRef.current = true;
+      userInteractedRef.current = false;
+
+      // Listen for user interaction to pause auto-follow
+      const onInteraction = () => {
+        userInteractedRef.current = true;
+        setShowRecenter(true);
+      };
+      m.on("dragstart", onInteraction);
+
+      // Create source + layers if they don't exist
+      if (!m.getSource("user-location")) {
+        m.addSource("user-location", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+
+        // Pulsing outer ring (animated via paint transitions)
+        m.addLayer({
+          id: "user-location-pulse",
+          type: "circle",
+          source: "user-location",
+          paint: {
+            "circle-radius": 12,
+            "circle-color": "#4285F4",
+            "circle-opacity": 0.3,
+            "circle-stroke-width": 0,
+          },
+        });
+
+        // Solid blue dot with white border
+        m.addLayer({
+          id: "user-location-dot",
+          type: "circle",
+          source: "user-location",
+          paint: {
+            "circle-radius": 7,
+            "circle-color": "#4285F4",
+            "circle-opacity": 1,
+            "circle-stroke-width": 2.5,
+            "circle-stroke-color": "#ffffff",
+          },
+        });
+
+        // Heading cone (directional indicator)
+        m.addLayer({
+          id: "user-location-heading",
+          type: "circle",
+          source: "user-location",
+          paint: {
+            "circle-radius": 28,
+            "circle-color": "#4285F4",
+            "circle-opacity": 0.08,
+            "circle-stroke-width": 0,
+          },
+        });
+      }
+
+      // Start pulse animation using setInterval (cleaner than mixed RAF/setTimeout)
+      let growing = true;
+      const pulseInterval = window.setInterval(() => {
+        if (!m.getLayer("user-location-pulse")) {
+          clearInterval(pulseInterval);
+          return;
+        }
+        m.setPaintProperty("user-location-pulse", "circle-radius", growing ? 20 : 12);
+        m.setPaintProperty("user-location-pulse", "circle-opacity", growing ? 0.1 : 0.3);
+        growing = !growing;
+      }, 1200);
+      pulseAnimRef.current = pulseInterval;
+
+      return () => {
+        m.off("dragstart", onInteraction);
+        if (pulseAnimRef.current !== null) {
+          clearInterval(pulseAnimRef.current);
+          pulseAnimRef.current = null;
+        }
+      };
+    } else if (wasNavigatingRef.current) {
+      // Navigation just stopped — clean up
+      wasNavigatingRef.current = false;
+      userInteractedRef.current = false;
+      lastBearingRef.current = 0;
+      setShowRecenter(false);
+
+      if (m.getLayer("user-location-heading")) m.removeLayer("user-location-heading");
+      if (m.getLayer("user-location-dot")) m.removeLayer("user-location-dot");
+      if (m.getLayer("user-location-pulse")) m.removeLayer("user-location-pulse");
+      if (m.getSource("user-location")) m.removeSource("user-location");
+
+      if (pulseAnimRef.current !== null) {
+        clearInterval(pulseAnimRef.current);
+        pulseAnimRef.current = null;
+      }
+
+      // Smoothly reset to flat top-down view
+      m.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+    }
+  }, [isNavigating, mapLoaded]);
+
+  // Update user position on the map (separate effect to avoid re-creating layers)
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !isNavigating || !userPosition) return;
+    const m = map.current;
+
+    const source = m.getSource("user-location") as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    source.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [userPosition.lng, userPosition.lat],
+          },
+          properties: {},
+        },
+      ],
+    });
+
+    // Update bearing smoothly — keep last bearing if GPS doesn't provide one
+    if (userPosition.bearing !== null) {
+      lastBearingRef.current = userPosition.bearing;
+    }
+
+    // Only auto-follow if user hasn't panned away
+    if (!userInteractedRef.current) {
+      m.easeTo({
+        center: [userPosition.lng, userPosition.lat],
+        bearing: lastBearingRef.current,
+        pitch: 55,
+        zoom: Math.max(m.getZoom(), 15.5),
+        duration: 1000,
+        easing: (t) => t * (2 - t), // ease-out quadratic
+      });
+    }
+  }, [userPosition, isNavigating, mapLoaded]);
 
   // Manage traffic tileset layer
   useEffect(() => {
@@ -426,6 +670,23 @@ export default function FluxMap({
             </p>
           </div>
         </div>
+      )}
+
+      {/* Re-center button during navigation */}
+      {isNavigating && showRecenter && (
+        <button
+          onClick={() => {
+            userInteractedRef.current = false;
+            setShowRecenter(false);
+          }}
+          className="absolute top-20 right-3 z-20 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-3 shadow-lg transition-all duration-200 animate-pulse"
+          title="Re-center on your location"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+          </svg>
+        </button>
       )}
 
       {/* Traffic Legend - Positioned bottom-right to avoid Mapbox logo */}

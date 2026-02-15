@@ -12,6 +12,7 @@ import {
   ParkingCircle,
   ChevronDown,
   ChevronUp,
+  Wand2,
 } from "lucide-react";
 import type { RouteOption, RouteSegment } from "@/lib/types";
 import DelayIndicator from "./DelayIndicator";
@@ -323,6 +324,22 @@ export default function RouteCards({
                     confidence={route.delay_info.confidence}
                     factors={route.delay_info.factors}
                   />
+                </div>
+              )}
+
+              {/* Customize button — visible when card is selected */}
+              {isSelected && onCustomize && (
+                <div className="expand-in mt-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCustomize(route);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-blue-500/40 border-glow btn-shimmer text-sm font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    Customize Route
+                  </button>
                 </div>
               )}
 

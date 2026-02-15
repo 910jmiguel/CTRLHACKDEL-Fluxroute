@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { PanelLeftClose, PanelLeft, Navigation } from "lucide-react";
-import type { Coordinate, RouteOption } from "@/lib/types";
+import { PanelLeftClose, PanelLeft, Wand2, Play } from "lucide-react";
+import type { Coordinate, RouteOption, IsochroneResponse } from "@/lib/types";
 import type { ModeFilter } from "@/hooks/useRoutes";
 import RouteInput from "./RouteInput";
 import RouteCards from "./RouteCards";
 import DecisionMatrix from "./DecisionMatrix";
+import IsochronePanel from "./IsochronePanel";
 
 interface SidebarProps {
   routes: RouteOption[];
@@ -18,8 +19,6 @@ interface SidebarProps {
   onSelectRoute: (route: RouteOption) => void;
   activeFilter: ModeFilter;
   onFilterChange: (filter: ModeFilter) => void;
-  showTraffic: boolean;
-  onToggleTraffic: () => void;
   originLabel?: string | null;
   origin?: Coordinate | null;
   destination?: Coordinate | null;
@@ -28,6 +27,11 @@ interface SidebarProps {
   onSwap?: (newOrigin: Coordinate | null, newDest: Coordinate | null) => void;
   onClearRoutes?: () => void;
   onCustomize?: (route: RouteOption) => void;
+  onStartNavigation?: () => void;
+  isNavigating?: boolean;
+  isochroneData?: IsochroneResponse | null;
+  onIsochroneLoaded?: (data: IsochroneResponse) => void;
+  onClearIsochrone?: () => void;
 }
 
 export default function Sidebar({
@@ -40,8 +44,6 @@ export default function Sidebar({
   onSelectRoute,
   activeFilter,
   onFilterChange,
-  showTraffic,
-  onToggleTraffic,
   originLabel,
   origin,
   destination,
@@ -50,6 +52,12 @@ export default function Sidebar({
   onSwap,
   onClearRoutes,
   onCustomize,
+  onStartNavigation,
+  isNavigating,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isochroneData,
+  onIsochroneLoaded,
+  onClearIsochrone,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -78,7 +86,7 @@ export default function Sidebar({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
         <RouteInput
           onSearch={onSearch}
           loading={loading}
@@ -96,23 +104,38 @@ export default function Sidebar({
           </div>
         )}
 
+        {/* Isochrone Panel — available when origin is set */}
+        {origin && onIsochroneLoaded && onClearIsochrone && (
+          <>
+            <div className="border-t border-white/5" />
+            <IsochronePanel
+              center={origin}
+              onIsochroneLoaded={onIsochroneLoaded}
+              onClear={onClearIsochrone}
+              isochroneActive={!!isochroneData}
+            />
+          </>
+        )}
+
         {routes.length > 0 && (
           <>
-            {/* Traffic toggle */}
-            <button
-              onClick={onToggleTraffic}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${showTraffic
-                ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                : "bg-slate-800/60 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50"
-                }`}
-            >
-              <Navigation className="w-4 h-4" />
-              Traffic Layer
-              <span className={`ml-auto text-xs px-1.5 py-0.5 rounded ${showTraffic ? "bg-blue-500/30 text-blue-300" : "bg-slate-700 text-slate-500"
-                }`}>
-                {showTraffic ? "ON" : "OFF"}
-              </span>
-            </button>
+            <div className="border-t border-white/5" />
+
+            {/* Navigation button */}
+            {isNavigating ? (
+              <div className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Navigation Active
+              </div>
+            ) : onStartNavigation ? (
+              <button
+                onClick={onStartNavigation}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-900/30"
+              >
+                <Play className="w-4 h-4" />
+                Start Navigation
+              </button>
+            ) : null}
 
             <DecisionMatrix
               routes={routes}
@@ -121,12 +144,25 @@ export default function Sidebar({
               onSelect={onSelectRoute}
             />
 
+            <div className="border-t border-white/5" />
+
             <RouteCards
               routes={filteredRoutes}
               selectedRoute={selectedRoute}
               onSelect={onSelectRoute}
               onCustomize={onCustomize}
             />
+
+            {/* Secondary entry point for route builder */}
+            {onCustomize && (
+              <button
+                onClick={() => onCustomize(selectedRoute || routes[0])}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-slate-600/50 text-slate-400 text-sm hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5 transition-all"
+              >
+                <Wand2 className="w-4 h-4" />
+                Build Custom Route
+              </button>
+            )}
           </>
         )}
 

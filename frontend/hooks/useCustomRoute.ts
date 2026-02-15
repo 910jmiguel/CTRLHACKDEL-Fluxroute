@@ -1,8 +1,16 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import type { Coordinate, RouteOption, CustomSegmentRequest, LineInfo } from "@/lib/types";
-import { calculateCustomRoute, getLineStops } from "@/lib/api";
+import type {
+  Coordinate,
+  RouteOption,
+  TransitRouteSuggestion,
+  CustomSegmentV2,
+  CustomSegmentRequestV2,
+  CustomSegmentRequest,
+  LineInfo,
+} from "@/lib/types";
+import { getTransitSuggestions, calculateCustomRouteV2, calculateCustomRoute, getLineStops } from "@/lib/api";
 
 export interface CustomSegment {
   id: string;
@@ -16,21 +24,40 @@ export interface CustomSegment {
 }
 
 export const TTC_LINES = [
-  { id: "1", name: "Line 1 Yonge-University", color: "#FFCC00" },
-  { id: "2", name: "Line 2 Bloor-Danforth", color: "#00A651" },
-  { id: "4", name: "Line 4 Sheppard", color: "#A8518A" },
-  { id: "5", name: "Line 5 Eglinton", color: "#FF6600" },
-  { id: "6", name: "Line 6 Finch West", color: "#8B4513" },
+  { id: "1", name: "Line 1 Yonge-University", color: "#F0CC49" },
+  { id: "2", name: "Line 2 Bloor-Danforth", color: "#549F4D" },
+  { id: "4", name: "Line 4 Sheppard", color: "#9C246E" },
+  { id: "5", name: "Line 5 Eglinton", color: "#DE7731" },
+  { id: "6", name: "Line 6 Finch West", color: "#959595" },
 ];
 
 let segIdCounter = 0;
 
 export function useCustomRoute() {
-  const [segments, setSegments] = useState<CustomSegment[]>([]);
+  const [segments, setSegments] = useState<CustomSegmentV2[]>([]);
+  const [suggestions, setSuggestions] = useState<TransitRouteSuggestion[]>([]);
+  const [suggestionsSource, setSuggestionsSource] = useState<string>("");
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [calculatedRoute, setCalculatedRoute] = useState<RouteOption | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lineCache, setLineCache] = useState<Record<string, LineInfo>>({});
+
+  const fetchSuggestions = useCallback(
+    async (origin: Coordinate, destination: Coordinate) => {
+      setSuggestionsLoading(true);
+      try {
+        const resp = await getTransitSuggestions(origin, destination);
+        setSuggestions(resp.suggestions);
+        setSuggestionsSource(resp.source);
+      } catch (err) {
+        console.error("Failed to fetch transit suggestions:", err);
+        setSuggestions([]);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    },
+    []
+  );
 
   const addSegment = useCallback(() => {
     setSegments((prev) => [
@@ -45,12 +72,60 @@ export function useCustomRoute() {
     setCalculatedRoute(null);
   }, []);
 
-  const updateSegment = useCallback((id: string, updates: Partial<CustomSegment>) => {
+  const updateSegmentMode = useCallback(
+    (id: string, mode: "driving" | "walking" | "transit") => {
+      setSegments((prev) =>
+        prev.map((s) =>
+          s.id === id ? { ...s, mode, selectedSuggestion: undefined } : s
+        )
+      );
+      setCalculatedRoute(null);
+    },
+    []
+  );
+
+  const selectSuggestion = useCallback(
+    (segId: string, suggestion: TransitRouteSuggestion) => {
+      setSegments((prev) =>
+        prev.map((s) =>
+          s.id === segId ? { ...s, mode: "transit", selectedSuggestion: suggestion } : s
+        )
+      );
+      setCalculatedRoute(null);
+    },
+    []
+  );
+
+  const clearSuggestion = useCallback((segId: string) => {
     setSegments((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+      prev.map((s) =>
+        s.id === segId ? { ...s, selectedSuggestion: undefined } : s
+      )
     );
     setCalculatedRoute(null);
   }, []);
+
+  const selectTransferPair = useCallback(
+    (segId: string, leg1: TransitRouteSuggestion, leg2: TransitRouteSuggestion) => {
+      setSegments((prev) => {
+        const idx = prev.findIndex((s) => s.id === segId);
+        if (idx < 0) return prev;
+        const updated = [...prev];
+        // Replace current segment with leg 1
+        updated[idx] = { ...updated[idx], mode: "transit", selectedSuggestion: leg1 };
+        // Insert leg 2 as a new segment right after
+        const newSeg: CustomSegmentV2 = {
+          id: `seg_${++segIdCounter}`,
+          mode: "transit",
+          selectedSuggestion: leg2,
+        };
+        updated.splice(idx + 1, 0, newSeg);
+        return updated;
+      });
+      setCalculatedRoute(null);
+    },
+    []
+  );
 
   const moveSegment = useCallback((id: string, direction: "up" | "down") => {
     setSegments((prev) => {
@@ -65,32 +140,47 @@ export function useCustomRoute() {
     setCalculatedRoute(null);
   }, []);
 
-  const fetchLineStops = useCallback(async (lineId: string): Promise<LineInfo | null> => {
-    if (lineCache[lineId]) return lineCache[lineId];
-    try {
-      const info = await getLineStops(lineId);
-      setLineCache((prev) => ({ ...prev, [lineId]: info }));
-      return info;
-    } catch {
-      return null;
-    }
-  }, [lineCache]);
-
   const calculate = useCallback(
     async (tripOrigin: Coordinate, tripDestination: Coordinate) => {
+      if (segments.length === 0) {
+        setError("Add at least one segment to calculate a route.");
+        return null;
+      }
+
+      // Validate transit segments have a selected suggestion
+      const invalidTransit = segments.find(
+        (s) => s.mode === "transit" && !s.selectedSuggestion
+      );
+      if (invalidTransit) {
+        setError("Select a transit route for each transit segment.");
+        return null;
+      }
+
       setLoading(true);
       setError(null);
       try {
-        const apiSegments: CustomSegmentRequest[] = segments.map((s) => ({
-          mode: s.mode,
-          line_id: s.line_id,
-          start_station_id: s.start_station_id,
-          end_station_id: s.end_station_id,
-          origin: s.origin,
-          destination: s.destination,
-        }));
+        const apiSegments: CustomSegmentRequestV2[] = segments.map((s) => {
+          if (s.mode === "transit" && s.selectedSuggestion) {
+            const sg = s.selectedSuggestion;
+            return {
+              mode: "transit",
+              suggestion_id: sg.suggestion_id,
+              route_id: sg.route_id,
+              board_coord: sg.board_coord,
+              alight_coord: sg.alight_coord,
+              board_stop_name: sg.board_stop_name,
+              alight_stop_name: sg.alight_stop_name,
+              board_stop_id: sg.board_stop_id,
+              alight_stop_id: sg.alight_stop_id,
+              transit_mode: sg.transit_mode,
+              display_name: sg.display_name,
+              color: sg.color,
+            };
+          }
+          return { mode: s.mode };
+        });
 
-        const route = await calculateCustomRoute({
+        const route = await calculateCustomRouteV2({
           segments: apiSegments,
           trip_origin: tripOrigin,
           trip_destination: tripDestination,
@@ -98,7 +188,9 @@ export function useCustomRoute() {
         setCalculatedRoute(route);
         return route;
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to calculate custom route");
+        setError(
+          err instanceof Error ? err.message : "Failed to calculate custom route"
+        );
         return null;
       } finally {
         setLoading(false);
@@ -106,6 +198,10 @@ export function useCustomRoute() {
     },
     [segments]
   );
+
+  const clearCalculatedRoute = useCallback(() => {
+    setCalculatedRoute(null);
+  }, []);
 
   const reset = useCallback(() => {
     setSegments([]);
@@ -115,14 +211,21 @@ export function useCustomRoute() {
 
   return {
     segments,
+    suggestions,
+    suggestionsSource,
+    suggestionsLoading,
     calculatedRoute,
     loading,
     error,
     addSegment,
     removeSegment,
-    updateSegment,
+    updateSegmentMode,
+    selectSuggestion,
+    selectTransferPair,
+    clearSuggestion,
+    clearCalculatedRoute,
     moveSegment,
-    fetchLineStops,
+    fetchSuggestions,
     calculate,
     reset,
   };
