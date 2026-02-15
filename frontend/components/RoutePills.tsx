@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { Car, Train, Repeat, Footprints, Clock, DollarSign, Smile } from "lucide-react";
+import { Car, Train, Repeat, Footprints, Clock, DollarSign, Smile, LayoutGrid } from "lucide-react";
 import Image from "next/image";
-import type { RouteOption } from "@/lib/types";
+import type { RouteOption, RouteSegment } from "@/lib/types";
 import type { ModeFilter } from "@/hooks/useRoutes";
 import { TTC_LINE_LOGOS, MODE_COLORS } from "@/lib/constants";
 
@@ -22,6 +22,13 @@ const MODE_ICON: Record<string, React.ReactNode> = {
   hybrid: <Repeat className="w-3.5 h-3.5" />,
 };
 
+const FILTER_ICON: Record<string, React.ReactNode> = {
+  all: <LayoutGrid className="w-4 h-4" />,
+  driving: <Car className="w-4 h-4" />,
+  transit: <Train className="w-4 h-4" />,
+  hybrid: <Repeat className="w-4 h-4" />,
+};
+
 const FILTER_CONFIG: { filter: ModeFilter; label: string }[] = [
   { filter: "all", label: "All" },
   { filter: "driving", label: "Drive" },
@@ -29,12 +36,25 @@ const FILTER_CONFIG: { filter: ModeFilter; label: string }[] = [
   { filter: "hybrid", label: "Hybrid" },
 ];
 
+/** Extract TTC line ID (1-6) from a segment, checking both transit_route_id and transit_line */
+function extractLineId(seg: RouteSegment): string | null {
+  if (seg.mode !== "transit") return null;
+  // Try transit_route_id first
+  if (seg.transit_route_id) {
+    const id = seg.transit_route_id.replace(/^line/i, "").trim();
+    if (TTC_LINE_LOGOS[id]) return id;
+  }
+  // Fallback: extract line number from transit_line (e.g., "Line 5 Eglinton", "TTC Eglinton Line")
+  const lineName = seg.transit_line || seg.instructions || "";
+  const match = lineName.match(/Line\s*(\d+)/i);
+  if (match && TTC_LINE_LOGOS[match[1]]) return match[1];
+  return null;
+}
+
 function getTransitLineId(route: RouteOption): string | null {
   for (const seg of route.segments) {
-    if (seg.mode === "transit" && seg.transit_route_id) {
-      const id = seg.transit_route_id.replace(/^line/i, "").trim();
-      if (TTC_LINE_LOGOS[id]) return id;
-    }
+    const id = extractLineId(seg);
+    if (id) return id;
   }
   return null;
 }
@@ -80,7 +100,7 @@ export default function RoutePills({
   return (
     <div className="space-y-3">
       {/* Mode filter chips */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-2">
         {FILTER_CONFIG.map(({ filter, label }) => {
           if (filter !== "all" && counts[filter] === 0) return null;
           const isActive = activeFilter === filter;
@@ -88,15 +108,16 @@ export default function RoutePills({
             <button
               key={filter}
               onClick={() => onFilterChange(filter)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium transition-all ${
                 isActive
                   ? "bg-[var(--accent)] text-white"
                   : "bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
               }`}
               aria-pressed={isActive}
             >
+              {FILTER_ICON[filter]}
               {label}
-              <span className="ml-1 opacity-60">{counts[filter]}</span>
+              <span className="ml-0.5 opacity-60">{counts[filter]}</span>
             </button>
           );
         })}

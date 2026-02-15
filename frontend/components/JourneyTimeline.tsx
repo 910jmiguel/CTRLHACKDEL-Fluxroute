@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Train, Car, Footprints, MapPin, ChevronDown, ChevronUp, ParkingCircle, ArrowRight } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Train, Bus, Car, Footprints, MapPin, ChevronDown, ChevronUp, ParkingCircle, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import type { RouteOption, RouteSegment } from "@/lib/types";
 import { TTC_LINE_LOGOS, MODE_COLORS } from "@/lib/constants";
@@ -20,10 +20,55 @@ const SEGMENT_ICON: Record<string, React.ReactNode> = {
   walking: <Footprints className="w-3.5 h-3.5" />,
 };
 
+/** Extract TTC line ID (1-6) from a segment, checking both transit_route_id and transit_line */
 function getLineId(seg: RouteSegment): string | null {
-  if (seg.mode !== "transit" || !seg.transit_route_id) return null;
-  const id = seg.transit_route_id.replace(/^line/i, "").trim();
-  return TTC_LINE_LOGOS[id] ? id : null;
+  if (seg.mode !== "transit") return null;
+  // Try transit_route_id first
+  if (seg.transit_route_id) {
+    const id = seg.transit_route_id.replace(/^line/i, "").trim();
+    if (TTC_LINE_LOGOS[id]) return id;
+  }
+  // Fallback: extract line number from transit_line (e.g., "Line 5 Eglinton", "TTC Eglinton Line")
+  const lineName = seg.transit_line || seg.instructions || "";
+  const match = lineName.match(/Line\s*(\d+)/i);
+  if (match && TTC_LINE_LOGOS[match[1]]) return match[1];
+  return null;
+}
+
+/** Parse "HH:MM" to total minutes from midnight */
+function parseTimeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/** Format total minutes to "HH:MM" */
+function formatMinutesToTime(minutes: number): string {
+  const m = ((minutes % 1440) + 1440) % 1440; // wrap around midnight
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(Math.round(m % 60)).padStart(2, "0")}`;
+}
+
+/** Build a friendly route label from segment data */
+function getTransitLabel(seg: RouteSegment): { routeId: string | null; routeName: string } {
+  const routeId = seg.transit_route_id?.replace(/^line/i, "").trim() || null;
+  const lineName = seg.transit_line || "";
+
+  // If transit_line already contains the route number (e.g., "Line 1 Yonge-University")
+  if (lineName) return { routeId, routeName: lineName };
+
+  // Fallback: extract from instructions
+  if (seg.instructions) {
+    const match = seg.instructions.match(/^Take\s+(.+?)\s+from\s+/i);
+    if (match) return { routeId, routeName: match[1] };
+  }
+
+  return { routeId, routeName: routeId ? `Route ${routeId}` : "Transit" };
+}
+
+/** Determine if a transit segment is a bus (not subway/LRT) */
+function isBusRoute(seg: RouteSegment): boolean {
+  const lineId = getLineId(seg);
+  if (lineId) return false; // Has a subway/LRT logo → not a bus
+  return seg.mode === "transit";
 }
 
 function ScheduleSourceBadge({ source }: { source?: string }) {
@@ -74,6 +119,31 @@ export default function JourneyTimeline({
   const segments = route.segments;
   const totalDuration = route.total_duration_min;
 
+  // Compute start/end times for every segment from route departure_time
+  const segmentTimes = useMemo(() => {
+    const departureMins = route.departure_time
+      ? parseTimeToMinutes(route.departure_time)
+      : null;
+    if (departureMins === null) return null;
+
+    let cumulative = departureMins;
+    return segments.map((seg) => {
+      const startMin = cumulative;
+      // For transit, prefer actual schedule times if available
+      const segStart = seg.mode === "transit" && seg.departure_time
+        ? parseTimeToMinutes(seg.departure_time)
+        : startMin;
+      const segEnd = seg.mode === "transit" && seg.arrival_time
+        ? parseTimeToMinutes(seg.arrival_time)
+        : segStart + seg.duration_min;
+      cumulative = segEnd;
+      return {
+        start: formatMinutesToTime(segStart),
+        end: formatMinutesToTime(segEnd),
+      };
+    });
+  }, [route.departure_time, segments]);
+
   // Find parking insert point for hybrid
   let parkingInsertAfter = -1;
   if (route.parking_info) {
@@ -123,6 +193,8 @@ export default function JourneyTimeline({
         <div className="flex items-center gap-1 text-[var(--text-muted)]">
           {segments.map((seg, i) => {
             const lineId = getLineId(seg);
+            const busRoute = isBusRoute(seg);
+            const routeNum = seg.transit_route_id?.replace(/^line/i, "").trim();
             return (
               <div key={i} className="flex items-center gap-1">
                 {i > 0 && <ArrowRight className="w-3 h-3 text-[var(--text-muted)] opacity-40" />}
@@ -134,6 +206,13 @@ export default function JourneyTimeline({
                     height={16}
                     className="rounded-sm"
                   />
+                ) : busRoute && routeNum ? (
+                  <span className="flex items-center gap-0.5">
+                    <Bus className="w-3 h-3" style={{ color: seg.color || MODE_COLORS[seg.mode] }} />
+                    <span className="text-[9px] font-bold font-geist-mono" style={{ color: seg.color || MODE_COLORS[seg.mode] }}>
+                      {routeNum}
+                    </span>
+                  </span>
                 ) : (
                   <span style={{ color: seg.color || MODE_COLORS[seg.mode] }}>
                     {SEGMENT_ICON[seg.mode] || <MapPin className="w-3 h-3" />}
@@ -186,6 +265,9 @@ export default function JourneyTimeline({
           const hasSteps = seg.steps && seg.steps.length > 0;
           const isTransit = seg.mode === "transit";
           const isWalking = seg.mode === "walking";
+          const busRoute = isBusRoute(seg);
+          const transitLabel = isTransit ? getTransitLabel(seg) : null;
+          const times = segmentTimes?.[i];
 
           return (
             <div key={i}>
@@ -200,6 +282,13 @@ export default function JourneyTimeline({
                       height={24}
                       className="rounded-full flex-shrink-0"
                     />
+                  ) : busRoute && transitLabel?.routeId ? (
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-white"
+                      style={{ backgroundColor: color }}
+                    >
+                      <Bus className="w-3.5 h-3.5" />
+                    </div>
                   ) : (
                     <div
                       className="w-6 h-6 rounded-full flex items-center justify-center text-white"
@@ -221,25 +310,49 @@ export default function JourneyTimeline({
 
                 {/* Segment details */}
                 <div className="flex-1 pb-3 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-[var(--text-primary)]">
-                      {seg.instructions || `${seg.mode.charAt(0).toUpperCase() + seg.mode.slice(1)} segment`}
-                    </span>
-                    {isTransit && route.delay_info.probability < 0.3 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        On Time
+                  {/* Transit route label with number + name */}
+                  {isTransit && transitLabel ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {busRoute && transitLabel.routeId && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold text-white"
+                          style={{ backgroundColor: color }}
+                        >
+                          <Bus className="w-3 h-3" />
+                          {transitLabel.routeId}
+                        </span>
+                      )}
+                      <span className="text-sm font-medium text-[var(--text-primary)]">
+                        {transitLabel.routeName}
                       </span>
-                    )}
-                  </div>
+                      {route.delay_info.probability < 0.3 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          On Time
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-[var(--text-primary)]">
+                        {seg.instructions || `${seg.mode.charAt(0).toUpperCase() + seg.mode.slice(1)} segment`}
+                      </span>
+                    </div>
+                  )}
 
-                  {/* Schedule times for transit segments */}
-                  {isTransit && seg.departure_time && (
+                  {/* From → To for transit segments */}
+                  {isTransit && seg.instructions && (
+                    <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                      {seg.instructions.replace(/^Take\s+.+?\s+from\s+/i, "From ").replace(/\s+to\s+/i, " → ")}
+                    </div>
+                  )}
+
+                  {/* Time breakdown for all segments */}
+                  {times && (
                     <div className="flex items-center gap-2 mt-0.5 text-[11px]">
                       <span className="font-geist-mono text-[var(--text-primary)]">
-                        Depart {seg.departure_time}
-                        {seg.arrival_time && <> → Arrive {seg.arrival_time}</>}
+                        {times.start} → {times.end}
                       </span>
-                      <ScheduleSourceBadge source={seg.schedule_source} />
+                      {isTransit && <ScheduleSourceBadge source={seg.schedule_source} />}
                     </div>
                   )}
 
@@ -339,9 +452,9 @@ export default function JourneyTimeline({
             <div className="text-sm font-medium text-[var(--text-primary)]">
               {destinationLabel || "Destination"}
             </div>
-            {route.arrival_time && (
+            {(route.arrival_time || (segmentTimes && segmentTimes.length > 0)) && (
               <div className="text-xs text-[var(--text-muted)] font-geist-mono">
-                {route.arrival_time}
+                {route.arrival_time || segmentTimes?.[segmentTimes!.length - 1]?.end}
               </div>
             )}
           </div>

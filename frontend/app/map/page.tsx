@@ -254,6 +254,18 @@ export default function MapPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-enable vehicle display when a route with transit segments is selected
+  useEffect(() => {
+    if (selectedRoute) {
+      const hasTransit = selectedRoute.segments.some(
+        (s) => s.mode === "transit" && s.transit_route_id
+      );
+      if (hasTransit) {
+        setShowVehicles(true);
+      }
+    }
+  }, [selectedRoute]);
+
   // Filter vehicles to only show lines used by the selected route
   const filteredVehicles = useMemo(() => {
     if (!selectedRoute) return vehicles;
