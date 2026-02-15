@@ -74,6 +74,7 @@ async def predict_delay(
     hour: int = Query(12),
     day_of_week: int = Query(0),
     month: Optional[int] = Query(None),
+    mode: str = Query("subway", description="Transit mode (subway, bus, streetcar)"),
 ):
     """Get ML delay prediction for a specific line/time."""
     state = _get_state()
@@ -88,6 +89,7 @@ async def predict_delay(
         hour=hour,
         day_of_week=day_of_week,
         month=month,
+        mode=mode,
     )
 
     return DelayPredictionResponse(**result)
