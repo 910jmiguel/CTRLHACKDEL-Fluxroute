@@ -8,12 +8,15 @@ from app.models import (
     ChatResponse,
     Coordinate,
     CustomRouteRequest,
+    CustomRouteRequestV2,
     DelayPredictionResponse,
     LineStopsResponse,
     LineStop,
     RouteMode,
     RouteRequest,
     RouteResponse,
+    TransitSuggestionsRequest,
+    TransitSuggestionsResponse,
 )
 
 logger = logging.getLogger("fluxroute.routes")
@@ -228,6 +231,54 @@ async def calculate_custom_route_endpoint(request: CustomRouteRequest):
     weather = await get_current_weather(request.trip_origin.lat, request.trip_origin.lng)
 
     route = await calculate_custom_route(
+        request=request,
+        gtfs=gtfs,
+        predictor=predictor,
+        http_client=http_client,
+        weather=weather,
+    )
+
+    return route.model_dump()
+
+
+@router.post("/suggest-transit-routes", response_model=TransitSuggestionsResponse)
+async def suggest_transit_routes(request: TransitSuggestionsRequest):
+    """Get AI-suggested transit routes for a trip origin/destination."""
+    from app.route_builder_suggestions import get_transit_suggestions
+
+    state = _get_state()
+    gtfs = state.get("gtfs", {})
+    http_client = state.get("http_client")
+    otp_available = state.get("otp_available", False)
+
+    suggestions, source = await get_transit_suggestions(
+        origin=request.origin,
+        destination=request.destination,
+        gtfs=gtfs,
+        http_client=http_client,
+        otp_available=otp_available,
+    )
+
+    return TransitSuggestionsResponse(suggestions=suggestions, source=source)
+
+
+@router.post("/custom-route-v2")
+async def calculate_custom_route_v2_endpoint(request: CustomRouteRequestV2):
+    """Calculate a user-defined custom route using V2 suggestion-based segments."""
+    from app.route_engine import calculate_custom_route_v2
+    from app.weather import get_current_weather
+
+    state = _get_state()
+    gtfs = state.get("gtfs", {})
+    predictor = state.get("predictor")
+    http_client = state.get("http_client")
+
+    if not predictor:
+        raise HTTPException(status_code=503, detail="ML predictor not initialized")
+
+    weather = await get_current_weather(request.trip_origin.lat, request.trip_origin.lng)
+
+    route = await calculate_custom_route_v2(
         request=request,
         gtfs=gtfs,
         predictor=predictor,

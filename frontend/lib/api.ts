@@ -11,6 +11,9 @@ import type {
   TransitLinesData,
   LineInfo,
   CustomRouteRequest,
+  TransitSuggestionsResponse,
+  Coordinate,
+  CustomRouteRequestV2,
 } from "./types";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -98,6 +101,23 @@ export async function getLineStops(lineId: string): Promise<LineInfo> {
 
 export async function calculateCustomRoute(request: CustomRouteRequest): Promise<RouteOption> {
   return fetchApi<RouteOption>("/custom-route", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function getTransitSuggestions(
+  origin: Coordinate,
+  destination: Coordinate
+): Promise<TransitSuggestionsResponse> {
+  return fetchApi<TransitSuggestionsResponse>("/suggest-transit-routes", {
+    method: "POST",
+    body: JSON.stringify({ origin, destination }),
+  });
+}
+
+export async function calculateCustomRouteV2(request: CustomRouteRequestV2): Promise<RouteOption> {
+  return fetchApi<RouteOption>("/custom-route-v2", {
     method: "POST",
     body: JSON.stringify(request),
   });

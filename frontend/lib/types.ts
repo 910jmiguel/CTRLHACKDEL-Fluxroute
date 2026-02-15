@@ -151,3 +151,56 @@ export interface LineInfo {
   color: string;
   stops: LineStop[];
 }
+
+// --- V2 Custom Route Builder Types ---
+
+export interface TransitRouteSuggestion {
+  suggestion_id: string;
+  route_id: string;
+  display_name: string;
+  transit_mode: "SUBWAY" | "BUS" | "TRAM" | "RAIL";
+  color: string;
+  board_stop_name: string;
+  board_coord: Coordinate;
+  board_stop_id?: string;
+  alight_stop_name: string;
+  alight_coord: Coordinate;
+  alight_stop_id?: string;
+  direction_hint: string;
+  relevance_reason: string;
+  estimated_duration_min: number;
+  estimated_distance_km: number;
+  intermediate_stops?: Array<{stop_id: string; stop_name: string; lat: number; lng: number}>;
+}
+
+export interface TransitSuggestionsResponse {
+  suggestions: TransitRouteSuggestion[];
+  source: string;
+}
+
+export interface CustomSegmentV2 {
+  id: string;
+  mode: "driving" | "walking" | "transit";
+  selectedSuggestion?: TransitRouteSuggestion;
+}
+
+export interface CustomSegmentRequestV2 {
+  mode: RouteMode;
+  suggestion_id?: string;
+  route_id?: string;
+  board_coord?: Coordinate;
+  alight_coord?: Coordinate;
+  board_stop_name?: string;
+  alight_stop_name?: string;
+  board_stop_id?: string;
+  alight_stop_id?: string;
+  transit_mode?: string;
+  display_name?: string;
+  color?: string;
+}
+
+export interface CustomRouteRequestV2 {
+  segments: CustomSegmentRequestV2[];
+  trip_origin: Coordinate;
+  trip_destination: Coordinate;
+}

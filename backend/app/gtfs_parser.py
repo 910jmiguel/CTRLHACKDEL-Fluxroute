@@ -450,6 +450,74 @@ def get_line_stations(gtfs: dict, line_id: str) -> list[dict]:
     return stations
 
 
+def get_intermediate_stops(gtfs: dict, route_id: str, board_stop_id: str, alight_stop_id: str) -> list[dict]:
+    """Get ordered list of intermediate stops between board and alight (inclusive).
+
+    Uses TTC_SUBWAY_STATIONS for subway lines, falls back to stop_times+trips for bus/streetcar.
+    Returns list of {stop_id, stop_name, lat, lng}.
+    """
+    # Try hardcoded subway stations first (reliable order)
+    line_stations = [
+        s for s in TTC_SUBWAY_STATIONS
+        if str(s.get("route_id")) == str(route_id)
+    ]
+    if line_stations:
+        board_idx = next((i for i, s in enumerate(line_stations) if s["stop_id"] == board_stop_id), None)
+        alight_idx = next((i for i, s in enumerate(line_stations) if s["stop_id"] == alight_stop_id), None)
+        if board_idx is not None and alight_idx is not None:
+            lo, hi = min(board_idx, alight_idx), max(board_idx, alight_idx)
+            subset = line_stations[lo:hi + 1]
+            if board_idx > alight_idx:
+                subset = list(reversed(subset))
+            return [
+                {"stop_id": s["stop_id"], "stop_name": s["stop_name"],
+                 "lat": s["stop_lat"], "lng": s["stop_lon"]}
+                for s in subset
+            ]
+
+    # Fallback: use GTFS stop_times to find ordered stops on a trip for this route
+    stop_times_df = gtfs.get("stop_times", pd.DataFrame())
+    trips_df = gtfs.get("trips", pd.DataFrame())
+    stops_df = gtfs.get("stops", pd.DataFrame())
+
+    if stop_times_df.empty or trips_df.empty or stops_df.empty:
+        return []
+
+    route_trips = trips_df[trips_df["route_id"].astype(str) == str(route_id)]
+    if route_trips.empty:
+        return []
+
+    # Try each trip until we find one that visits both stops in order
+    for _, trip_row in route_trips.head(20).iterrows():
+        trip_id = trip_row["trip_id"]
+        trip_st = stop_times_df[stop_times_df["trip_id"] == trip_id].sort_values("stop_sequence")
+        stop_ids_in_trip = list(trip_st["stop_id"].astype(str))
+
+        board_pos = next((i for i, sid in enumerate(stop_ids_in_trip) if sid == str(board_stop_id)), None)
+        alight_pos = next((i for i, sid in enumerate(stop_ids_in_trip) if sid == str(alight_stop_id)), None)
+
+        if board_pos is not None and alight_pos is not None and board_pos < alight_pos:
+            subset_ids = stop_ids_in_trip[board_pos:alight_pos + 1]
+            lat_col = "stop_lat" if "stop_lat" in stops_df.columns else "latitude"
+            lng_col = "stop_lon" if "stop_lon" in stops_df.columns else "longitude"
+
+            result = []
+            for sid in subset_ids:
+                row = stops_df[stops_df["stop_id"].astype(str) == sid]
+                if not row.empty:
+                    r = row.iloc[0]
+                    result.append({
+                        "stop_id": sid,
+                        "stop_name": str(r.get("stop_name", "Unknown")),
+                        "lat": float(r[lat_col]),
+                        "lng": float(r[lng_col]),
+                    })
+            if result:
+                return result
+
+    return []
+
+
 def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Optional[dict]:
     """Find a transit route connecting two stops."""
     stops = gtfs["stops"]
@@ -468,37 +536,58 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
     origin_row = origin_stop.iloc[0]
     dest_row = dest_stop.iloc[0]
 
-    distance = haversine(origin_row[lat_col], origin_row[lng_col], dest_row[lat_col], dest_row[lng_col])
-
     # Check if same line (for fallback data)
     same_line = (origin_row.get("route_id") is not None and
                  origin_row.get("route_id") == dest_row.get("route_id"))
 
-    # Build route info
+    route_id_str = str(origin_row.get("route_id", ""))
+
+    # Get intermediate stops for accurate distance and geometry
+    intermediate = get_intermediate_stops(gtfs, route_id_str, origin_stop_id, dest_stop_id)
+
+    if len(intermediate) >= 2:
+        # Sum haversine between consecutive intermediate stops for real track distance
+        distance = 0.0
+        for k in range(len(intermediate) - 1):
+            distance += haversine(
+                intermediate[k]["lat"], intermediate[k]["lng"],
+                intermediate[k + 1]["lat"], intermediate[k + 1]["lng"],
+            )
+        # Build geometry as polyline through all intermediate stops
+        geometry = {
+            "type": "LineString",
+            "coordinates": [[s["lng"], s["lat"]] for s in intermediate],
+        }
+    else:
+        # Fallback to straight-line haversine
+        distance = haversine(origin_row[lat_col], origin_row[lng_col], dest_row[lat_col], dest_row[lng_col])
+        # Try full route shape
+        shape = get_route_shape(gtfs, route_id_str)
+        if shape:
+            geometry = shape
+        else:
+            geometry = {
+                "type": "LineString",
+                "coordinates": [
+                    [origin_row[lng_col], origin_row[lat_col]],
+                    [dest_row[lng_col], dest_row[lat_col]],
+                ]
+            }
+
+    # Estimate duration: ~30 km/h average subway speed
+    estimated_duration = round(distance / 0.5, 1)  # distance / (30 km/h / 60 min)
+
     route_info = {
         "origin_stop": origin_stop_id,
         "dest_stop": dest_stop_id,
         "origin_name": origin_row.get("stop_name", "Unknown"),
         "dest_name": dest_row.get("stop_name", "Unknown"),
         "distance_km": round(distance, 2),
-        "estimated_duration_min": round(distance / 0.5, 1),  # ~30 km/h average subway speed
+        "estimated_duration_min": estimated_duration,
         "line": origin_row.get("line", "Unknown"),
-        "route_id": str(origin_row.get("route_id", "")),
+        "route_id": route_id_str,
         "transfers": 0 if same_line else 1,
+        "geometry": geometry,
     }
-
-    # Try to get geometry
-    shape = get_route_shape(gtfs, str(origin_row.get("route_id", "")))
-    if shape:
-        route_info["geometry"] = shape
-    else:
-        # Straight line fallback
-        route_info["geometry"] = {
-            "type": "LineString",
-            "coordinates": [
-                [origin_row[lng_col], origin_row[lat_col]],
-                [dest_row[lng_col], dest_row[lat_col]],
-            ]
-        }
 
     return route_info

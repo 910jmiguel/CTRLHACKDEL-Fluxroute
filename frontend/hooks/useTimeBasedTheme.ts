@@ -12,17 +12,8 @@ function getThemeForHour(hour: number): MapTheme {
 }
 
 export function useTimeBasedTheme() {
-  const [theme, setTheme] = useState<MapTheme>(() =>
-    getThemeForHour(new Date().getHours())
-  );
-
-  useEffect(() => {
-    const update = () => setTheme(getThemeForHour(new Date().getHours()));
-    const interval = setInterval(update, 60_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const isDark = theme === "night" || theme === "dusk";
+  const theme: MapTheme = "dawn";
+  const isDark = false;
 
   return { theme, isDark };
 }

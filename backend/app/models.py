@@ -177,3 +177,59 @@ class LineStopsResponse(BaseModel):
     line_name: str
     color: str
     stops: list[LineStop]
+
+
+# --- V2 Custom Route Builder Models ---
+
+
+class TransitRouteSuggestion(BaseModel):
+    """A suggested transit route (subway line, bus route, streetcar) for the user's trip."""
+    suggestion_id: str
+    route_id: str
+    display_name: str  # e.g. "Line 1 Yonge-University", "96 Wilson"
+    transit_mode: str  # "SUBWAY", "BUS", "TRAM"
+    color: str  # Hex color for display
+    board_stop_name: str
+    board_coord: Coordinate
+    board_stop_id: Optional[str] = None
+    alight_stop_name: str
+    alight_coord: Coordinate
+    alight_stop_id: Optional[str] = None
+    direction_hint: str  # e.g. "Southbound", "Eastbound"
+    relevance_reason: str  # Why this route is suggested
+    estimated_duration_min: float = 0.0
+    estimated_distance_km: float = 0.0
+    intermediate_stops: list[dict] = Field(default_factory=list)  # [{stop_id, stop_name, lat, lng}]
+
+
+class TransitSuggestionsRequest(BaseModel):
+    origin: Coordinate
+    destination: Coordinate
+
+
+class TransitSuggestionsResponse(BaseModel):
+    suggestions: list[TransitRouteSuggestion]
+    source: str = "gtfs"  # "otp", "gtfs", or "otp+gemini"
+
+
+class CustomSegmentRequestV2(BaseModel):
+    mode: RouteMode
+    # For transit segments: use suggestion data
+    suggestion_id: Optional[str] = None
+    route_id: Optional[str] = None
+    board_coord: Optional[Coordinate] = None
+    alight_coord: Optional[Coordinate] = None
+    board_stop_name: Optional[str] = None
+    alight_stop_name: Optional[str] = None
+    board_stop_id: Optional[str] = None
+    alight_stop_id: Optional[str] = None
+    transit_mode: Optional[str] = None  # "SUBWAY", "BUS", "TRAM"
+    display_name: Optional[str] = None
+    color: Optional[str] = None
+    # For driving/walking: auto-routed (no explicit coords needed)
+
+
+class CustomRouteRequestV2(BaseModel):
+    segments: list[CustomSegmentRequestV2]
+    trip_origin: Coordinate
+    trip_destination: Coordinate

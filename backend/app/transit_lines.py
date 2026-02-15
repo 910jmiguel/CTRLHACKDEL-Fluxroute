@@ -6,6 +6,7 @@ Fallback: hardcoded TTC subway stations if GTFS unavailable.
 """
 
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -42,6 +43,25 @@ _TTC_MODE_MAP = {
     "5": "TRAM",
     "6": "TRAM",
 }
+
+
+_PLATFORM_SUFFIX_RE = re.compile(
+    r"\s*-\s*(?:North|South|East|West)bound(?:\s+Platform)?"
+    r"|\s*-\s*Platform"
+    r"|\s+Platform$",
+    re.IGNORECASE,
+)
+
+
+def _clean_station_name(raw_name: str) -> str:
+    """Strip platform/direction suffixes from a station name.
+
+    Examples:
+        "Warden Station - Northbound Platform" -> "Warden Station"
+        "Finch Station - Southbound" -> "Finch Station"
+        "Kennedy Station - Platform" -> "Kennedy Station"
+    """
+    return _PLATFORM_SUFFIX_RE.sub("", raw_name).strip()
 
 
 def build_transit_overlay_from_gtfs(gtfs: dict) -> dict:
@@ -159,12 +179,14 @@ def build_transit_overlay_from_gtfs(gtfs: dict) -> dict:
             # Get stop details
             route_stops = stops_df[stops_df["stop_id"].isin(station_stop_ids)]
 
+            lat_col = "stop_lat" if "stop_lat" in stops_df.columns else "latitude"
+            lng_col = "stop_lon" if "stop_lon" in stops_df.columns else "longitude"
+
             for _, stop_row in route_stops.iterrows():
-                lat_col = "stop_lat" if "stop_lat" in stops_df.columns else "latitude"
-                lng_col = "stop_lon" if "stop_lon" in stops_df.columns else "longitude"
                 lat = float(stop_row[lat_col])
                 lng = float(stop_row[lng_col])
-                key = (round(lat, 4), round(lng, 4))
+                cleaned_name = _clean_station_name(str(stop_row.get("stop_name", "")))
+                key = (cleaned_name, short_name or long_name)
                 if key in seen_stations:
                     continue
                 seen_stations.add(key)
@@ -172,7 +194,7 @@ def build_transit_overlay_from_gtfs(gtfs: dict) -> dict:
                 station_features.append({
                     "type": "Feature",
                     "properties": {
-                        "name": str(stop_row.get("stop_name", "")),
+                        "name": cleaned_name,
                         "stopId": str(stop_row["stop_id"]),
                         "mode": mode,
                         "color": color,
@@ -291,14 +313,15 @@ async def _fetch_otp_regional_lines(http_client: httpx.AsyncClient) -> dict:
             for stop in stops_data:
                 lat = stop.get("lat", 0)
                 lon = stop.get("lon", 0)
-                key = (round(lat, 4), round(lon, 4))
+                cleaned_name = _clean_station_name(stop.get("name", ""))
+                key = (cleaned_name, short_name or long_name)
                 if key in seen_stations:
                     continue
                 seen_stations.add(key)
                 stations.append({
                     "type": "Feature",
                     "properties": {
-                        "name": stop.get("name", ""),
+                        "name": cleaned_name,
                         "stopId": stop.get("id", ""),
                         "mode": "RAIL",
                         "color": color,

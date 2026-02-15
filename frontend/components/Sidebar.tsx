@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PanelLeftClose, PanelLeft, Navigation } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Navigation, Wand2 } from "lucide-react";
 import type { Coordinate, RouteOption } from "@/lib/types";
 import type { ModeFilter } from "@/hooks/useRoutes";
 import RouteInput from "./RouteInput";
@@ -127,6 +127,17 @@ export default function Sidebar({
               onSelect={onSelectRoute}
               onCustomize={onCustomize}
             />
+
+            {/* Secondary entry point for route builder */}
+            {onCustomize && (
+              <button
+                onClick={() => onCustomize(selectedRoute || routes[0])}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-slate-600/50 text-slate-400 text-sm hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5 transition-all"
+              >
+                <Wand2 className="w-4 h-4" />
+                Build Custom Route
+              </button>
+            )}
           </>
         )}
 
