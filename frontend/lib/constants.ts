@@ -4,6 +4,12 @@ export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 export const TORONTO_CENTER: [number, number] = [-79.3832, 43.6532];
 export const TORONTO_ZOOM = 11;
 
+/** Intro: zoomed-out start (space/globe), then animate to CN Tower (10s). */
+export const INITIAL_ZOOM = 0;
+export const INTRO_DURATION_MS = 10000;
+export const CN_TOWER_CENTER: [number, number] = [-79.3871, 43.6426];
+export const INTRO_END_ZOOM = 16;
+
 export const TORONTO_BOUNDS: [[number, number], [number, number]] = [
   [-79.65, 43.55],
   [-79.10, 43.85],

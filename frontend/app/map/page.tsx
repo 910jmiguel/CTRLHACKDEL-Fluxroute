@@ -40,7 +40,7 @@ export default function MapPage() {
   const [origin, setOrigin] = useState<Coordinate | null>(null);
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
-  const [showTraffic, setShowTraffic] = useState(true);
+  const [showTraffic, setShowTraffic] = useState(false);
   const [transitLines, setTransitLines] = useState<TransitLinesData | null>(null);
   const [originLabel, setOriginLabel] = useState<string | null>(null);
   const [destinationLabel, setDestinationLabel] = useState<string | null>(null);
@@ -60,9 +60,9 @@ export default function MapPage() {
     line4: true,
     line5: true,
     line6: true,
-    streetcars: true,
+    streetcars: false,
   });
-  const [showVehicles, setShowVehicles] = useState(true);
+  const [showVehicles, setShowVehicles] = useState(false);
   const [showUnselectedRoutes, setShowUnselectedRoutes] = useState(true);
 
   const handleToggleTransitLine = useCallback((key: keyof TransitLineVisibility) => {

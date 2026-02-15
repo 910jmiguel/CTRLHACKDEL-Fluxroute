@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "@/lib/types";
-import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS } from "@/lib/constants";
+import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS, INITIAL_ZOOM, INTRO_DURATION_MS, CN_TOWER_CENTER, INTRO_END_ZOOM } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
 import type { TransitLineVisibility } from "./MapLayersControl";
 import {
@@ -16,6 +16,7 @@ import {
   setTransitOverlayDimmed,
   drawIsochrone,
   clearIsochrone,
+  clearVehicles,
 } from "@/lib/mapUtils";
 
 interface FluxMapProps {
@@ -49,7 +50,7 @@ export default function FluxMap({
   showTraffic,
   transitLines,
   transitLineVisibility,
-  showVehicles = true,
+  showVehicles = false,
   showUnselectedRoutes = true,
   isochroneData,
   userPosition,
@@ -62,8 +63,9 @@ export default function FluxMap({
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const introDoneRef = useRef(false);
 
-  // Initialize map
+  // Initialize map (start zoomed out at CN Tower for intro)
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
@@ -72,8 +74,8 @@ export default function FluxMap({
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: MAP_STYLE,
-      center: TORONTO_CENTER,
-      zoom: TORONTO_ZOOM,
+      center: CN_TOWER_CENTER,
+      zoom: INITIAL_ZOOM,
       attributionControl: false,
     });
 
@@ -105,6 +107,22 @@ export default function FluxMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Intro: ensure North America is first frame, then zoom to CN Tower
+  useEffect(() => {
+    if (!map.current || !mapLoaded || introDoneRef.current) return;
+    introDoneRef.current = true;
+    map.current.setCenter(CN_TOWER_CENTER);
+    map.current.setZoom(INITIAL_ZOOM);
+    requestAnimationFrame(() => {
+      map.current?.easeTo({
+        center: CN_TOWER_CENTER,
+        zoom: INTRO_END_ZOOM,
+        duration: INTRO_DURATION_MS,
+        easing: (t) => t * (2 - t),
+      });
+    });
+  }, [mapLoaded]);
 
   // Resize map when container size changes (e.g. sidebar collapse/expand)
   useEffect(() => {
@@ -386,11 +404,15 @@ export default function FluxMap({
     );
   }, [origin, destination, mapLoaded, onMarkerDrag]);
 
-  // Update vehicle positions
+  // Update vehicle positions (only create layer when showVehicles is on)
   useEffect(() => {
-    if (!map.current || !mapLoaded || vehicles.length === 0) return;
-    updateVehicles(map.current, vehicles);
-  }, [vehicles, mapLoaded]);
+    if (!map.current || !mapLoaded) return;
+    if (showVehicles && vehicles.length > 0) {
+      updateVehicles(map.current, vehicles);
+    } else {
+      clearVehicles(map.current);
+    }
+  }, [vehicles, mapLoaded, showVehicles]);
 
   // Draw/clear isochrone polygons
   useEffect(() => {
