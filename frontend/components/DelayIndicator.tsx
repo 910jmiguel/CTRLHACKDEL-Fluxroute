@@ -4,12 +4,16 @@ interface DelayIndicatorProps {
   probability: number;
   expectedMinutes: number;
   compact?: boolean;
+  confidence?: number;
+  factors?: string[];
 }
 
 export default function DelayIndicator({
   probability,
   expectedMinutes,
   compact = false,
+  confidence,
+  factors,
 }: DelayIndicatorProps) {
   const level =
     probability < 0.3 ? "low" : probability < 0.6 ? "medium" : "high";
@@ -52,6 +56,38 @@ export default function DelayIndicator({
       {expectedMinutes > 0 && (
         <div className="text-xs text-slate-400 mt-1">
           ~{expectedMinutes.toFixed(0)} min expected delay
+        </div>
+      )}
+      {confidence !== undefined && (
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-[10px] text-slate-500">ML Confidence</span>
+          <div className="flex-1 h-1 rounded-full bg-slate-700 overflow-hidden">
+            <div
+              className={`h-full rounded-full ${
+                confidence >= 0.7
+                  ? "bg-emerald-500"
+                  : confidence >= 0.4
+                  ? "bg-amber-500"
+                  : "bg-red-500"
+              }`}
+              style={{ width: `${Math.round(confidence * 100)}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-slate-500">
+            {Math.round(confidence * 100)}%
+          </span>
+        </div>
+      )}
+      {factors && factors.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {factors.map((factor, i) => (
+            <span
+              key={i}
+              className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/50 text-slate-400"
+            >
+              {factor}
+            </span>
+          ))}
         </div>
       )}
     </div>
