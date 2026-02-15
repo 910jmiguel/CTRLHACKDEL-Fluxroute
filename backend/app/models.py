@@ -55,9 +55,17 @@ class DelayInfo(BaseModel):
     factors: list[str] = Field(default_factory=list)
 
 
+class ParkingInfo(BaseModel):
+    station_name: str = ""
+    daily_rate: float = 0.0
+    capacity: int = 0
+    parking_type: str = ""  # "surface", "structure"
+    agency: str = ""
+
+
 class RouteOption(BaseModel):
     id: str
-    label: str  # "Fastest", "Cheapest", "Zen", etc.
+    label: str  # "Direct Drive", "Transit via ...", "Park & Ride (...)", etc.
     mode: RouteMode
     segments: list[RouteSegment]
     total_distance_km: float
@@ -69,6 +77,7 @@ class RouteOption(BaseModel):
     arrival_time: Optional[str] = None
     summary: str = ""
     traffic_summary: str = ""  # "Heavy traffic", "Moderate traffic", etc.
+    parking_info: Optional[ParkingInfo] = None
 
 
 class RouteRequest(BaseModel):

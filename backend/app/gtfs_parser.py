@@ -136,7 +136,7 @@ def load_gtfs_data() -> dict:
         "stop_times": ["trip_id", "stop_id", "arrival_time", "departure_time", "stop_sequence"],
         "trips": ["route_id", "service_id", "trip_id", "trip_headsign", "shape_id"],
         "shapes": ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"],
-        "routes": ["route_id", "route_short_name", "route_long_name", "route_color"],
+        "routes": ["route_id", "route_short_name", "route_long_name", "route_color", "route_type"],
     }
 
     try:
@@ -165,6 +165,124 @@ def load_gtfs_data() -> dict:
         data["using_fallback"] = True
 
     return data
+
+
+def find_nearest_rapid_transit_stations(
+    gtfs: dict, lat: float, lng: float, radius_km: float = 15.0, limit: int = 10
+) -> list[dict]:
+    """Find nearest subway/rail/LRT stations (NOT bus stops).
+
+    Filters to route_type 0 (Tram/LRT), 1 (Subway), 2 (Rail).
+    If using fallback data, uses TTC_SUBWAY_STATIONS directly.
+    """
+    stops = gtfs["stops"]
+    routes_df = gtfs.get("routes", pd.DataFrame())
+    trips_df = gtfs.get("trips", pd.DataFrame())
+    stop_times_df = gtfs.get("stop_times", pd.DataFrame())
+
+    if gtfs.get("using_fallback") or routes_df.empty or "route_type" not in routes_df.columns:
+        # Fallback: TTC_SUBWAY_STATIONS are already filtered
+        results = []
+        for s in TTC_SUBWAY_STATIONS:
+            dist = haversine(lat, lng, s["stop_lat"], s["stop_lon"])
+            if dist <= radius_km:
+                results.append({
+                    "stop_id": s["stop_id"],
+                    "stop_name": s["stop_name"],
+                    "lat": s["stop_lat"],
+                    "lng": s["stop_lon"],
+                    "distance_km": round(dist, 3),
+                    "route_id": s.get("route_id"),
+                    "line": s.get("line"),
+                })
+        results.sort(key=lambda x: x["distance_km"])
+        return results[:limit]
+
+    # GTFS data available: filter to rapid transit stops
+    rapid_route_types = {0, 1, 2}
+    rapid_routes = routes_df[routes_df["route_type"].isin(rapid_route_types)]
+    if rapid_routes.empty:
+        return []
+
+    rapid_route_ids = set(rapid_routes["route_id"].unique())
+
+    # Join through trips -> stop_times to find stops served by rapid transit
+    if not trips_df.empty and not stop_times_df.empty:
+        rapid_trips = trips_df[trips_df["route_id"].isin(rapid_route_ids)]
+        rapid_trip_ids = set(rapid_trips["trip_id"].unique())
+        rapid_stop_times = stop_times_df[stop_times_df["trip_id"].isin(rapid_trip_ids)]
+        rapid_stop_ids = set(rapid_stop_times["stop_id"].unique())
+        rapid_stops = stops[stops["stop_id"].isin(rapid_stop_ids)]
+    else:
+        # Can't join — return empty
+        return []
+
+    if rapid_stops.empty:
+        return []
+
+    # Compute distances
+    lat_col = "stop_lat" if "stop_lat" in rapid_stops.columns else "latitude"
+    lng_col = "stop_lon" if "stop_lon" in rapid_stops.columns else "longitude"
+
+    results = []
+    for _, row in rapid_stops.iterrows():
+        s_lat = float(row[lat_col])
+        s_lng = float(row[lng_col])
+        dist = haversine(lat, lng, s_lat, s_lng)
+        if dist <= radius_km:
+            # Find which route this stop is on
+            stop_id = row["stop_id"]
+            route_id = None
+            line = None
+            if not stop_times_df.empty and not trips_df.empty:
+                st = stop_times_df[stop_times_df["stop_id"] == stop_id]
+                if not st.empty:
+                    trip_id = st.iloc[0]["trip_id"]
+                    trip = trips_df[trips_df["trip_id"] == trip_id]
+                    if not trip.empty:
+                        route_id = trip.iloc[0]["route_id"]
+                        if route_id in rapid_route_ids:
+                            r = rapid_routes[rapid_routes["route_id"] == route_id]
+                            if not r.empty:
+                                sn = str(r.iloc[0].get("route_short_name", ""))
+                                ln = str(r.iloc[0].get("route_long_name", ""))
+                                # Avoid "Line 1 Line 1 (...)" duplication
+                                if ln.lower().startswith("line"):
+                                    line = ln
+                                elif sn:
+                                    line = f"Line {sn} {ln}".strip()
+                                else:
+                                    line = ln
+
+            results.append({
+                "stop_id": str(stop_id),
+                "stop_name": str(row.get("stop_name", "Unknown")),
+                "lat": s_lat,
+                "lng": s_lng,
+                "distance_km": round(dist, 3),
+                "route_id": str(route_id) if route_id is not None else None,
+                "line": line,
+            })
+
+    # Deduplicate by base station name (keep closest)
+    # Strip platform suffixes like " - Subway Platform", " - Southbound Platform"
+    def _base_name(name: str) -> str:
+        for sep in [" - ", " Station"]:
+            if sep in name:
+                name = name.split(sep)[0]
+        return name.strip()
+
+    seen_names = {}
+    deduped = []
+    for r in sorted(results, key=lambda x: x["distance_km"]):
+        base = _base_name(r["stop_name"])
+        if base not in seen_names:
+            seen_names[base] = True
+            # Clean up the display name too
+            r["stop_name"] = base
+            deduped.append(r)
+
+    return deduped[:limit]
 
 
 def find_nearest_stops(gtfs: dict, lat: float, lng: float, radius_km: float = 2.0, limit: int = 5) -> list[dict]:

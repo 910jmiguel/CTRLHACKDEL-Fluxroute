@@ -54,9 +54,23 @@ async def lifespan(app: FastAPI):
         logger.info("OpenTripPlanner not available — using heuristic transit routing (fallback)")
 
     # Shared httpx client for connection pooling across all API calls
-    http_client = httpx.AsyncClient(timeout=10.0)
+    http_client = httpx.AsyncClient(
+        timeout=12.0,
+        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+    )
     app_state["http_client"] = http_client
     logger.info("Shared HTTP client created (connection pooling enabled)")
+
+    # Load transit line geometries + stations for always-visible overlay
+    from app.transit_lines import fetch_transit_lines
+    logger.info("Loading transit line overlay...")
+    transit_data = await fetch_transit_lines(
+        gtfs, http_client if otp_available else None
+    )
+    app_state["transit_lines"] = transit_data
+    line_count = len(transit_data.get("lines", {}).get("features", []))
+    station_count = len(transit_data.get("stations", {}).get("features", []))
+    logger.info(f"Transit overlay loaded: {line_count} lines, {station_count} stations")
 
     logger.info("Starting real-time poller...")
     poller_task = await start_realtime_poller(app_state)
