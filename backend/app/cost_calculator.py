@@ -76,3 +76,36 @@ def calculate_cost(
         )
 
     return CostBreakdown(total=0.0)
+
+
+def calculate_hybrid_cost(
+    drive_distance_km: float,
+    transit_distance_km: float = 0.0,
+    includes_go: bool = False,
+    parking_type: str = "station",
+    parking_rate: float | None = None,
+) -> CostBreakdown:
+    """Calculate hybrid route cost using actual driving and transit distances.
+
+    parking_rate: explicit daily rate from parking database (overrides parking_type)
+    parking_type: fallback — "station" ($0), "suburban" ($5-10), "downtown" ($15-30)
+    """
+    gas = (drive_distance_km / 100) * FUEL_CONSUMPTION_L_PER_100KM * GAS_PRICE_PER_LITRE
+
+    if parking_rate is not None:
+        parking = parking_rate
+    else:
+        parking_costs = {"station": PARKING_STATION, "suburban": PARKING_SUBURBAN, "downtown": PARKING_DOWNTOWN}
+        parking = parking_costs.get(parking_type, PARKING_STATION)
+
+    fare = TTC_FARE
+    if includes_go:
+        fare += GO_TRANSIT_BASE + (transit_distance_km * GO_TRANSIT_PER_KM)
+
+    total = gas + parking + fare
+    return CostBreakdown(
+        fare=round(fare, 2),
+        gas=round(gas, 2),
+        parking=round(parking, 2),
+        total=round(total, 2),
+    )

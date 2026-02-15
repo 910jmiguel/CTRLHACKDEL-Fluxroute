@@ -7,6 +7,7 @@ import type {
   ChatResponse,
   ServiceAlert,
   VehiclePosition,
+  TransitLinesData,
 } from "./types";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -78,6 +79,10 @@ export async function getTransitShape(routeId: string) {
   return fetchApi<{ route_id: string; geometry: GeoJSON.LineString }>(
     `/transit-shape/${routeId}`
   );
+}
+
+export async function getTransitLines(): Promise<TransitLinesData> {
+  return fetchApi<TransitLinesData>("/transit-lines");
 }
 
 export async function healthCheck() {

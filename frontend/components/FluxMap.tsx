@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import type { RouteOption, VehiclePosition } from "@/lib/types";
+import type { RouteOption, VehiclePosition, TransitLinesData } from "@/lib/types";
 import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
 import {
@@ -11,6 +11,7 @@ import {
   addMarkers,
   fitToRoute,
   updateVehicles,
+  drawTransitOverlay,
 } from "@/lib/mapUtils";
 
 interface FluxMapProps {
@@ -21,6 +22,7 @@ interface FluxMapProps {
   vehicles: VehiclePosition[];
   theme: MapTheme;
   showTraffic: boolean;
+  transitLines: TransitLinesData | null;
   onMapClick?: (coord: { lat: number; lng: number }) => void;
   onGeolocate?: (coord: { lat: number; lng: number }) => void;
   onMarkerDrag?: (type: "origin" | "destination", coord: { lat: number; lng: number }) => void;
@@ -34,6 +36,7 @@ export default function FluxMap({
   vehicles,
   theme,
   showTraffic,
+  transitLines,
   onMapClick,
   onGeolocate,
   onMarkerDrag,
@@ -68,7 +71,7 @@ export default function FluxMap({
       showUserHeading: false,
     });
 
-    geolocate.on("geolocate", (e: any) => {
+    geolocate.on("geolocate", (e: GeolocationPosition) => {
       const coord = { lat: e.coords.latitude, lng: e.coords.longitude };
       onGeolocate?.(coord);
     });
@@ -83,6 +86,7 @@ export default function FluxMap({
       map.current?.remove();
       map.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Resize map when container size changes (e.g. sidebar collapse/expand)
@@ -115,6 +119,77 @@ export default function FluxMap({
       map.current?.off("click", handler);
     };
   }, [mapLoaded, onMapClick]);
+
+  // Draw transit overlay (always-visible subway/rail/LRT lines + stations)
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !transitLines) return;
+
+    const m = map.current;
+    drawTransitOverlay(m, transitLines);
+
+    // Hover tooltip for transit lines and stations
+    const popup = new mapboxgl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      className: "transit-overlay-tooltip",
+    });
+
+    const onLineEnter = (e: mapboxgl.MapMouseEvent) => {
+      m.getCanvas().style.cursor = "pointer";
+      if (e.features && e.features[0]) {
+        const props = e.features[0].properties;
+        if (props) {
+          const name = props.shortName || props.longName || "Transit Line";
+          const agency = props.agencyName || "";
+          const mode = props.mode || "";
+          popup
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<div class="font-bold">${name}</div>` +
+              `<div class="text-xs text-slate-300">${agency}${mode ? ` \u2022 ${mode}` : ""}</div>`
+            )
+            .addTo(m);
+        }
+      }
+    };
+
+    const onStationEnter = (e: mapboxgl.MapMouseEvent) => {
+      m.getCanvas().style.cursor = "pointer";
+      if (e.features && e.features[0]) {
+        const props = e.features[0].properties;
+        if (props) {
+          const name = props.name || "Station";
+          const route = props.routeName || "";
+          const agency = props.agencyName || "";
+          popup
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<div class="font-bold">${name}</div>` +
+              `<div class="text-xs text-slate-300">${route}${agency ? ` \u2022 ${agency}` : ""}</div>`
+            )
+            .addTo(m);
+        }
+      }
+    };
+
+    const onLeave = () => {
+      m.getCanvas().style.cursor = "";
+      popup.remove();
+    };
+
+    m.on("mouseenter", "transit-lines-layer", onLineEnter);
+    m.on("mouseleave", "transit-lines-layer", onLeave);
+    m.on("mouseenter", "transit-stations-layer", onStationEnter);
+    m.on("mouseleave", "transit-stations-layer", onLeave);
+
+    return () => {
+      popup.remove();
+      m.off("mouseenter", "transit-lines-layer", onLineEnter);
+      m.off("mouseleave", "transit-lines-layer", onLeave);
+      m.off("mouseenter", "transit-stations-layer", onStationEnter);
+      m.off("mouseleave", "transit-stations-layer", onLeave);
+    };
+  }, [transitLines, mapLoaded]);
 
   // Draw routes when they change
   useEffect(() => {

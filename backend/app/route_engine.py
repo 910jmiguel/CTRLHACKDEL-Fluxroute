@@ -16,10 +16,12 @@ from app.models import (
     RouteOption,
     RouteSegment,
 )
-from app.cost_calculator import calculate_cost
-from app.gtfs_parser import find_nearest_stops, haversine, find_transit_route
+from app.cost_calculator import calculate_cost, calculate_hybrid_cost
+from app.gtfs_parser import find_nearest_stops, find_nearest_rapid_transit_stations, haversine, find_transit_route
 from app.ml_predictor import DelayPredictor
-from app.otp_client import query_otp_routes, parse_otp_itinerary
+from app.models import ParkingInfo
+from app.otp_client import query_otp_routes, parse_otp_itinerary, find_park_and_ride_stations
+from app.parking_data import get_parking_info, find_stations_with_parking
 from app.weather import get_current_weather
 
 logger = logging.getLogger("fluxroute.engine")
@@ -275,21 +277,40 @@ async def generate_routes(
 
     # Phase 2: Build and run route tasks in parallel
     tasks = []
+    hybrid_task = None
     for mode in modes:
         if mode == RouteMode.TRANSIT and otp_used:
             continue
         if mode == RouteMode.WALKING and total_distance > 5.0:
             continue
+        if mode == RouteMode.HYBRID:
+            # Hybrid returns a list of routes — handle separately
+            hybrid_task = _generate_hybrid_routes(
+                origin, destination, gtfs, predictor, total_distance, is_adverse, now,
+                http_client=http_client,
+                otp_available=otp_available,
+                app_state=app_state,
+                weather=weather,
+            )
+            continue
         tasks.append(_generate_single_route(
             origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now,
             http_client=http_client,
+            weather=weather,
         ))
 
-    # Run all route modes in parallel
+    # Run single-mode routes + hybrid in parallel
+    if hybrid_task:
+        tasks.append(hybrid_task)
+
     results = await asyncio.gather(*tasks, return_exceptions=True)
     for result in results:
         if isinstance(result, Exception):
-            logger.error(f"Route generation failed: {result}")
+            import traceback
+            logger.error(f"Route generation failed: {result}\n{''.join(traceback.format_exception(type(result), result, result.__traceback__))}")
+        elif isinstance(result, list):
+            # Hybrid routes return a list
+            routes.extend(result)
         elif result:
             routes.append(result)
 
@@ -309,6 +330,7 @@ async def _generate_single_route(
     is_adverse: bool,
     now: datetime,
     http_client=None,
+    weather: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a single route option."""
 
@@ -323,6 +345,7 @@ async def _generate_single_route(
         return await _generate_transit_route(
             origin, destination, gtfs, predictor, total_distance, is_adverse, now,
             http_client=http_client,
+            weather=weather,
         )
 
     elif mode == RouteMode.DRIVING:
@@ -406,10 +429,8 @@ async def _generate_single_route(
         cost = calculate_cost(RouteMode.WALKING, total_dist)
 
     elif mode == RouteMode.HYBRID:
-        return await _generate_hybrid_route(
-            origin, destination, gtfs, predictor, total_distance, is_adverse, now,
-            http_client=http_client,
-        )
+        # Hybrid is handled by _generate_hybrid_routes() in the main pipeline
+        return None
     else:
         return None
 
@@ -446,6 +467,7 @@ async def _generate_transit_route(
     is_adverse: bool,
     now: datetime,
     http_client=None,
+    weather: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
     # Find nearest stops to origin and destination
@@ -568,12 +590,16 @@ async def _generate_transit_route(
         else:
              pred_mode = "bus"
 
+    _w = weather or {}
     prediction = predictor.predict(
         line=line_for_pred,
         hour=now.hour,
         day_of_week=now.weekday(),
         month=now.month,
-        is_adverse_weather=is_adverse,
+        temperature=_w.get("temperature"),
+        precipitation=_w.get("precipitation"),
+        snowfall=_w.get("snowfall"),
+        wind_speed=_w.get("wind_speed"),
         mode=pred_mode,
     )
 
@@ -605,7 +631,141 @@ async def _generate_transit_route(
     )
 
 
-async def _generate_hybrid_route(
+def _check_line_disruption(alerts: list, line_name: str) -> tuple[bool, str]:
+    """Check if a transit line has active disruptions.
+
+    Returns (is_disrupted, reason).
+    Alerts can be ServiceAlert Pydantic models or plain dicts.
+    """
+    if not alerts or not line_name:
+        return False, ""
+
+    line_lower = line_name.lower()
+    # Build search terms from line name
+    search_terms = [line_lower]
+    parts = line_lower.split()
+    for p in parts:
+        if len(p) > 2:
+            search_terms.append(p)
+
+    for alert in alerts:
+        # Support both Pydantic models and dicts
+        if hasattr(alert, "active"):
+            active = alert.active
+            title = (alert.title or "").lower()
+            desc = (alert.description or "").lower()
+            severity = alert.severity or "info"
+            title_raw = alert.title or "Service disruption"
+        else:
+            active = alert.get("active", True)
+            title = (alert.get("title", "") or "").lower()
+            desc = (alert.get("description", "") or "").lower()
+            severity = alert.get("severity", "info")
+            title_raw = alert.get("title", "Service disruption")
+
+        if not active:
+            continue
+
+        # Only consider warnings and errors as disruptions
+        if severity not in ("warning", "error"):
+            continue
+
+        text = f"{title} {desc}"
+        for term in search_terms:
+            if term in text:
+                return True, title_raw
+
+    return False, ""
+
+
+def _score_park_and_ride_candidate(
+    origin: Coordinate,
+    destination: Coordinate,
+    station_lat: float,
+    station_lng: float,
+    total_distance: float,
+    has_parking: bool = False,
+    is_disrupted: bool = False,
+    next_departure_min: int | None = None,
+    is_go: bool = False,
+    now: Optional[datetime] = None,
+) -> float:
+    """Score a park-and-ride station candidate by strategic value.
+
+    Higher score = better candidate. Considers:
+    - Station is between origin and destination (reduces backtracking)
+    - Drive ratio ~20-40% of total distance (sweet spot)
+    - Parking availability bonus
+    - Service disruption penalty
+    - Frequent service bonus
+    - TTC priority over GO (subway runs all day, GO is limited)
+    - Weekend/off-hours GO penalty (many GO lines don't run)
+    """
+    drive_dist = haversine(origin.lat, origin.lng, station_lat, station_lng)
+    transit_dist = haversine(station_lat, station_lng, destination.lat, destination.lng)
+
+    # Penalize if station too close (< 0.5km — pointless to drive)
+    if drive_dist < 0.5:
+        return -1.0
+
+    # Penalize if station is farther from destination than origin is
+    if transit_dist > total_distance * 1.1:
+        return -0.5
+
+    # Drive ratio (ideal: 20-40% of total distance)
+    drive_ratio = drive_dist / max(total_distance, 0.1)
+    if 0.15 <= drive_ratio <= 0.5:
+        ratio_score = 1.0
+    elif drive_ratio < 0.15:
+        ratio_score = drive_ratio / 0.15  # Too close
+    else:
+        ratio_score = max(0, 1.0 - (drive_ratio - 0.5))  # Too far
+
+    # Direction score: is station between origin and destination?
+    total_via = drive_dist + transit_dist
+    detour_ratio = total_via / max(total_distance, 0.1)
+    direction_score = max(0, 2.0 - detour_ratio)  # Best when ~1.0
+
+    base_score = ratio_score * 0.4 + direction_score * 0.4
+
+    # Parking bonus
+    if has_parking:
+        base_score += 0.3
+
+    # TTC subway priority: runs frequently all day, every day
+    if not is_go:
+        base_score += 0.15  # TTC bonus
+
+    # GO Transit: check weekend/off-hours — most GO lines have limited service
+    if is_go and now:
+        is_weekend = now.weekday() >= 5  # Saturday=5, Sunday=6
+        hour = now.hour
+        # GO trains typically run: weekday peak 6-10am, 3-8pm
+        # Weekend service is very limited (some lines don't run at all)
+        if is_weekend:
+            base_score -= 0.4  # Strong weekend penalty
+        elif hour < 6 or hour > 22:
+            base_score -= 0.3  # Late night — no GO service
+        elif 10 <= hour <= 15:
+            base_score -= 0.1  # Midday — reduced GO frequency
+
+    # Service disruption penalty
+    if is_disrupted:
+        base_score -= 0.5
+
+    # Frequent service bonus
+    if next_departure_min is not None:
+        if next_departure_min <= 10:
+            base_score += 0.2
+        elif next_departure_min <= 20:
+            base_score += 0.1
+        elif next_departure_min > 45:
+            base_score -= 0.3  # Very infrequent — penalize
+
+    return base_score
+
+
+async def _generate_hybrid_routes(
     origin: Coordinate,
     destination: Coordinate,
     gtfs: dict,
@@ -614,56 +774,215 @@ async def _generate_hybrid_route(
     is_adverse: bool,
     now: datetime,
     http_client=None,
-) -> Optional[RouteOption]:
-    """Generate a drive-to-station then transit route."""
-    # Find stops near the destination
-    dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=3)
-    if not dest_stops:
-        return None
+    otp_available: bool = False,
+    weather: Optional[dict] = None,
+    app_state: Optional[dict] = None,
+) -> list[RouteOption]:
+    """Generate 1-3 hybrid (drive + transit) routes via multiple station candidates.
 
-    dest_stop = dest_stops[0]
+    Uses rapid transit stations only (no bus stops), with parking verification
+    and service alert awareness.
+    """
+    alerts = (app_state or {}).get("alerts", [])
 
-    # Find a strategic mid-point station (closer to origin for park & ride)
-    origin_stops = find_nearest_stops(gtfs, origin.lat, origin.lng, radius_km=5.0, limit=5)
-    if not origin_stops:
-        return None
+    # --- 1. Gather station candidates (rapid transit only) ---
+    # TTC subway/LRT stations from GTFS (filtered to route_type 0/1/2)
+    # Use 25km radius to cover suburban origins (e.g. Richmond Hill → Finch is 11km)
+    gtfs_stops = find_nearest_rapid_transit_stations(
+        gtfs, origin.lat, origin.lng, radius_km=25.0, limit=15
+    )
+    gtfs_stops = [s for s in gtfs_stops if s["distance_km"] > 0.5]
 
-    # Pick a station that's not too close (want some driving)
-    park_stop = None
-    for stop in origin_stops:
-        if stop["distance_km"] > 0.5:
-            park_stop = stop
+    # GO/rail stations from OTP index (if available) — wider radius
+    otp_stations = []
+    if otp_available and http_client:
+        try:
+            otp_stations = await find_park_and_ride_stations(
+                origin.lat, origin.lng, radius_km=20.0, http_client=http_client,
+            )
+        except Exception as e:
+            logger.warning(f"OTP station search failed: {e}")
+
+    # Parking-only stations from hardcoded database (catches GO stations OTP might miss)
+    parking_stations = find_stations_with_parking(
+        origin.lat, origin.lng, radius_km=20.0
+    )
+
+    # Merge candidates — normalize format
+    candidates = []
+    seen_names = set()
+
+    for stop in gtfs_stops:
+        name = stop["stop_name"]
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
+        parking = get_parking_info(name)
+        candidates.append({
+            "stop_id": stop["stop_id"],
+            "stop_name": name,
+            "lat": stop["lat"],
+            "lng": stop["lng"],
+            "route_id": stop.get("route_id"),
+            "line": stop.get("line", "TTC Subway"),
+            "agencyName": "TTC",
+            "is_go": False,
+            "parking": parking,
+        })
+
+    for stop in otp_stations:
+        name = stop["stop_name"]
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
+        parking = get_parking_info(name)
+        is_go = stop.get("mode") == "RAIL" and stop.get("agencyName", "").startswith("GO")
+        candidates.append({
+            "stop_id": stop["stop_id"],
+            "stop_name": name,
+            "lat": stop["lat"],
+            "lng": stop["lng"],
+            "route_id": None,
+            "line": f"{stop.get('agencyName', 'GO')} {stop.get('mode', 'Rail')}",
+            "agencyName": stop.get("agencyName", "GO Transit"),
+            "is_go": is_go,
+            "parking": parking,
+        })
+
+    # Add parking-database stations not already covered
+    for ps in parking_stations:
+        name = ps["station_name"]
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
+        is_go = ps.get("agency", "") == "GO Transit"
+        candidates.append({
+            "stop_id": f"parking_{name.replace(' ', '_')}",
+            "stop_name": name,
+            "lat": ps["lat"],
+            "lng": ps["lng"],
+            "route_id": None,
+            "line": "GO Transit Rail" if is_go else "TTC Subway",
+            "agencyName": ps.get("agency", "TTC"),
+            "is_go": is_go,
+            "parking": ps,
+        })
+
+    if not candidates:
+        logger.info("No hybrid station candidates found")
+        return []
+
+    # --- 2. Score and rank candidates ---
+    from app.gtfs_parser import get_next_departures
+
+    scored = []
+    for c in candidates:
+        has_parking = c.get("parking") is not None
+        line_name = c.get("line", "")
+        is_disrupted, _ = _check_line_disruption(alerts, line_name)
+
+        # Check next departure for service frequency
+        next_dep_min = None
+        departures = get_next_departures(gtfs, c["stop_id"], limit=1)
+        if departures:
+            next_dep_min = departures[0].get("minutes_until")
+
+        score = _score_park_and_ride_candidate(
+            origin, destination, c["lat"], c["lng"], total_distance,
+            has_parking=has_parking,
+            is_disrupted=is_disrupted,
+            next_departure_min=next_dep_min,
+            is_go=c.get("is_go", False),
+            now=now,
+        )
+        if score > 0:
+            scored.append((score, c))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    # Ensure diversity: at least 1 TTC and 1 GO (if available)
+    ttc_picks = [c for _, c in scored if not c["is_go"]]
+    go_picks = [c for _, c in scored if c["is_go"]]
+
+    max_candidates = min(5, len(scored))
+    top_candidates = []
+    # Take best overall
+    for _, c in scored:
+        if len(top_candidates) >= max_candidates:
             break
-    if not park_stop:
-        park_stop = origin_stops[0]
+        top_candidates.append(c)
+
+    # Ensure at least 1 TTC if available and not already included
+    if ttc_picks and not any(not c["is_go"] for c in top_candidates):
+        top_candidates[-1] = ttc_picks[0]
+
+    # Ensure at least 1 GO if available and not already included
+    if go_picks and not any(c["is_go"] for c in top_candidates):
+        if len(top_candidates) >= 2:
+            top_candidates[-1] = go_picks[0]
+        else:
+            top_candidates.append(go_picks[0])
+
+    if not top_candidates:
+        logger.info("No viable hybrid station candidates after scoring")
+        return []
+
+    logger.info(f"Hybrid routing: {len(top_candidates)} candidates — {[c['stop_name'] for c in top_candidates]}")
+
+    # --- 3. Generate routes for top candidates in parallel ---
+    route_tasks = [
+        _build_single_hybrid_route(
+            origin, destination, candidate, gtfs, predictor,
+            is_adverse, now, http_client, otp_available,
+            weather=weather,
+        )
+        for candidate in top_candidates
+    ]
+
+    results = await asyncio.gather(*route_tasks, return_exceptions=True)
+
+    hybrid_routes = []
+    for result in results:
+        if isinstance(result, Exception):
+            logger.warning(f"Hybrid route generation failed: {result}")
+        elif result:
+            hybrid_routes.append(result)
+
+    return hybrid_routes
+
+
+async def _build_single_hybrid_route(
+    origin: Coordinate,
+    destination: Coordinate,
+    park_stop: dict,
+    gtfs: dict,
+    predictor: DelayPredictor,
+    is_adverse: bool,
+    now: datetime,
+    http_client=None,
+    otp_available: bool = False,
+    weather: Optional[dict] = None,
+) -> Optional[RouteOption]:
+    """Build a single hybrid route via a specific park-and-ride station."""
 
     segments: list[RouteSegment] = []
     total_duration = 0.0
     total_dist = 0.0
 
-    # Drive to station + walk from final station — run in PARALLEL
-    walk_dist = dest_stop["distance_km"]
-    walk_dur = _estimate_duration(walk_dist, RouteMode.WALKING)
+    station_coord = Coordinate(lat=park_stop["lat"], lng=park_stop["lng"])
 
-    drive_geo, walk_geo = await asyncio.gather(
-        _mapbox_directions(
-            origin,
-            Coordinate(lat=park_stop["lat"], lng=park_stop["lng"]),
-            "driving-traffic",
-            http_client=http_client,
-        ),
-        _mapbox_directions(
-            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
-            destination,
-            "walking",
-            http_client=http_client,
-        ),
+    # --- Drive to station (Mapbox driving-traffic) ---
+    drive_geo = await _mapbox_directions(
+        origin, station_coord, "driving-traffic", http_client=http_client,
     )
 
     drive_dist = drive_geo["distance_km"] if drive_geo else haversine(origin.lat, origin.lng, park_stop["lat"], park_stop["lng"]) * 1.3
     drive_dur = drive_geo["duration_min"] if drive_geo else _estimate_duration(drive_dist, RouteMode.DRIVING)
     drive_congestion_data = drive_geo.get("congestion") if drive_geo else None
-    drive_congestion = drive_geo.get("congestion_level") if drive_geo else None
+    drive_congestion = None
     drive_congestion_segments = None
 
     if drive_congestion_data:
@@ -675,12 +994,10 @@ async def _generate_hybrid_route(
 
     segments.append(RouteSegment(
         mode=RouteMode.DRIVING,
-        geometry=drive_geo["geometry"] if drive_geo else _straight_line_geometry(
-            origin, Coordinate(lat=park_stop["lat"], lng=park_stop["lng"])
-        ),
+        geometry=drive_geo["geometry"] if drive_geo else _straight_line_geometry(origin, station_coord),
         distance_km=round(drive_dist, 2),
         duration_min=round(drive_dur, 1),
-        instructions=f"Drive to {park_stop['stop_name']} station (Park & Ride)",
+        instructions=f"Drive to {park_stop['stop_name']} (Park & Ride)",
         color="#3B82F6",
         steps=_make_direction_steps(drive_geo.get("steps", [])) if drive_geo else [],
         congestion_level=drive_congestion,
@@ -689,54 +1006,103 @@ async def _generate_hybrid_route(
     total_duration += drive_dur
     total_dist += drive_dist
 
-    # Transit segment
-    transit_route = find_transit_route(gtfs, park_stop["stop_id"], dest_stop["stop_id"])
-    transit_dist = transit_route["distance_km"] if transit_route else haversine(
-        park_stop["lat"], park_stop["lng"], dest_stop["lat"], dest_stop["lng"]
-    )
-    transit_dur = transit_route["estimated_duration_min"] if transit_route else _estimate_duration(transit_dist, RouteMode.TRANSIT)
-
-    transit_geometry = (
-        transit_route.get("geometry") if transit_route
-        else _straight_line_geometry(
-            Coordinate(lat=park_stop["lat"], lng=park_stop["lng"]),
-            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
-        )
-    )
-
+    # --- Transit leg: use OTP if available, else heuristic ---
+    transit_segments = []
+    transit_dist = 0.0
+    transit_dur = 0.0
+    transit_label = park_stop.get("line", "Transit")
     route_id = park_stop.get("route_id")
-    line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
-    color = line_colors.get(str(route_id), "#FFCC00")
+    includes_go = park_stop.get("is_go", False)
 
-    segments.append(RouteSegment(
-        mode=RouteMode.TRANSIT,
-        geometry=transit_geometry,
-        distance_km=round(transit_dist, 2),
-        duration_min=round(transit_dur, 1),
-        instructions=f"Take transit from {park_stop['stop_name']} to {dest_stop['stop_name']}",
-        transit_line=park_stop.get("line", "TTC Subway"),
-        transit_route_id=str(route_id) if route_id else None,
-        color=color,
-    ))
+    if otp_available and http_client:
+        try:
+            otp_itineraries = await query_otp_routes(
+                station_coord, destination, now, num_itineraries=1, http_client=http_client,
+            )
+            if otp_itineraries:
+                itin = otp_itineraries[0]
+                otp_route = parse_otp_itinerary(itin, predictor=predictor, weather=weather)
+                # Use OTP segments directly (includes walking + transit)
+                transit_segments = otp_route.segments
+                transit_dist = otp_route.total_distance_km
+                transit_dur = otp_route.total_duration_min
+                # Extract label from OTP route
+                transit_label = otp_route.summary
+                logger.debug(f"Hybrid OTP transit leg: {transit_label}")
+        except Exception as e:
+            logger.warning(f"OTP transit leg failed for hybrid via {park_stop['stop_name']}: {e}")
+
+    if not transit_segments:
+        # Heuristic fallback
+        dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=3)
+        dest_stop = dest_stops[0] if dest_stops else None
+
+        if not dest_stop:
+            # Can't build transit leg — straight-line fallback
+            transit_dist = haversine(park_stop["lat"], park_stop["lng"], destination.lat, destination.lng)
+            transit_dur = _estimate_duration(transit_dist, RouteMode.TRANSIT)
+            transit_segments = [RouteSegment(
+                mode=RouteMode.TRANSIT,
+                geometry=_straight_line_geometry(station_coord, destination),
+                distance_km=round(transit_dist, 2),
+                duration_min=round(transit_dur, 1),
+                instructions=f"Take transit to destination",
+                transit_line=transit_label,
+                color="#FFCC00",
+            )]
+        else:
+            # Build heuristic transit + walk segments
+            transit_route = find_transit_route(gtfs, park_stop["stop_id"], dest_stop["stop_id"])
+            transit_dist = transit_route["distance_km"] if transit_route else haversine(
+                park_stop["lat"], park_stop["lng"], dest_stop["lat"], dest_stop["lng"]
+            )
+            transit_dur = transit_route["estimated_duration_min"] if transit_route else _estimate_duration(transit_dist, RouteMode.TRANSIT)
+
+            transit_geometry = (
+                transit_route.get("geometry") if transit_route
+                else _straight_line_geometry(station_coord, Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]))
+            )
+
+            line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
+            color = line_colors.get(str(route_id), "#FFCC00")
+
+            transit_segments.append(RouteSegment(
+                mode=RouteMode.TRANSIT,
+                geometry=transit_geometry,
+                distance_km=round(transit_dist, 2),
+                duration_min=round(transit_dur, 1),
+                instructions=f"Take {transit_label} from {park_stop['stop_name']} to {dest_stop['stop_name']}",
+                transit_line=transit_label,
+                transit_route_id=str(route_id) if route_id else None,
+                color=color,
+            ))
+
+            # Walk from final station
+            walk_dist = dest_stop["distance_km"]
+            walk_dur = _estimate_duration(walk_dist, RouteMode.WALKING)
+            walk_geo = await _mapbox_directions(
+                Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
+                destination, "walking", http_client=http_client,
+            )
+            transit_segments.append(RouteSegment(
+                mode=RouteMode.WALKING,
+                geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(
+                    Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]), destination
+                ),
+                distance_km=round(walk_geo["distance_km"] if walk_geo else walk_dist, 2),
+                duration_min=round(walk_geo["duration_min"] if walk_geo else walk_dur, 1),
+                instructions=f"Walk from {dest_stop['stop_name']} to destination",
+                color="#10B981",
+                steps=_make_direction_steps(walk_geo.get("steps", [])) if walk_geo else [],
+            ))
+            transit_dist += walk_geo["distance_km"] if walk_geo else walk_dist
+            transit_dur += walk_geo["duration_min"] if walk_geo else walk_dur
+
+    segments.extend(transit_segments)
     total_duration += transit_dur
     total_dist += transit_dist
 
-    # Walk from final station (already fetched above in parallel)
-    segments.append(RouteSegment(
-        mode=RouteMode.WALKING,
-        geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(
-            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]), destination
-        ),
-        distance_km=round(walk_geo["distance_km"] if walk_geo else walk_dist, 2),
-        duration_min=round(walk_geo["duration_min"] if walk_geo else walk_dur, 1),
-        instructions=f"Walk from {dest_stop['stop_name']} to destination",
-        color="#10B981",
-        steps=_make_direction_steps(walk_geo.get("steps", [])) if walk_geo else [],
-    ))
-    total_duration += walk_geo["duration_min"] if walk_geo else walk_dur
-    total_dist += walk_geo["distance_km"] if walk_geo else walk_dist
-
-    # Delay prediction
+    # --- Delay prediction ---
     line_for_pred = str(route_id) if route_id else "1"
     
     # Determine mode string for predictor (Hybrid uses the transit part's mode)
@@ -752,12 +1118,16 @@ async def _generate_hybrid_route(
         else:
              pred_mode = "bus"
 
+    _w = weather or {}
     prediction = predictor.predict(
         line=line_for_pred,
         hour=now.hour,
         day_of_week=now.weekday(),
         month=now.month,
-        is_adverse_weather=is_adverse,
+        temperature=_w.get("temperature"),
+        precipitation=_w.get("precipitation"),
+        snowfall=_w.get("snowfall"),
+        wind_speed=_w.get("wind_speed"),
         mode=pred_mode,
     )
 
@@ -768,19 +1138,49 @@ async def _generate_hybrid_route(
         factors=prediction["contributing_factors"],
     )
 
-    # Use real congestion for stress if available, else rush-hour heuristic
+    # --- Stress score ---
     stress_score = 0.25 + prediction["delay_probability"] * 0.2
     if drive_congestion_data:
         stress_score += _congestion_stress_score(drive_congestion_data)
     elif 7 <= now.hour <= 9 or 17 <= now.hour <= 19:
         stress_score += 0.1
 
-    cost = calculate_cost(RouteMode.HYBRID, total_dist, destination.lat, destination.lng)
+    # --- Parking info ---
+    parking = park_stop.get("parking")
+    parking_rate = None
+    parking_info_model = None
+    if parking:
+        parking_rate = parking.get("daily_rate", 0.0)
+        parking_info_model = ParkingInfo(
+            station_name=parking.get("station_name", park_stop["stop_name"]),
+            daily_rate=parking_rate,
+            capacity=parking.get("capacity", 0),
+            parking_type=parking.get("type", ""),
+            agency=parking.get("agency", park_stop.get("agencyName", "")),
+        )
 
-    # Traffic summary for hybrid driving segment
+    # --- Cost (using actual distances + real parking rate) ---
+    cost = calculate_hybrid_cost(
+        drive_distance_km=drive_dist,
+        transit_distance_km=transit_dist,
+        includes_go=includes_go,
+        parking_type="station",
+        parking_rate=parking_rate,
+    )
+
+    # Traffic summary
     hybrid_traffic = ""
     if drive_congestion_data:
         _, hybrid_traffic = _compute_congestion_summary(drive_congestion_data)
+
+    station_name = park_stop["stop_name"]
+    label_prefix = f"GO {station_name}" if includes_go else station_name
+
+    # Build parking note for summary
+    parking_note = ""
+    if parking_info_model:
+        rate_str = "Free" if parking_info_model.daily_rate == 0 else f"${parking_info_model.daily_rate:.0f}/day"
+        parking_note = f" ({rate_str} parking)"
 
     return RouteOption(
         id=str(uuid.uuid4())[:8],
@@ -793,34 +1193,41 @@ async def _generate_hybrid_route(
         delay_info=delay_info,
         stress_score=round(min(1.0, stress_score), 2),
         departure_time=now.strftime("%H:%M"),
-        summary=f"Drive to {park_stop['stop_name']} → Transit to {dest_stop['stop_name']}",
+        summary=f"Park & Ride via {label_prefix} — {total_dist:.1f} km, {total_duration:.0f} min{parking_note}",
         traffic_summary=hybrid_traffic,
+        parking_info=parking_info_model,
     )
 
 
 def _label_routes(routes: list[RouteOption]) -> None:
-    """Label routes as Fastest, Cheapest, Zen based on their attributes."""
+    """Label routes by mode with descriptive names."""
     if not routes:
         return
 
-    fastest = min(routes, key=lambda r: r.total_duration_min)
-    cheapest = min(routes, key=lambda r: r.cost.total)
-    zen = min(routes, key=lambda r: r.stress_score)
-
-    fastest.label = "Fastest"
-    cheapest.label = "Thrifty" if cheapest.label != "Fastest" else cheapest.label
-    zen.label = "Zen" if zen.label == "" else zen.label
-
-    # Ensure all routes have a label
+    hybrid_count = 0
     for route in routes:
-        if not route.label:
-            if route.mode == RouteMode.HYBRID:
-                route.label = "Balanced"
-            elif route.mode == RouteMode.TRANSIT:
-                route.label = "Transit"
-            elif route.mode == RouteMode.DRIVING:
-                route.label = "Drive"
-            elif route.mode == RouteMode.WALKING:
-                route.label = "Walk"
+        if route.label:
+            continue
+
+        if route.mode == RouteMode.DRIVING:
+            route.label = "Direct Drive"
+        elif route.mode == RouteMode.WALKING:
+            route.label = "Walk"
+        elif route.mode == RouteMode.TRANSIT:
+            # Extract main transit line from segments
+            transit_segs = [s for s in route.segments if s.transit_line]
+            if transit_segs:
+                main_line = transit_segs[0].transit_line or "Transit"
+                route.label = f"Transit via {main_line}"
             else:
-                route.label = route.mode.value.title()
+                route.label = "Transit"
+        elif route.mode == RouteMode.HYBRID:
+            summary = route.summary or ""
+            if "via " in summary:
+                station = summary.split("via ")[1].split(" —")[0].strip()
+                route.label = f"Park & Ride ({station})"
+            else:
+                hybrid_count += 1
+                route.label = f"Park & Ride {hybrid_count}" if hybrid_count > 1 else "Park & Ride"
+        else:
+            route.label = route.mode.value.title()

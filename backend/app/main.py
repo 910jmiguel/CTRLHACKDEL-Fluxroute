@@ -58,6 +58,17 @@ async def lifespan(app: FastAPI):
     app_state["http_client"] = http_client
     logger.info("Shared HTTP client created (connection pooling enabled)")
 
+    # Load transit line geometries + stations for always-visible overlay
+    from app.transit_lines import fetch_transit_lines
+    logger.info("Loading transit line overlay...")
+    transit_data = await fetch_transit_lines(
+        gtfs, http_client if otp_available else None
+    )
+    app_state["transit_lines"] = transit_data
+    line_count = len(transit_data.get("lines", {}).get("features", []))
+    station_count = len(transit_data.get("stations", {}).get("features", []))
+    logger.info(f"Transit overlay loaded: {line_count} lines, {station_count} stations")
+
     logger.info("Starting real-time poller...")
     poller_task = await start_realtime_poller(app_state)
     app_state["poller_task"] = poller_task

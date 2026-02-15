@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Coordinate, VehiclePosition } from "@/lib/types";
+import type { Coordinate, VehiclePosition, TransitLinesData } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useTimeBasedTheme } from "@/hooks/useTimeBasedTheme";
-import { getVehicles } from "@/lib/api";
+import { getVehicles, getTransitLines } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
 import FluxMap from "@/components/FluxMap";
 import ChatAssistant from "@/components/ChatAssistant";
@@ -27,6 +27,7 @@ export default function Home() {
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
   const [showTraffic, setShowTraffic] = useState(true);
+  const [transitLines, setTransitLines] = useState<TransitLinesData | null>(null);
   const [originLabel, setOriginLabel] = useState<string | null>(null);
 
   const prevOriginRef = useRef<Coordinate | null>(null);
@@ -35,6 +36,15 @@ export default function Home() {
   // Always keep UI in dark mode (map still uses time-based theme)
   useEffect(() => {
     document.documentElement.dataset.theme = "dark";
+  }, []);
+
+  // Fetch transit line overlay on mount (always-visible subway/rail/LRT)
+  useEffect(() => {
+    getTransitLines()
+      .then(setTransitLines)
+      .catch(() => {
+        // Silent fail — transit overlay is non-critical
+      });
   }, []);
 
   const handleSearch = useCallback(
@@ -161,6 +171,7 @@ export default function Home() {
             vehicles={vehicles}
             theme={theme}
             showTraffic={showTraffic}
+            transitLines={transitLines}
             onMapClick={handleMapClick}
             onGeolocate={handleGeolocate}
             onMarkerDrag={handleMarkerDrag}

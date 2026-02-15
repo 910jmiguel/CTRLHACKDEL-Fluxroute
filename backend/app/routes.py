@@ -131,6 +131,14 @@ async def get_vehicles():
     return {"vehicles": [v.model_dump() if hasattr(v, 'model_dump') else v for v in vehicles]}
 
 
+@router.get("/transit-lines")
+async def get_transit_lines():
+    """Get cached transit line geometries and station positions for map overlay."""
+    state = _get_state()
+    transit_data = state.get("transit_lines", {})
+    return transit_data
+
+
 @router.get("/transit-shape/{route_id}")
 async def get_transit_shape(route_id: str):
     """Get GeoJSON shape for a transit route."""
