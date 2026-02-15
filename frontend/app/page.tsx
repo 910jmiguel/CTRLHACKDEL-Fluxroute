@@ -89,28 +89,25 @@ export default function Home() {
     if (type === "origin") {
       setOriginLabel(null);
       setOrigin(coord);
+      if (destination) {
+        fetchRoutes(coord, destination);
+      }
     } else {
       setDestination(coord);
-    }
-  }, []);
-
-  // Auto-search when both origin and destination are set via map clicks
-  useEffect(() => {
-    if (!origin || !destination) return;
-    const originChanged =
-      prevOriginRef.current?.lat !== origin.lat ||
-      prevOriginRef.current?.lng !== origin.lng;
-    const destChanged =
-      prevDestRef.current?.lat !== destination.lat ||
-      prevDestRef.current?.lng !== destination.lng;
-
-    prevOriginRef.current = origin;
-    prevDestRef.current = destination;
-
-    if (originChanged || destChanged) {
-      fetchRoutes(origin, destination);
+      if (origin) {
+        fetchRoutes(origin, coord);
+      }
     }
   }, [origin, destination, fetchRoutes]);
+
+  // Keep refs in sync (no auto-search — routes are fetched only via Find Routes or swap)
+  useEffect(() => {
+    prevOriginRef.current = origin;
+  }, [origin]);
+
+  useEffect(() => {
+    prevDestRef.current = destination;
+  }, [destination]);
 
   // Poll vehicles every 15 seconds
   useEffect(() => {
