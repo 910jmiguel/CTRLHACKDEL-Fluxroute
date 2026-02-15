@@ -3,11 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0f1c;
-  --foreground: #f0f0f0;
-  --glass-bg: rgba(15, 23, 42, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --background: #020617;
+  --foreground: #f8fafc;
+  --muted: #64748b;
   --accent: #3b82f6;
+
+  --glass-bg: rgba(15, 23, 42, 0.6);
+  --glass-border: rgba(51, 65, 85, 0.5);
+  --cta-glow: rgba(59, 130, 246, 0.3);
+
   --text-primary: #f0f0f0;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
@@ -17,19 +21,24 @@
   --input-bg: rgba(30, 41, 59, 0.6);
 }
 
-[data-theme="light"] {
-  --background: #f0f4f8;
-  --foreground: #1e293b;
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(0, 0, 0, 0.08);
-  --accent: #2563eb;
-  --text-primary: #1e293b;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --surface: rgba(241, 245, 249, 0.6);
-  --surface-hover: rgba(226, 232, 240, 0.5);
-  --border: rgba(203, 213, 225, 0.5);
-  --input-bg: rgba(241, 245, 249, 0.8);
+.landing-theme {
+  /* Sleek Paper Theme Scoped */
+  --background: #fdfcf0;
+  --foreground: #1c1c1c;
+  --muted: #4b5563;
+  --accent: #2c5282;
+
+  --glass-bg: rgba(255, 255, 255, 0.4);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --cta-glow: rgba(44, 82, 130, 0.15);
+
+  --text-primary: #1c1c1c;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --surface: rgba(255, 255, 255, 0.6);
+  --surface-hover: rgba(243, 244, 246, 0.5);
+  --border: rgba(209, 213, 219, 0.5);
+  --input-bg: rgba(255, 255, 255, 0.8);
 }
 
 body {
@@ -38,10 +47,17 @@ body {
   font-family: "Outfit", system-ui, sans-serif;
   overflow: hidden;
   transition: background-color 0.5s ease, color 0.5s ease;
+  /* Corrected color-color to color */
 }
 
-h1 {
+h1,
+.font-heading {
   font-family: "Work Sans", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.font-serif {
+  font-family: "Fraunces", serif;
 }
 
 .font-work-sans {
@@ -70,13 +86,21 @@ h1 {
   background: transparent;
 }
 
+.track-line {
+  height: 2px;
+  background: rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.15);
+  /* Adjusted for new light default */
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
+  /* Adjusted for new light default */
 }
 
 [data-theme="light"] ::-webkit-scrollbar-thumb {
