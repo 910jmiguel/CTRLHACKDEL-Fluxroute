@@ -35,9 +35,21 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: "Outfit", system-ui, sans-serif;
   overflow: hidden;
   transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+h1 {
+  font-family: "Work Sans", sans-serif;
+}
+
+.font-work-sans {
+  font-family: "Work Sans", sans-serif;
+}
+
+.font-outfit {
+  font-family: "Outfit", sans-serif;
 }
 
 /* Glass card effect */
@@ -197,34 +209,34 @@ body {
 /* GO Train: left → right */
 @keyframes trainMoveRight {
   0% {
-    transform: translateX(-1500px);
+    transform: translateX(-1000px);
   }
 
   100% {
-    transform: translateX(calc(100vw + 1500px));
+    transform: translateX(100vw);
   }
 }
 
 .train-go {
   left: 0;
-  transform: translateX(-1500px);
+  transform: translateX(-1000px);
   animation: trainMoveRight 20s linear infinite;
 }
 
 /* Subway: right → left */
 @keyframes trainMoveLeft {
   0% {
-    transform: translateX(calc(100vw + 1500px));
+    transform: translateX(100vw);
   }
 
   100% {
-    transform: translateX(-1500px);
+    transform: translateX(-1000px);
   }
 }
 
 .train-subway {
   left: 0;
-  transform: translateX(calc(100vw + 1500px));
+  transform: translateX(100vw);
   animation: trainMoveLeft 20s linear infinite;
 }
 

@@ -242,12 +242,12 @@ export default function LandingPage() {
           </Link>
         </div>
 
-        {/* Subtle scroll hint */}
+        {/* Subtle Hackathon credit — now below CTA */}
         <div
-          className={`absolute bottom-32 transition-all duration-1000 delay-1000 ${mounted ? "opacity-60" : "opacity-0"
+          className={`mt-12 transition-all duration-1000 delay-1000 ${mounted ? "opacity-90 translate-y-0" : "opacity-0 translate-y-4"
             }`}
         >
-          <p className="text-xs text-slate-600 tracking-widest uppercase">
+          <p className="text-sm font-black text-slate-100 tracking-[0.2em] uppercase">
             CTRL+HACK+DEL 2025
           </p>
         </div>
