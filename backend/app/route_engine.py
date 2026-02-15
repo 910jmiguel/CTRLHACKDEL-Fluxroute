@@ -290,11 +290,13 @@ async def generate_routes(
                 http_client=http_client,
                 otp_available=otp_available,
                 app_state=app_state,
+                weather=weather,
             )
             continue
         tasks.append(_generate_single_route(
             origin, destination, mode, gtfs, predictor, total_distance, is_adverse, now,
             http_client=http_client,
+            weather=weather,
         ))
 
     # Run single-mode routes + hybrid in parallel
@@ -328,6 +330,7 @@ async def _generate_single_route(
     is_adverse: bool,
     now: datetime,
     http_client=None,
+    weather: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a single route option."""
 
@@ -342,6 +345,7 @@ async def _generate_single_route(
         return await _generate_transit_route(
             origin, destination, gtfs, predictor, total_distance, is_adverse, now,
             http_client=http_client,
+            weather=weather,
         )
 
     elif mode == RouteMode.DRIVING:
@@ -463,6 +467,7 @@ async def _generate_transit_route(
     is_adverse: bool,
     now: datetime,
     http_client=None,
+    weather: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
     # Find nearest stops to origin and destination
@@ -585,12 +590,16 @@ async def _generate_transit_route(
         else:
              pred_mode = "bus"
 
+    _w = weather or {}
     prediction = predictor.predict(
         line=line_for_pred,
         hour=now.hour,
         day_of_week=now.weekday(),
         month=now.month,
-        is_adverse_weather=is_adverse,
+        temperature=_w.get("temperature"),
+        precipitation=_w.get("precipitation"),
+        snowfall=_w.get("snowfall"),
+        wind_speed=_w.get("wind_speed"),
         mode=pred_mode,
     )
 
@@ -766,6 +775,7 @@ async def _generate_hybrid_routes(
     now: datetime,
     http_client=None,
     otp_available: bool = False,
+    weather: Optional[dict] = None,
     app_state: Optional[dict] = None,
 ) -> list[RouteOption]:
     """Generate 1-3 hybrid (drive + transit) routes via multiple station candidates.
@@ -927,6 +937,7 @@ async def _generate_hybrid_routes(
         _build_single_hybrid_route(
             origin, destination, candidate, gtfs, predictor,
             is_adverse, now, http_client, otp_available,
+            weather=weather,
         )
         for candidate in top_candidates
     ]
@@ -953,6 +964,7 @@ async def _build_single_hybrid_route(
     now: datetime,
     http_client=None,
     otp_available: bool = False,
+    weather: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Build a single hybrid route via a specific park-and-ride station."""
 
@@ -1009,7 +1021,7 @@ async def _build_single_hybrid_route(
             )
             if otp_itineraries:
                 itin = otp_itineraries[0]
-                otp_route = parse_otp_itinerary(itin, predictor=predictor, is_adverse=is_adverse)
+                otp_route = parse_otp_itinerary(itin, predictor=predictor, weather=weather)
                 # Use OTP segments directly (includes walking + transit)
                 transit_segments = otp_route.segments
                 transit_dist = otp_route.total_distance_km
@@ -1106,12 +1118,16 @@ async def _build_single_hybrid_route(
         else:
              pred_mode = "bus"
 
+    _w = weather or {}
     prediction = predictor.predict(
         line=line_for_pred,
         hour=now.hour,
         day_of_week=now.weekday(),
         month=now.month,
-        is_adverse_weather=is_adverse,
+        temperature=_w.get("temperature"),
+        precipitation=_w.get("precipitation"),
+        snowfall=_w.get("snowfall"),
+        wind_speed=_w.get("wind_speed"),
         mode=pred_mode,
     )
 
