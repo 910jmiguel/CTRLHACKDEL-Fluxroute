@@ -11,7 +11,7 @@ from app.models import ChatMessage, ChatResponse
 logger = logging.getLogger("fluxroute.gemini")
 
 def _get_gemini_api_key() -> str:
-    return os.getenv("GEMINI_API_KEY", "")
+    return os.getenv("GEMINI_API_KEY", "").strip()
 
 SYSTEM_PROMPT = """You are FluxRoute Assistant, an AI-powered Toronto transit expert built into the FluxRoute multimodal routing app.
 
@@ -493,6 +493,12 @@ async def chat_with_gemini(
 
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
+        error_msg = str(e)
+        if "429" in error_msg or "ResourceExhausted" in error_msg:
+            return ChatResponse(
+                message="I've hit my daily usage limit for the AI service. Please try again later or upgrade your API plan. You can still use the route planner!",
+                suggested_actions=["Plan a route", "Check delays"],
+            )
         return ChatResponse(
             message="I'm having trouble connecting to my AI backend. The rest of FluxRoute still works — try using the route planner directly!",
             suggested_actions=["Plan a route", "Check delays", "View alerts"],

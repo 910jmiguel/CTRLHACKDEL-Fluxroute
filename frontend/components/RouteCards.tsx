@@ -314,16 +314,16 @@ export default function RouteCards({
                 />
               )}
 
-              {isSelected && onCustomize && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCustomize(route);
-                  }}
-                  className="mt-2 w-full text-xs font-medium text-purple-400 border border-purple-500/30 rounded-lg px-3 py-1.5 hover:bg-purple-500/10 transition-all"
-                >
-                  Customize Route
-                </button>
+              {/* Full delay panel when expanded */}
+              {isSelected && route.delay_info.probability > 0 && (
+                <div className="mt-2">
+                  <DelayIndicator
+                    probability={route.delay_info.probability}
+                    expectedMinutes={route.delay_info.expected_minutes}
+                    confidence={route.delay_info.confidence}
+                    factors={route.delay_info.factors}
+                  />
+                </div>
               )}
 
               {!isSelected && route.summary && (
