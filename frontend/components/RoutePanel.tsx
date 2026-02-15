@@ -121,7 +121,7 @@ export default function RoutePanel(props: RoutePanelProps) {
     return (
       <button
         onClick={onOpen}
-        className="absolute top-16 right-0 z-30 panel-glass rounded-l-lg px-2 py-3 hover:bg-[var(--surface-hover)] transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] shadow-lg border-l border-y border-[var(--glass-border)]"
+        className="absolute top-40 right-0 z-30 panel-glass rounded-l-lg px-2 py-3 hover:bg-[var(--surface-hover)] transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] shadow-lg border-l border-y border-[var(--glass-border)]"
         aria-label="Open route panel"
       >
         <ChevronLeft className="w-4 h-4" />
