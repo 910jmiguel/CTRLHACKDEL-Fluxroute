@@ -329,6 +329,78 @@ def find_nearest_stops(gtfs: dict, lat: float, lng: float, radius_km: float = 2.
     return results
 
 
+def search_stops(gtfs: dict, query: str, limit: int = 5) -> list[dict]:
+    """Search GTFS stops by name (case-insensitive partial match).
+
+    Starts-with matches are ranked before contains matches.
+    Deduplicates by base station name (strips platform suffixes).
+    Works with both full GTFS DataFrame and TTC_SUBWAY_STATIONS fallback.
+    """
+    if not query or len(query) < 2:
+        return []
+
+    query_lower = query.lower()
+
+    def _base_name(name: str) -> str:
+        for sep in [" - ", " Station"]:
+            if sep in name:
+                name = name.split(sep)[0]
+        return name.strip()
+
+    stops = gtfs.get("stops", pd.DataFrame())
+
+    # Build candidate list from either DataFrame or fallback
+    candidates: list[dict] = []
+    if gtfs.get("using_fallback") or stops.empty:
+        for s in TTC_SUBWAY_STATIONS:
+            candidates.append({
+                "stop_id": s["stop_id"],
+                "stop_name": s["stop_name"],
+                "lat": s["stop_lat"],
+                "lng": s["stop_lon"],
+                "route_id": s.get("route_id"),
+                "line": s.get("line"),
+            })
+    else:
+        lat_col = "stop_lat" if "stop_lat" in stops.columns else "latitude"
+        lng_col = "stop_lon" if "stop_lon" in stops.columns else "longitude"
+        for _, row in stops.iterrows():
+            candidates.append({
+                "stop_id": str(row.get("stop_id", "")),
+                "stop_name": str(row.get("stop_name", "")),
+                "lat": float(row[lat_col]),
+                "lng": float(row[lng_col]),
+                "route_id": str(row["route_id"]) if "route_id" in row and pd.notna(row.get("route_id")) else None,
+                "line": str(row["line"]) if "line" in row and pd.notna(row.get("line")) else None,
+            })
+
+    # Match: starts-with first, then contains
+    starts_with: list[dict] = []
+    contains: list[dict] = []
+    for c in candidates:
+        base = _base_name(c["stop_name"])
+        base_lower = base.lower()
+        if base_lower.startswith(query_lower):
+            c["stop_name"] = base
+            starts_with.append(c)
+        elif query_lower in base_lower:
+            c["stop_name"] = base
+            contains.append(c)
+
+    merged = starts_with + contains
+
+    # Deduplicate by base name (keep first occurrence)
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for item in merged:
+        key = item["stop_name"].lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+
+    return deduped[:limit]
+
+
 def get_route_shape(gtfs: dict, route_id: str) -> Optional[dict]:
     """Get GeoJSON LineString for a route from shapes.txt."""
     shapes = gtfs.get("shapes", pd.DataFrame())

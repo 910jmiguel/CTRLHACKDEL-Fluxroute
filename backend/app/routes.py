@@ -14,6 +14,8 @@ from app.models import (
     RouteMode,
     RouteRequest,
     RouteResponse,
+    StopSearchResult,
+    StopSearchResponse,
 )
 
 logger = logging.getLogger("fluxroute.routes")
@@ -174,6 +176,21 @@ async def get_nearby_stops(
 
     stops = find_nearest_stops(gtfs, lat, lng, radius_km, limit)
     return {"stops": stops}
+
+
+@router.get("/stops/search", response_model=StopSearchResponse)
+async def search_stops(
+    query: str = Query(..., min_length=2),
+    limit: int = Query(5, ge=1, le=20),
+):
+    """Search GTFS stops by name."""
+    from app.gtfs_parser import search_stops as gtfs_search_stops
+
+    state = _get_state()
+    gtfs = state.get("gtfs", {})
+
+    stops = gtfs_search_stops(gtfs, query, limit)
+    return StopSearchResponse(stops=[StopSearchResult(**s) for s in stops])
 
 
 @router.get("/weather")

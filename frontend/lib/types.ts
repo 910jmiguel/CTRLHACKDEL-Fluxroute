@@ -151,3 +151,16 @@ export interface LineInfo {
   color: string;
   stops: LineStop[];
 }
+
+export interface StopSearchResult {
+  stop_id: string;
+  stop_name: string;
+  lat: number;
+  lng: number;
+  route_id?: string;
+  line?: string;
+}
+
+export type SearchSuggestion =
+  | { type: "station"; data: StopSearchResult }
+  | { type: "address"; data: { place_name: string; center: [number, number] } };

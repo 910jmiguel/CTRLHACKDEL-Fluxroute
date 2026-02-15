@@ -177,3 +177,16 @@ class LineStopsResponse(BaseModel):
     line_name: str
     color: str
     stops: list[LineStop]
+
+
+class StopSearchResult(BaseModel):
+    stop_id: str
+    stop_name: str
+    lat: float
+    lng: float
+    route_id: Optional[str] = None
+    line: Optional[str] = None
+
+
+class StopSearchResponse(BaseModel):
+    stops: list[StopSearchResult]
