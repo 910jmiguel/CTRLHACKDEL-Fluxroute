@@ -411,7 +411,7 @@ export function drawIsochrone(map: mapboxgl.Map, data: IsochroneResponse) {
       type: "fill",
       source: sourceId,
       paint: {
-        "fill-color": borderColor,
+        "fill-color": fillColor,
         "fill-opacity": 0.15 - idx * 0.03,
       },
     });

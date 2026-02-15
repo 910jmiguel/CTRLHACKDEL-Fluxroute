@@ -13,6 +13,8 @@ import LiveAlerts from "@/components/LiveAlerts";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import NavigationView from "@/components/NavigationView";
 import RouteBuilderModal from "@/components/RouteBuilderModal";
+import MapLayersControl from "@/components/MapLayersControl";
+import type { TransitLineVisibility } from "@/components/MapLayersControl";
 
 export default function MapPage() {
   const {
@@ -39,6 +41,21 @@ export default function MapPage() {
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
   const [customizeBaseRoute, setCustomizeBaseRoute] = useState<RouteOption | null>(null);
   const [isochroneData, setIsochroneData] = useState<IsochroneResponse | null>(null);
+
+  // Layer visibility state
+  const [transitLineVisibility, setTransitLineVisibility] = useState<TransitLineVisibility>({
+    line1: true,
+    line2: true,
+    line4: true,
+    line5: true,
+    line6: true,
+    streetcars: true,
+  });
+  const [showVehicles, setShowVehicles] = useState(true);
+
+  const handleToggleTransitLine = useCallback((key: keyof TransitLineVisibility) => {
+    setTransitLineVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   const navigation = useNavigation({
     onReroute: (newRoute) => {
@@ -226,8 +243,6 @@ export default function MapPage() {
           onSelectRoute={selectRoute}
           activeFilter={activeFilter}
           onFilterChange={setActiveFilter}
-          showTraffic={showTraffic}
-          onToggleTraffic={() => setShowTraffic(!showTraffic)}
           originLabel={originLabel}
           origin={origin}
           destination={destination}
@@ -258,12 +273,24 @@ export default function MapPage() {
             theme={theme}
             showTraffic={showTraffic}
             transitLines={transitLines}
+            transitLineVisibility={transitLineVisibility}
+            showVehicles={showVehicles}
             isochroneData={isochroneData}
             userPosition={navigation.currentPosition}
             isNavigating={navigation.isNavigating}
             onMapClick={navigation.isNavigating ? undefined : handleMapClick}
             onGeolocate={handleGeolocate}
             onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
+          />
+
+          {/* Map Layers Control */}
+          <MapLayersControl
+            transitLineVisibility={transitLineVisibility}
+            onToggleTransitLine={handleToggleTransitLine}
+            showVehicles={showVehicles}
+            onToggleVehicles={() => setShowVehicles((v) => !v)}
+            showTraffic={showTraffic}
+            onToggleTraffic={() => setShowTraffic((v) => !v)}
           />
 
           {/* Loading overlay */}
