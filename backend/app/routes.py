@@ -7,7 +7,10 @@ from app.models import (
     ChatRequest,
     ChatResponse,
     Coordinate,
+    CustomRouteRequest,
     DelayPredictionResponse,
+    LineStopsResponse,
+    LineStop,
     RouteMode,
     RouteRequest,
     RouteResponse,
@@ -181,6 +184,56 @@ async def get_weather(
 
     weather = await get_current_weather(lat, lng)
     return weather
+
+
+@router.get("/line-stops/{line_id}", response_model=LineStopsResponse)
+async def get_line_stops(line_id: str):
+    """Get ordered stops for a TTC rapid transit line."""
+    from app.gtfs_parser import get_line_stations, TTC_LINE_INFO
+
+    state = _get_state()
+    gtfs = state.get("gtfs", {})
+
+    line_info = TTC_LINE_INFO.get(line_id)
+    if not line_info:
+        raise HTTPException(status_code=404, detail=f"Line '{line_id}' not found")
+
+    stations = get_line_stations(gtfs, line_id)
+    stops = [LineStop(stop_id=s["stop_id"], stop_name=s["stop_name"], lat=s["lat"], lng=s["lng"]) for s in stations]
+
+    return LineStopsResponse(
+        line_id=line_id,
+        line_name=line_info["name"],
+        color=line_info["color"],
+        stops=stops,
+    )
+
+
+@router.post("/custom-route")
+async def calculate_custom_route_endpoint(request: CustomRouteRequest):
+    """Calculate a user-defined custom route."""
+    from app.route_engine import calculate_custom_route
+    from app.weather import get_current_weather
+
+    state = _get_state()
+    gtfs = state.get("gtfs", {})
+    predictor = state.get("predictor")
+    http_client = state.get("http_client")
+
+    if not predictor:
+        raise HTTPException(status_code=503, detail="ML predictor not initialized")
+
+    weather = await get_current_weather(request.trip_origin.lat, request.trip_origin.lng)
+
+    route = await calculate_custom_route(
+        request=request,
+        gtfs=gtfs,
+        predictor=predictor,
+        http_client=http_client,
+        weather=weather,
+    )
+
+    return route.model_dump()
 
 
 @router.get("/road-closures")

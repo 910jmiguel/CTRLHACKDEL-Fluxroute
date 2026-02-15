@@ -21,7 +21,7 @@ from app.gtfs_parser import find_nearest_stops, find_nearest_rapid_transit_stati
 from app.ml_predictor import DelayPredictor
 from app.models import ParkingInfo
 from app.otp_client import query_otp_routes, parse_otp_itinerary, find_park_and_ride_stations
-from app.parking_data import get_parking_info, find_stations_with_parking
+from app.parking_data import get_parking_info, find_stations_with_parking, is_station_on_suspended_line
 from app.weather import get_current_weather
 
 logger = logging.getLogger("fluxroute.engine")
@@ -477,9 +477,16 @@ async def _generate_transit_route(
     weather: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
-    # Find nearest stops to origin and destination
-    origin_stops = find_nearest_stops(gtfs, origin.lat, origin.lng, radius_km=3.0, limit=3)
-    dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=3)
+    # Find nearest stops — progressive radius expansion for suburban origins
+    TRANSIT_RADII = [3.0, 5.0, 8.0]
+    origin_stops, dest_stops = [], []
+    for radius in TRANSIT_RADII:
+        if not origin_stops:
+            origin_stops = find_nearest_stops(gtfs, origin.lat, origin.lng, radius_km=radius, limit=3)
+        if not dest_stops:
+            dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=radius, limit=3)
+        if origin_stops and dest_stops:
+            break
 
     if not origin_stops or not dest_stops:
         return None
@@ -490,41 +497,56 @@ async def _generate_transit_route(
     segments: list[RouteSegment] = []
     total_duration = 0.0
     total_dist = 0.0
+    extra_gas_cost = 0.0  # Track gas cost if we drive to station
 
-    # Walk to station + walk from station — run in PARALLEL
-    walk_to_dist = origin_stop["distance_km"]
-    walk_to_dur = _estimate_duration(walk_to_dist, RouteMode.WALKING)
-    walk_from_dist = dest_stop["distance_km"]
-    walk_from_dur = _estimate_duration(walk_from_dist, RouteMode.WALKING)
+    # Determine access mode for each end — walk if < 2.5km, drive otherwise
+    origin_access_dist = origin_stop["distance_km"]
+    dest_access_dist = dest_stop["distance_km"]
+    drive_to_origin_station = origin_access_dist > 2.5
+    drive_from_dest_station = dest_access_dist > 2.5
 
-    walk_to_geo, walk_from_geo = await asyncio.gather(
-        _mapbox_directions(
-            origin,
-            Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"]),
-            "walking",
-            http_client=http_client,
-        ),
-        _mapbox_directions(
-            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
-            destination,
-            "walking",
-            http_client=http_client,
-        ),
+    origin_station_coord = Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"])
+    dest_station_coord = Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"])
+
+    # Fetch access legs in parallel
+    origin_profile = "driving-traffic" if drive_to_origin_station else "walking"
+    dest_profile = "driving-traffic" if drive_from_dest_station else "walking"
+
+    access_to_geo, access_from_geo = await asyncio.gather(
+        _mapbox_directions(origin, origin_station_coord, origin_profile, http_client=http_client),
+        _mapbox_directions(dest_station_coord, destination, dest_profile, http_client=http_client),
     )
 
-    segments.append(RouteSegment(
-        mode=RouteMode.WALKING,
-        geometry=walk_to_geo["geometry"] if walk_to_geo else _straight_line_geometry(
-            origin, Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"])
-        ),
-        distance_km=round(walk_to_geo["distance_km"] if walk_to_geo else walk_to_dist, 2),
-        duration_min=round(walk_to_geo["duration_min"] if walk_to_geo else walk_to_dur, 1),
-        instructions=f"Walk to {origin_stop['stop_name']} station",
-        color="#10B981",
-        steps=_make_direction_steps(walk_to_geo.get("steps", [])) if walk_to_geo else [],
-    ))
-    total_duration += walk_to_geo["duration_min"] if walk_to_geo else walk_to_dur
-    total_dist += walk_to_geo["distance_km"] if walk_to_geo else walk_to_dist
+    # --- Access TO origin station ---
+    if drive_to_origin_station:
+        to_dist = access_to_geo["distance_km"] if access_to_geo else origin_access_dist * 1.3
+        to_dur = access_to_geo["duration_min"] if access_to_geo else _estimate_duration(to_dist, RouteMode.DRIVING)
+        # Calculate gas cost for driving leg
+        gas_per_km = 0.12  # ~$0.12/km
+        extra_gas_cost += to_dist * gas_per_km
+        segments.append(RouteSegment(
+            mode=RouteMode.DRIVING,
+            geometry=access_to_geo["geometry"] if access_to_geo else _straight_line_geometry(origin, origin_station_coord),
+            distance_km=round(to_dist, 2),
+            duration_min=round(to_dur, 1),
+            instructions=f"Drive to {origin_stop['stop_name']} station",
+            color="#3B82F6",
+            steps=_make_direction_steps(access_to_geo.get("steps", [])) if access_to_geo else [],
+        ))
+    else:
+        to_dist = access_to_geo["distance_km"] if access_to_geo else origin_access_dist
+        to_dur = access_to_geo["duration_min"] if access_to_geo else _estimate_duration(to_dist, RouteMode.WALKING)
+        segments.append(RouteSegment(
+            mode=RouteMode.WALKING,
+            geometry=access_to_geo["geometry"] if access_to_geo else _straight_line_geometry(origin, origin_station_coord),
+            distance_km=round(to_dist, 2),
+            duration_min=round(to_dur, 1),
+            instructions=f"Walk to {origin_stop['stop_name']} station",
+            color="#10B981",
+            steps=_make_direction_steps(access_to_geo.get("steps", [])) if access_to_geo else [],
+        ))
+    total_duration += to_dur
+    total_dist += to_dist
 
     # Transit segment
     transit_route = find_transit_route(gtfs, origin_stop["stop_id"], dest_stop["stop_id"])
@@ -561,20 +583,35 @@ async def _generate_transit_route(
     total_duration += transit_dur
     total_dist += transit_dist
 
-    # Walk from station (already fetched above in parallel)
-    segments.append(RouteSegment(
-        mode=RouteMode.WALKING,
-        geometry=walk_from_geo["geometry"] if walk_from_geo else _straight_line_geometry(
-            Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]), destination
-        ),
-        distance_km=round(walk_from_geo["distance_km"] if walk_from_geo else walk_from_dist, 2),
-        duration_min=round(walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur, 1),
-        instructions=f"Walk from {dest_stop['stop_name']} station to destination",
-        color="#10B981",
-        steps=_make_direction_steps(walk_from_geo.get("steps", [])) if walk_from_geo else [],
-    ))
-    total_duration += walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur
-    total_dist += walk_from_geo["distance_km"] if walk_from_geo else walk_from_dist
+    # Access FROM destination station (already fetched above in parallel)
+    if drive_from_dest_station:
+        from_dist = access_from_geo["distance_km"] if access_from_geo else dest_access_dist * 1.3
+        from_dur = access_from_geo["duration_min"] if access_from_geo else _estimate_duration(from_dist, RouteMode.DRIVING)
+        gas_per_km = 0.12
+        extra_gas_cost += from_dist * gas_per_km
+        segments.append(RouteSegment(
+            mode=RouteMode.DRIVING,
+            geometry=access_from_geo["geometry"] if access_from_geo else _straight_line_geometry(dest_station_coord, destination),
+            distance_km=round(from_dist, 2),
+            duration_min=round(from_dur, 1),
+            instructions=f"Drive from {dest_stop['stop_name']} station to destination",
+            color="#3B82F6",
+            steps=_make_direction_steps(access_from_geo.get("steps", [])) if access_from_geo else [],
+        ))
+    else:
+        from_dist = access_from_geo["distance_km"] if access_from_geo else dest_access_dist
+        from_dur = access_from_geo["duration_min"] if access_from_geo else _estimate_duration(from_dist, RouteMode.WALKING)
+        segments.append(RouteSegment(
+            mode=RouteMode.WALKING,
+            geometry=access_from_geo["geometry"] if access_from_geo else _straight_line_geometry(dest_station_coord, destination),
+            distance_km=round(from_dist, 2),
+            duration_min=round(from_dur, 1),
+            instructions=f"Walk from {dest_stop['stop_name']} station to destination",
+            color="#10B981",
+            steps=_make_direction_steps(access_from_geo.get("steps", [])) if access_from_geo else [],
+        ))
+    total_duration += from_dur
+    total_dist += from_dist
 
     # ML delay prediction with granular weather
     line_for_pred = str(route_id) if route_id else "1"
@@ -622,6 +659,10 @@ async def _generate_transit_route(
     stress_score = 0.2 + transfers * 0.1 + prediction["delay_probability"] * 0.3
 
     cost = calculate_cost(RouteMode.TRANSIT, transit_dist)
+    # Add gas cost if we drove to/from station
+    if extra_gas_cost > 0:
+        cost.gas = round(extra_gas_cost, 2)
+        cost.total = round(cost.fare + cost.gas + cost.parking, 2)
 
     return RouteOption(
         id=str(uuid.uuid4())[:8],
@@ -878,6 +919,9 @@ async def _generate_hybrid_routes(
             "parking": ps,
         })
 
+    # Filter out stations on GO lines not currently running (e.g. Richmond Hill line on weekends/off-peak)
+    candidates = [c for c in candidates if not is_station_on_suspended_line(c["stop_name"], now=now)]
+
     if not candidates:
         logger.info("No hybrid station candidates found")
         return []
@@ -1004,7 +1048,7 @@ async def _build_single_hybrid_route(
         geometry=drive_geo["geometry"] if drive_geo else _straight_line_geometry(origin, station_coord),
         distance_km=round(drive_dist, 2),
         duration_min=round(drive_dur, 1),
-        instructions=f"Drive to {park_stop['stop_name']} (Park & Ride)",
+        instructions=f"Drive to {park_stop['stop_name']} (Hybrid)",
         color="#3B82F6",
         steps=_make_direction_steps(drive_geo.get("steps", [])) if drive_geo else [],
         congestion_level=drive_congestion,
@@ -1200,9 +1244,202 @@ async def _build_single_hybrid_route(
         delay_info=delay_info,
         stress_score=round(min(1.0, stress_score), 2),
         departure_time=now.strftime("%H:%M"),
-        summary=f"Park & Ride via {label_prefix} — {total_dist:.1f} km, {total_duration:.0f} min{parking_note}",
+        summary=f"Hybrid via {label_prefix} — {total_dist:.1f} km, {total_duration:.0f} min{parking_note}",
         traffic_summary=hybrid_traffic,
         parking_info=parking_info_model,
+    )
+
+
+async def calculate_custom_route(
+    request,  # CustomRouteRequest
+    gtfs: dict,
+    predictor: DelayPredictor,
+    http_client=None,
+    weather: Optional[dict] = None,
+) -> RouteOption:
+    """Calculate a user-defined custom route from a list of segments."""
+    from app.gtfs_parser import get_line_stations, TTC_LINE_INFO
+
+    now = datetime.now()
+    segments: list[RouteSegment] = []
+    total_dist = 0.0
+    total_dur = 0.0
+    total_fare = 0.0
+    total_gas = 0.0
+    delay_info = DelayInfo()
+    stress_score = 0.2
+
+    prev_end_coord: Optional[Coordinate] = None
+
+    for i, seg_req in enumerate(request.segments):
+        if seg_req.mode in (RouteMode.DRIVING, RouteMode.WALKING):
+            # Driving or walking segment
+            seg_origin = seg_req.origin or prev_end_coord or request.trip_origin
+            seg_dest = seg_req.destination
+
+            # If no explicit destination, use trip destination for last segment
+            if not seg_dest:
+                if i == len(request.segments) - 1:
+                    seg_dest = request.trip_destination
+                else:
+                    continue
+
+            profile = "driving-traffic" if seg_req.mode == RouteMode.DRIVING else "walking"
+            mapbox = await _mapbox_directions(seg_origin, seg_dest, profile, http_client=http_client)
+
+            if mapbox:
+                dist = mapbox["distance_km"]
+                dur = mapbox["duration_min"]
+                geometry = mapbox["geometry"]
+                steps = _make_direction_steps(mapbox.get("steps", []))
+            else:
+                dist = haversine(seg_origin.lat, seg_origin.lng, seg_dest.lat, seg_dest.lng) * 1.3
+                dur = _estimate_duration(dist, seg_req.mode)
+                geometry = _straight_line_geometry(seg_origin, seg_dest)
+                steps = []
+
+            color = "#3B82F6" if seg_req.mode == RouteMode.DRIVING else "#10B981"
+            action = "Drive" if seg_req.mode == RouteMode.DRIVING else "Walk"
+
+            segments.append(RouteSegment(
+                mode=seg_req.mode,
+                geometry=geometry,
+                distance_km=round(dist, 2),
+                duration_min=round(dur, 1),
+                instructions=f"{action} segment",
+                color=color,
+                steps=steps,
+            ))
+            total_dist += dist
+            total_dur += dur
+
+            if seg_req.mode == RouteMode.DRIVING:
+                total_gas += dist * 0.12
+
+            prev_end_coord = seg_dest
+
+        elif seg_req.mode == RouteMode.TRANSIT:
+            # Transit segment — look up station coordinates
+            if not seg_req.line_id or not seg_req.start_station_id or not seg_req.end_station_id:
+                continue
+
+            line_stations = get_line_stations(gtfs, seg_req.line_id)
+            start_station = next((s for s in line_stations if s["stop_id"] == seg_req.start_station_id), None)
+            end_station = next((s for s in line_stations if s["stop_id"] == seg_req.end_station_id), None)
+
+            if not start_station or not end_station:
+                continue
+
+            start_coord = Coordinate(lat=start_station["lat"], lng=start_station["lng"])
+            end_coord = Coordinate(lat=end_station["lat"], lng=end_station["lng"])
+
+            # Auto-insert walking transfer from previous segment end to this start
+            if prev_end_coord:
+                walk_dist = haversine(prev_end_coord.lat, prev_end_coord.lng, start_coord.lat, start_coord.lng)
+                if walk_dist > 0.05:  # More than 50m
+                    walk_geo = await _mapbox_directions(prev_end_coord, start_coord, "walking", http_client=http_client)
+                    w_dist = walk_geo["distance_km"] if walk_geo else walk_dist
+                    w_dur = walk_geo["duration_min"] if walk_geo else _estimate_duration(walk_dist, RouteMode.WALKING)
+                    segments.append(RouteSegment(
+                        mode=RouteMode.WALKING,
+                        geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(prev_end_coord, start_coord),
+                        distance_km=round(w_dist, 2),
+                        duration_min=round(w_dur, 1),
+                        instructions=f"Walk to {start_station['stop_name']}",
+                        color="#10B981",
+                    ))
+                    total_dist += w_dist
+                    total_dur += w_dur
+
+            # Transit segment itself
+            transit_route = find_transit_route(gtfs, seg_req.start_station_id, seg_req.end_station_id)
+            t_dist = transit_route["distance_km"] if transit_route else haversine(
+                start_coord.lat, start_coord.lng, end_coord.lat, end_coord.lng
+            )
+            t_dur = transit_route["estimated_duration_min"] if transit_route else _estimate_duration(t_dist, RouteMode.TRANSIT)
+            t_geom = transit_route.get("geometry") if transit_route else _straight_line_geometry(start_coord, end_coord)
+
+            line_info = TTC_LINE_INFO.get(seg_req.line_id, {})
+            line_name = line_info.get("name", f"Line {seg_req.line_id}")
+            line_color = line_info.get("color", "#FFCC00")
+
+            segments.append(RouteSegment(
+                mode=RouteMode.TRANSIT,
+                geometry=t_geom,
+                distance_km=round(t_dist, 2),
+                duration_min=round(t_dur, 1),
+                instructions=f"Take {line_name} from {start_station['stop_name']} to {end_station['stop_name']}",
+                transit_line=line_name,
+                transit_route_id=seg_req.line_id,
+                color=line_color,
+            ))
+            total_dist += t_dist
+            total_dur += t_dur
+
+            # Delay prediction for this transit segment
+            _w = weather or {}
+            prediction = predictor.predict(
+                line=seg_req.line_id,
+                hour=now.hour,
+                day_of_week=now.weekday(),
+                month=now.month,
+                temperature=_w.get("temperature"),
+                precipitation=_w.get("precipitation"),
+                snowfall=_w.get("snowfall"),
+                wind_speed=_w.get("wind_speed"),
+                mode="subway",
+            )
+            # Keep the worst delay info
+            if prediction["delay_probability"] > delay_info.probability:
+                delay_info = DelayInfo(
+                    probability=prediction["delay_probability"],
+                    expected_minutes=prediction["expected_delay_minutes"],
+                    confidence=prediction["confidence"],
+                    factors=prediction["contributing_factors"],
+                )
+            stress_score += prediction["delay_probability"] * 0.15
+
+            total_fare = 3.35  # TTC flat fare
+
+            prev_end_coord = end_coord
+
+    # Add final walk if needed
+    if prev_end_coord:
+        final_dist = haversine(prev_end_coord.lat, prev_end_coord.lng, request.trip_destination.lat, request.trip_destination.lng)
+        if final_dist > 0.05:
+            walk_geo = await _mapbox_directions(prev_end_coord, request.trip_destination, "walking", http_client=http_client)
+            w_dist = walk_geo["distance_km"] if walk_geo else final_dist
+            w_dur = walk_geo["duration_min"] if walk_geo else _estimate_duration(final_dist, RouteMode.WALKING)
+            segments.append(RouteSegment(
+                mode=RouteMode.WALKING,
+                geometry=walk_geo["geometry"] if walk_geo else _straight_line_geometry(prev_end_coord, request.trip_destination),
+                distance_km=round(w_dist, 2),
+                duration_min=round(w_dur, 1),
+                instructions="Walk to destination",
+                color="#10B981",
+            ))
+            total_dist += w_dist
+            total_dur += w_dur
+
+    cost = CostBreakdown(
+        fare=round(total_fare, 2),
+        gas=round(total_gas, 2),
+        parking=0.0,
+        total=round(total_fare + total_gas, 2),
+    )
+
+    return RouteOption(
+        id=str(uuid.uuid4())[:8],
+        label="Custom Route",
+        mode=RouteMode.TRANSIT,
+        segments=segments,
+        total_distance_km=round(total_dist, 2),
+        total_duration_min=round(total_dur, 1),
+        cost=cost,
+        delay_info=delay_info,
+        stress_score=round(min(1.0, stress_score), 2),
+        departure_time=now.strftime("%H:%M"),
+        summary=f"Custom Route — {total_dist:.1f} km, {total_dur:.0f} min",
     )
 
 
@@ -1232,9 +1469,9 @@ def _label_routes(routes: list[RouteOption]) -> None:
             summary = route.summary or ""
             if "via " in summary:
                 station = summary.split("via ")[1].split(" —")[0].strip()
-                route.label = f"Park & Ride ({station})"
+                route.label = f"Hybrid ({station})"
             else:
                 hybrid_count += 1
-                route.label = f"Park & Ride {hybrid_count}" if hybrid_count > 1 else "Park & Ride"
+                route.label = f"Hybrid {hybrid_count}" if hybrid_count > 1 else "Hybrid"
         else:
             route.label = route.mode.value.title()

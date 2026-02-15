@@ -2,12 +2,15 @@ import { API_URL } from "./constants";
 import type {
   RouteRequest,
   RouteResponse,
+  RouteOption,
   DelayPredictionResponse,
   ChatMessage,
   ChatResponse,
   ServiceAlert,
   VehiclePosition,
   TransitLinesData,
+  LineInfo,
+  CustomRouteRequest,
 } from "./types";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -87,4 +90,15 @@ export async function getTransitLines(): Promise<TransitLinesData> {
 
 export async function healthCheck() {
   return fetchApi<{ status: string }>("/health");
+}
+
+export async function getLineStops(lineId: string): Promise<LineInfo> {
+  return fetchApi<LineInfo>(`/line-stops/${lineId}`);
+}
+
+export async function calculateCustomRoute(request: CustomRouteRequest): Promise<RouteOption> {
+  return fetchApi<RouteOption>("/custom-route", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
 }

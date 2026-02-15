@@ -1,201 +1,181 @@
 "use client";
 
-import { Car, Train, Repeat, Clock, DollarSign, MapPin } from "lucide-react";
-import type { RouteOption, RouteMode } from "@/lib/types";
+import { useMemo } from "react";
+import { Car, Train, Repeat, Layers, Clock, DollarSign, Smile } from "lucide-react";
+import type { RouteOption } from "@/lib/types";
+import type { ModeFilter } from "@/hooks/useRoutes";
 
 interface DecisionMatrixProps {
   routes: RouteOption[];
+  activeFilter: ModeFilter;
+  onFilterChange: (filter: ModeFilter) => void;
   onSelect: (route: RouteOption) => void;
 }
 
-interface ModeColumn {
-  mode: RouteMode;
+interface TabConfig {
+  filter: ModeFilter;
   icon: React.ReactNode;
-  title: string;
-  route: RouteOption | null;
+  label: string;
   color: string;
+  activeColor: string;
   borderColor: string;
 }
 
-function getWinnerBadge(
-  route: RouteOption,
-  allRoutes: (RouteOption | null)[]
-): { label: string; color: string } | null {
-  const valid = allRoutes.filter((r): r is RouteOption => r !== null);
-  if (valid.length < 2) return null;
-
-  const isFastest =
-    route.total_duration_min <=
-    Math.min(...valid.map((r) => r.total_duration_min));
-  const isCheapest =
-    route.cost.total <= Math.min(...valid.map((r) => r.cost.total));
-
-  if (isFastest && isCheapest)
-    return { label: "Best Overall", color: "bg-amber-500/20 text-amber-400" };
-  if (isFastest)
-    return { label: "Fastest", color: "bg-blue-500/20 text-blue-400" };
-  if (isCheapest)
-    return { label: "Cheapest", color: "bg-emerald-500/20 text-emerald-400" };
-
-  // Check if best balance (lowest stress or middle ground)
-  const scores = valid.map((r) => r.stress_score);
-  if (route.stress_score <= Math.min(...scores))
-    return { label: "Best Balance", color: "bg-purple-500/20 text-purple-400" };
-
-  return null;
-}
-
-function getKeyDetail(route: RouteOption): string {
-  if (route.mode === "driving") {
-    return route.traffic_summary || "Direct route";
-  }
-  if (route.mode === "transit") {
-    const transitSegs = route.segments.filter((s) => s.mode === "transit");
-    const transfers = Math.max(0, transitSegs.length - 1);
-    return transfers > 0
-      ? `${transfers} transfer${transfers > 1 ? "s" : ""}`
-      : "Direct service";
-  }
-  if (route.mode === "hybrid") {
-    if (route.parking_info) {
-      const rate =
-        route.parking_info.daily_rate === 0
-          ? "Free"
-          : `$${route.parking_info.daily_rate}`;
-      return `Park @ ${route.parking_info.station_name} ${rate}`;
-    }
-    return "Park & Ride";
-  }
-  return "";
-}
+const TABS: TabConfig[] = [
+  {
+    filter: "all",
+    icon: <Layers className="w-4 h-4" />,
+    label: "All",
+    color: "text-slate-400",
+    activeColor: "text-white",
+    borderColor: "border-white/60",
+  },
+  {
+    filter: "driving",
+    icon: <Car className="w-4 h-4" />,
+    label: "Drive",
+    color: "text-blue-400/60",
+    activeColor: "text-blue-400",
+    borderColor: "border-blue-500/60",
+  },
+  {
+    filter: "transit",
+    icon: <Train className="w-4 h-4" />,
+    label: "Transit",
+    color: "text-yellow-400/60",
+    activeColor: "text-yellow-400",
+    borderColor: "border-yellow-500/60",
+  },
+  {
+    filter: "hybrid",
+    icon: <Repeat className="w-4 h-4" />,
+    label: "Hybrid",
+    color: "text-purple-400/60",
+    activeColor: "text-purple-400",
+    borderColor: "border-purple-500/60",
+  },
+];
 
 export default function DecisionMatrix({
   routes,
+  activeFilter,
+  onFilterChange,
   onSelect,
 }: DecisionMatrixProps) {
-  if (routes.length < 2) return null;
+  // Count routes per mode
+  const counts = useMemo(() => {
+    const c: Record<ModeFilter, number> = { all: routes.length, driving: 0, transit: 0, hybrid: 0 };
+    for (const r of routes) {
+      if (r.mode in c) c[r.mode as ModeFilter]++;
+    }
+    return c;
+  }, [routes]);
 
-  // Pick best route per mode category (shortest duration)
-  const bestByMode = (mode: RouteMode): RouteOption | null => {
-    const modeRoutes = routes.filter((r) => r.mode === mode);
-    if (modeRoutes.length === 0) return null;
-    return modeRoutes.reduce((best, r) =>
-      r.total_duration_min < best.total_duration_min ? r : best
-    );
-  };
+  // Get best stats for the active filter
+  const activeRoutes = useMemo(() => {
+    if (activeFilter === "all") return routes;
+    return routes.filter((r) => r.mode === activeFilter);
+  }, [routes, activeFilter]);
 
-  const columns: ModeColumn[] = [
-    {
-      mode: "driving",
-      icon: <Car className="w-5 h-5" />,
-      title: "DRIVE",
-      route: bestByMode("driving"),
-      color: "text-blue-400",
-      borderColor: "border-blue-500/30 hover:border-blue-500/60",
-    },
-    {
-      mode: "transit",
-      icon: <Train className="w-5 h-5" />,
-      title: "TRANSIT",
-      route: bestByMode("transit"),
-      color: "text-yellow-400",
-      borderColor: "border-yellow-500/30 hover:border-yellow-500/60",
-    },
-    {
-      mode: "hybrid",
-      icon: <Repeat className="w-5 h-5" />,
-      title: "PARK & RIDE",
-      route: bestByMode("hybrid"),
-      color: "text-purple-400",
-      borderColor: "border-purple-500/30 hover:border-purple-500/60",
-    },
-  ];
+  const fastest = useMemo(() => {
+    if (activeRoutes.length === 0) return null;
+    return activeRoutes.reduce((a, b) => a.total_duration_min < b.total_duration_min ? a : b);
+  }, [activeRoutes]);
 
-  const allBest = columns.map((c) => c.route);
+  const cheapest = useMemo(() => {
+    if (activeRoutes.length === 0) return null;
+    return activeRoutes.reduce((a, b) => a.cost.total < b.cost.total ? a : b);
+  }, [activeRoutes]);
+
+  const zenBest = useMemo(() => {
+    if (activeRoutes.length === 0) return null;
+    return activeRoutes.reduce((a, b) => a.stress_score < b.stress_score ? a : b);
+  }, [activeRoutes]);
+
+  if (routes.length === 0) return null;
 
   return (
     <div>
       <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide px-1 mb-2">
         Compare Modes
       </h3>
-      <div className="grid grid-cols-3 gap-2">
-        {columns.map((col) => {
-          if (!col.route) {
-            return (
-              <div
-                key={col.mode}
-                className="glass-card p-3 text-center border border-slate-700/30 opacity-40"
-              >
-                <div className={`flex justify-center mb-1 ${col.color}`}>
-                  {col.icon}
-                </div>
-                <div className="text-xs font-semibold text-slate-500">
-                  {col.title}
-                </div>
-                <div className="text-xs text-slate-600 mt-2">N/A</div>
-              </div>
-            );
-          }
 
-          const badge = getWinnerBadge(col.route, allBest);
-          const detail = getKeyDetail(col.route);
+      {/* Tab bar */}
+      <div className="flex gap-1 bg-slate-800/40 rounded-lg p-1">
+        {TABS.map((tab) => {
+          const count = counts[tab.filter];
+          if (tab.filter !== "all" && count === 0) return null;
 
+          const isActive = activeFilter === tab.filter;
           return (
             <button
-              key={col.mode}
-              onClick={() => onSelect(col.route!)}
-              className={`glass-card p-3 text-center border transition-all ${col.borderColor}`}
+              key={tab.filter}
+              onClick={() => onFilterChange(tab.filter)}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                isActive
+                  ? `bg-slate-700/80 ${tab.activeColor} border-b-2 ${tab.borderColor}`
+                  : `${tab.color} hover:bg-slate-700/40`
+              }`}
             >
-              <div className={`flex justify-center mb-1 ${col.color}`}>
-                {col.icon}
-              </div>
-              <div className="text-xs font-semibold text-white">
-                {col.title}
-              </div>
-
-              {/* Time */}
-              <div className="flex items-center justify-center gap-1 mt-2">
-                <Clock className="w-3 h-3 text-slate-400" />
-                <span className="text-sm font-bold text-white">
-                  {Math.round(col.route.total_duration_min)} min
-                </span>
-              </div>
-
-              {/* Cost */}
-              <div className="flex items-center justify-center gap-1 mt-1">
-                <DollarSign className="w-3 h-3 text-slate-400" />
-                <span className="text-xs text-slate-300">
-                  ${col.route.cost.total.toFixed(2)}
-                </span>
-              </div>
-
-              {/* Distance */}
-              <div className="flex items-center justify-center gap-1 mt-1">
-                <MapPin className="w-3 h-3 text-slate-400" />
-                <span className="text-xs text-slate-400">
-                  {col.route.total_distance_km.toFixed(1)} km
-                </span>
-              </div>
-
-              {/* Winner badge */}
-              {badge && (
-                <div
-                  className={`text-[10px] mt-2 px-1.5 py-0.5 rounded-full inline-block ${badge.color}`}
-                >
-                  {badge.label}
-                </div>
-              )}
-
-              {/* Key detail */}
-              {detail && (
-                <div className="text-[10px] text-slate-400 mt-1 truncate px-1">
-                  {detail}
-                </div>
-              )}
+              {tab.icon}
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className={`text-[10px] px-1 py-0.5 rounded-full ${
+                isActive ? "bg-white/10" : "bg-slate-700/50"
+              }`}>
+                {count}
+              </span>
             </button>
           );
         })}
       </div>
+
+      {/* Summary row */}
+      {activeRoutes.length > 0 && (
+        <div className="flex gap-2 mt-2">
+          {fastest && (
+            <button
+              onClick={() => onSelect(fastest)}
+              className="flex-1 glass-card px-2 py-1.5 text-center hover:bg-[var(--surface-hover)] transition-all"
+            >
+              <div className="flex items-center justify-center gap-1 text-blue-400">
+                <Clock className="w-3 h-3" />
+                <span className="text-[10px] uppercase font-medium">Fastest</span>
+              </div>
+              <div className="text-sm font-bold text-white">
+                {Math.round(fastest.total_duration_min)} min
+              </div>
+            </button>
+          )}
+          {cheapest && (
+            <button
+              onClick={() => onSelect(cheapest)}
+              className="flex-1 glass-card px-2 py-1.5 text-center hover:bg-[var(--surface-hover)] transition-all"
+            >
+              <div className="flex items-center justify-center gap-1 text-emerald-400">
+                <DollarSign className="w-3 h-3" />
+                <span className="text-[10px] uppercase font-medium">Thrifty</span>
+              </div>
+              <div className="text-sm font-bold text-white">
+                ${cheapest.cost.total.toFixed(2)}
+              </div>
+            </button>
+          )}
+          {zenBest && (
+            <button
+              onClick={() => onSelect(zenBest)}
+              className="flex-1 glass-card px-2 py-1.5 text-center hover:bg-[var(--surface-hover)] transition-all"
+            >
+              <div className="flex items-center justify-center gap-1 text-purple-400">
+                <Smile className="w-3 h-3" />
+                <span className="text-[10px] uppercase font-medium">Zen</span>
+              </div>
+              <div className="text-sm font-bold text-white">
+                {(zenBest.stress_score * 100).toFixed(0)}%
+              </div>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

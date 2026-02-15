@@ -3,17 +3,21 @@
 import { useState } from "react";
 import { PanelLeftClose, PanelLeft, Navigation } from "lucide-react";
 import type { Coordinate, RouteOption } from "@/lib/types";
+import type { ModeFilter } from "@/hooks/useRoutes";
 import RouteInput from "./RouteInput";
 import RouteCards from "./RouteCards";
 import DecisionMatrix from "./DecisionMatrix";
 
 interface SidebarProps {
   routes: RouteOption[];
+  filteredRoutes: RouteOption[];
   selectedRoute: RouteOption | null;
   loading: boolean;
   error: string | null;
   onSearch: (origin: Coordinate, destination: Coordinate) => void;
   onSelectRoute: (route: RouteOption) => void;
+  activeFilter: ModeFilter;
+  onFilterChange: (filter: ModeFilter) => void;
   showTraffic: boolean;
   onToggleTraffic: () => void;
   originLabel?: string | null;
@@ -23,15 +27,19 @@ interface SidebarProps {
   onClearDestination?: () => void;
   onSwap?: (newOrigin: Coordinate | null, newDest: Coordinate | null) => void;
   onClearRoutes?: () => void;
+  onCustomize?: (route: RouteOption) => void;
 }
 
 export default function Sidebar({
   routes,
+  filteredRoutes,
   selectedRoute,
   loading,
   error,
   onSearch,
   onSelectRoute,
+  activeFilter,
+  onFilterChange,
   showTraffic,
   onToggleTraffic,
   originLabel,
@@ -41,6 +49,7 @@ export default function Sidebar({
   onClearDestination,
   onSwap,
   onClearRoutes,
+  onCustomize,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -105,12 +114,18 @@ export default function Sidebar({
               </span>
             </button>
 
-            <DecisionMatrix routes={routes} onSelect={onSelectRoute} />
+            <DecisionMatrix
+              routes={routes}
+              activeFilter={activeFilter}
+              onFilterChange={onFilterChange}
+              onSelect={onSelectRoute}
+            />
 
             <RouteCards
-              routes={routes}
+              routes={filteredRoutes}
               selectedRoute={selectedRoute}
               onSelect={onSelectRoute}
+              onCustomize={onCustomize}
             />
           </>
         )}

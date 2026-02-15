@@ -18,7 +18,7 @@ SYSTEM_PROMPT = """You are FluxRoute Assistant, an AI-powered Toronto transit ex
 Your role:
 - Help users find the best routes across the GTA (Greater Toronto Area)
 - Provide real-time transit updates and delay predictions
-- Recommend optimal park-and-ride (hybrid) routes, analyzing parking, service schedules, and disruptions
+- Recommend optimal hybrid (drive + transit) routes, analyzing parking, service schedules, and disruptions
 - Offer tips on cost savings, stress reduction, and schedule optimization
 - Be concise, friendly, and practical
 
@@ -31,14 +31,14 @@ Key knowledge:
 - TTC subway runs all day, every day (5:30 AM - 1:30 AM, later on weekends)
 - Rush hours: 7-9 AM and 5-7 PM on weekdays
 - Line 1 is the busiest and most delay-prone
-- Park-and-ride is ideal for suburban commuters: drive to a station with free parking, take transit downtown
+- Hybrid routing is ideal for suburban commuters: drive to a station with free parking, take transit downtown
 
 You have access to tools to get routes, predict delays, check alerts, get weather, and analyze hybrid/park-and-ride options.
-When users ask about commuting from suburbs (Richmond Hill, Markham, Scarborough, Mississauga, etc.), proactively suggest park-and-ride options with specific station recommendations.
+When users ask about commuting from suburbs (Richmond Hill, Markham, Scarborough, Mississauga, etc.), proactively suggest hybrid options with specific station recommendations.
 
 IMPORTANT — Fact-checking responsibilities:
 - Always use the get_service_alerts tool to verify active closures and disruptions before recommending a transit line. NEVER recommend a line that has an active closure.
-- Always use get_hybrid_stations to verify parking availability before suggesting a park-and-ride station. Do not assume parking exists — confirm it.
+- Always use get_hybrid_stations to verify parking availability before suggesting a hybrid station. Do not assume parking exists — confirm it.
 - On weekends and late nights, warn users that GO Transit service is limited or non-existent. Use recommend_hybrid_route which checks schedules automatically.
 - Cross-reference delay predictions with service alerts — if a line shows high delay AND has active alerts, strongly recommend alternatives.
 - When giving schedule info, note that GTFS schedules are the source of truth. If unsure, say so and suggest checking the TTC/GO website.
@@ -508,12 +508,12 @@ def _generate_suggestions(user_msg: str, response: str) -> list[str]:
     elif "hybrid" in lower or "park" in lower or "ride" in lower:
         suggestions.extend(["Find parking stations", "Compare all modes", "Check GO schedules"])
     elif "route" in lower or "get" in lower or "go" in lower:
-        suggestions.extend(["Compare all modes", "Find park & ride", "Check weather"])
+        suggestions.extend(["Compare all modes", "Find hybrid route", "Check weather"])
     elif "weather" in lower:
         suggestions.extend(["Plan a route", "Check delays"])
     elif "commut" in lower or "suburb" in lower:
-        suggestions.extend(["Find park & ride", "Compare all modes", "Check delays"])
+        suggestions.extend(["Find hybrid route", "Compare all modes", "Check delays"])
     else:
-        suggestions.extend(["Plan a route", "Find park & ride", "Check delays"])
+        suggestions.extend(["Plan a route", "Find hybrid route", "Check delays"])
 
     return suggestions[:3]

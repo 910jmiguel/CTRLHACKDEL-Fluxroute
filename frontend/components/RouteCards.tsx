@@ -22,6 +22,7 @@ interface RouteCardsProps {
   routes: RouteOption[];
   selectedRoute: RouteOption | null;
   onSelect: (route: RouteOption) => void;
+  onCustomize?: (route: RouteOption) => void;
 }
 
 const MODE_ICON: Record<string, React.ReactNode> = {
@@ -220,8 +221,15 @@ export default function RouteCards({
   routes,
   selectedRoute,
   onSelect,
+  onCustomize,
 }: RouteCardsProps) {
-  if (routes.length === 0) return null;
+  if (routes.length === 0) {
+    return (
+      <div className="text-center text-[var(--text-muted)] text-sm py-6">
+        <p>No routes available for this mode.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
@@ -304,6 +312,18 @@ export default function RouteCards({
                   segments={route.segments}
                   parkingInfo={route.parking_info}
                 />
+              )}
+
+              {isSelected && onCustomize && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCustomize(route);
+                  }}
+                  className="mt-2 w-full text-xs font-medium text-purple-400 border border-purple-500/30 rounded-lg px-3 py-1.5 hover:bg-purple-500/10 transition-all"
+                >
+                  Customize Route
+                </button>
               )}
 
               {!isSelected && route.summary && (
