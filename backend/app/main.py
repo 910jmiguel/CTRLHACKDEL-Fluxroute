@@ -54,7 +54,10 @@ async def lifespan(app: FastAPI):
         logger.info("OpenTripPlanner not available — using heuristic transit routing (fallback)")
 
     # Shared httpx client for connection pooling across all API calls
-    http_client = httpx.AsyncClient(timeout=10.0)
+    http_client = httpx.AsyncClient(
+        timeout=12.0,
+        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+    )
     app_state["http_client"] = http_client
     logger.info("Shared HTTP client created (connection pooling enabled)")
 

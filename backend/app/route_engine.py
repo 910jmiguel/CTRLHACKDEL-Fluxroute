@@ -54,67 +54,74 @@ async def _mapbox_directions(
         f"?geometries=geojson&overview=full&steps=true{annotations}&access_token={token}"
     )
 
-    try:
-        if http_client:
-            resp = await http_client.get(url, timeout=8.0)
-            resp.raise_for_status()
-            data = resp.json()
-        else:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.get(url)
+    for attempt in range(2):
+        try:
+            if http_client:
+                resp = await http_client.get(url, timeout=10.0)
                 resp.raise_for_status()
                 data = resp.json()
+            else:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    data = resp.json()
 
-        routes = data.get("routes", [])
-        if not routes:
+            routes = data.get("routes", [])
+            if not routes:
+                return None
+
+            route = routes[0]
+
+            # Extract congestion data if available
+            congestion = None
+            congestion_level = None
+            if route.get("legs"):
+                leg = route["legs"][0]
+                annotation = leg.get("annotation", {})
+                congestion = annotation.get("congestion", [])
+                if congestion:
+                    # Compute dominant congestion level
+                    levels = {"low": 0, "moderate": 0, "heavy": 0, "severe": 0, "unknown": 0}
+                    for c in congestion:
+                        levels[c] = levels.get(c, 0) + 1
+                    total = sum(levels.values()) or 1
+                    if (levels["severe"] + levels["heavy"]) / total > 0.3:
+                        congestion_level = "severe" if levels["severe"] > levels["heavy"] else "heavy"
+                    elif (levels["moderate"] + levels["heavy"] + levels["severe"]) / total > 0.4:
+                        congestion_level = "moderate"
+                    else:
+                        congestion_level = "low"
+
+            # Extract turn-by-turn steps
+            steps = []
+            for leg in route.get("legs", []):
+                for step in leg.get("steps", []):
+                    maneuver = step.get("maneuver", {})
+                    steps.append({
+                        "instruction": maneuver.get("instruction", ""),
+                        "distance_km": round(step.get("distance", 0) / 1000, 2),
+                        "duration_min": round(step.get("duration", 0) / 60, 1),
+                        "maneuver_type": maneuver.get("type", ""),
+                        "maneuver_modifier": maneuver.get("modifier", ""),
+                    })
+
+            return {
+                "geometry": route["geometry"],
+                "distance_km": route["distance"] / 1000,
+                "duration_min": route["duration"] / 60,
+                "congestion": congestion,
+                "congestion_level": congestion_level,
+                "steps": steps,
+            }
+        except Exception as e:
+            logger.warning(
+                f"Mapbox API call failed ({profile}, attempt {attempt + 1}/2): "
+                f"{type(e).__name__}: {e}"
+            )
+            if attempt == 0:
+                await asyncio.sleep(0.5)
+                continue
             return None
-
-        route = routes[0]
-
-        # Extract congestion data if available
-        congestion = None
-        congestion_level = None
-        if route.get("legs"):
-            leg = route["legs"][0]
-            annotation = leg.get("annotation", {})
-            congestion = annotation.get("congestion", [])
-            if congestion:
-                # Compute dominant congestion level
-                levels = {"low": 0, "moderate": 0, "heavy": 0, "severe": 0, "unknown": 0}
-                for c in congestion:
-                    levels[c] = levels.get(c, 0) + 1
-                total = sum(levels.values()) or 1
-                if (levels["severe"] + levels["heavy"]) / total > 0.3:
-                    congestion_level = "severe" if levels["severe"] > levels["heavy"] else "heavy"
-                elif (levels["moderate"] + levels["heavy"] + levels["severe"]) / total > 0.4:
-                    congestion_level = "moderate"
-                else:
-                    congestion_level = "low"
-
-        # Extract turn-by-turn steps
-        steps = []
-        for leg in route.get("legs", []):
-            for step in leg.get("steps", []):
-                maneuver = step.get("maneuver", {})
-                steps.append({
-                    "instruction": maneuver.get("instruction", ""),
-                    "distance_km": round(step.get("distance", 0) / 1000, 2),
-                    "duration_min": round(step.get("duration", 0) / 60, 1),
-                    "maneuver_type": maneuver.get("type", ""),
-                    "maneuver_modifier": maneuver.get("modifier", ""),
-                })
-
-        return {
-            "geometry": route["geometry"],
-            "distance_km": route["distance"] / 1000,
-            "duration_min": route["duration"] / 60,
-            "congestion": congestion,
-            "congestion_level": congestion_level,
-            "steps": steps,
-        }
-    except Exception as e:
-        logger.warning(f"Mapbox API call failed ({profile}): {e}")
-        return None
 
 
 def _straight_line_geometry(origin: Coordinate, destination: Coordinate) -> dict:
