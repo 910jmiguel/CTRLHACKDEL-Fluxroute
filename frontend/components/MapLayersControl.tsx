@@ -21,6 +21,9 @@ interface MapLayersControlProps {
   onToggleVehicles: () => void;
   showTraffic: boolean;
   onToggleTraffic: () => void;
+  showUnselectedRoutes: boolean;
+  onToggleUnselectedRoutes: () => void;
+  hasSelectedRoute: boolean;
 }
 
 const TTC_LINES: { key: keyof TransitLineVisibility; label: string; color: string; lineId?: string }[] = [
@@ -58,11 +61,14 @@ export default function MapLayersControl({
   onToggleVehicles,
   showTraffic,
   onToggleTraffic,
+  showUnselectedRoutes,
+  onToggleUnselectedRoutes,
+  hasSelectedRoute,
 }: MapLayersControlProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="absolute top-16 left-4 z-20">
+    <div>
       {!expanded ? (
         <button
           onClick={() => setExpanded(true)}
@@ -119,6 +125,22 @@ export default function MapLayersControl({
               ))}
             </div>
           </div>
+
+          {/* Routes section — only visible when a route is selected */}
+          {hasSelectedRoute && (
+            <>
+              <div className="border-t border-[var(--border)] mx-3" />
+              <div className="px-3 py-2">
+                <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
+                  Routes
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-xs text-[var(--text-secondary)]">Show other routes</span>
+                  <Toggle checked={showUnselectedRoutes} onChange={onToggleUnselectedRoutes} />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Divider */}
           <div className="border-t border-[var(--border)] mx-3" />

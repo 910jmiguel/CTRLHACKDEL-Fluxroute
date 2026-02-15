@@ -173,22 +173,22 @@ export default function JourneyTimeline({
               <div className="flex gap-3 items-start">
                 {/* Timeline connector + icon */}
                 <div className="flex flex-col items-center">
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white"
-                    style={{ backgroundColor: color }}
-                  >
-                    {lineId ? (
-                      <Image
-                        src={TTC_LINE_LOGOS[lineId]}
-                        alt={`Line ${lineId}`}
-                        width={16}
-                        height={16}
-                        className="rounded-sm"
-                      />
-                    ) : (
-                      SEGMENT_ICON[seg.mode] || <MapPin className="w-3 h-3" />
-                    )}
-                  </div>
+                  {lineId ? (
+                    <Image
+                      src={TTC_LINE_LOGOS[lineId]}
+                      alt={`Line ${lineId}`}
+                      width={24}
+                      height={24}
+                      className="rounded-full flex-shrink-0"
+                    />
+                  ) : (
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-white"
+                      style={{ backgroundColor: color }}
+                    >
+                      {SEGMENT_ICON[seg.mode] || <MapPin className="w-3 h-3" />}
+                    </div>
+                  )}
                   {i < segments.length - 1 && (
                     <div
                       className={`w-0.5 flex-1 min-h-[20px] ${isWalking ? "border-l-2 border-dashed" : ""}`}

@@ -13,6 +13,7 @@ import {
   fitToRoute,
   updateVehicles,
   drawTransitOverlay,
+  setTransitOverlayDimmed,
   drawIsochrone,
   clearIsochrone,
 } from "@/lib/mapUtils";
@@ -28,6 +29,7 @@ interface FluxMapProps {
   transitLines: TransitLinesData | null;
   transitLineVisibility?: TransitLineVisibility;
   showVehicles?: boolean;
+  showUnselectedRoutes?: boolean;
   isochroneData?: IsochroneResponse | null;
   userPosition?: { lat: number; lng: number; bearing: number | null } | null;
   isNavigating?: boolean;
@@ -48,6 +50,7 @@ export default function FluxMap({
   transitLines,
   transitLineVisibility,
   showVehicles = true,
+  showUnselectedRoutes = true,
   isochroneData,
   userPosition,
   isNavigating,
@@ -246,6 +249,12 @@ export default function FluxMap({
     }
   }, [transitLineVisibility, transitLines, mapLoaded]);
 
+  // Dim transit overlay when a route is selected (focus mode)
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !transitLines) return;
+    setTransitOverlayDimmed(map.current, !!selectedRoute);
+  }, [selectedRoute, mapLoaded, transitLines]);
+
   // Toggle vehicle layer visibility
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
@@ -265,12 +274,14 @@ export default function FluxMap({
 
     clearRoutes(map.current);
 
-    // Draw non-selected routes first (dimmer)
-    routes.forEach((route) => {
-      if (route.id !== selectedRoute?.id) {
-        drawMultimodalRoute(map.current!, route, false);
-      }
-    });
+    // Draw non-selected routes first (heavily faded, or hidden if toggle is off)
+    if (showUnselectedRoutes || !selectedRoute) {
+      routes.forEach((route) => {
+        if (route.id !== selectedRoute?.id) {
+          drawMultimodalRoute(map.current!, route, !selectedRoute);
+        }
+      });
+    }
 
     // Draw selected route on top
     if (selectedRoute) {
@@ -354,7 +365,7 @@ export default function FluxMap({
         m.off(event, layerId, handler);
       }
     };
-  }, [routes, selectedRoute, mapLoaded]);
+  }, [routes, selectedRoute, showUnselectedRoutes, mapLoaded]);
 
   // Update markers (show origin and/or destination when at least one is set)
   useEffect(() => {

@@ -63,6 +63,7 @@ export default function MapPage() {
     streetcars: true,
   });
   const [showVehicles, setShowVehicles] = useState(true);
+  const [showUnselectedRoutes, setShowUnselectedRoutes] = useState(true);
 
   const handleToggleTransitLine = useCallback((key: keyof TransitLineVisibility) => {
     setTransitLineVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -326,6 +327,7 @@ export default function MapPage() {
               transitLines={transitLines}
               transitLineVisibility={transitLineVisibility}
               showVehicles={showVehicles}
+              showUnselectedRoutes={showUnselectedRoutes}
               isochroneData={isochroneData}
               userPosition={navigation.currentPosition}
               isNavigating={navigation.isNavigating}
@@ -334,32 +336,35 @@ export default function MapPage() {
               onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
             />
 
-            {/* Map Layers Control — top-left */}
-            <MapLayersControl
-              transitLineVisibility={transitLineVisibility}
-              onToggleTransitLine={handleToggleTransitLine}
-              showVehicles={showVehicles}
-              onToggleVehicles={() => setShowVehicles((v) => !v)}
-              showTraffic={showTraffic}
-              onToggleTraffic={() => setShowTraffic((v) => !v)}
-            />
+            {/* Map Layers + Isochrone — stacked top-left */}
+            <div className="absolute top-16 left-4 z-20 flex flex-col gap-2">
+              <MapLayersControl
+                transitLineVisibility={transitLineVisibility}
+                onToggleTransitLine={handleToggleTransitLine}
+                showVehicles={showVehicles}
+                onToggleVehicles={() => setShowVehicles((v) => !v)}
+                showTraffic={showTraffic}
+                onToggleTraffic={() => setShowTraffic((v) => !v)}
+                showUnselectedRoutes={showUnselectedRoutes}
+                onToggleUnselectedRoutes={() => setShowUnselectedRoutes((v) => !v)}
+                hasSelectedRoute={!!selectedRoute}
+              />
 
-            {/* Isochrone Panel — visible when origin set, positioned below layers */}
-            {origin && (
-              <div className="absolute top-28 left-4 z-20">
+              {origin && (
                 <IsochronePanel
                   center={origin}
                   onIsochroneLoaded={setIsochroneData}
                   onClear={() => setIsochroneData(null)}
                   isochroneActive={!!isochroneData}
                 />
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Route Panel — right slide-over / mobile bottom sheet */}
             <RoutePanel
               open={routePanelOpen}
               onClose={() => setRoutePanelOpen(false)}
+              onOpen={() => setRoutePanelOpen(true)}
               routes={routes}
               filteredRoutes={filteredRoutes}
               selectedRoute={selectedRoute}

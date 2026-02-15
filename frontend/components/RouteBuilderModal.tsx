@@ -24,7 +24,9 @@ import {
   Navigation,
   Zap,
 } from "lucide-react";
+import Image from "next/image";
 import type { Coordinate, RouteOption, RouteSegment, DirectionStep } from "@/lib/types";
+import { TTC_LINE_LOGOS } from "@/lib/constants";
 import { useCustomRoute } from "@/hooks/useCustomRoute";
 import SegmentEditor from "./SegmentEditor";
 import DelayIndicator from "./DelayIndicator";
@@ -50,6 +52,12 @@ const SEGMENT_BAR_COLOR: Record<string, string> = {
   driving: "bg-blue-500",
   walking: "bg-emerald-500",
 };
+
+function getSegmentLineId(seg: RouteSegment): string | null {
+  if (seg.mode !== "transit" || !seg.transit_route_id) return null;
+  const id = seg.transit_route_id.replace(/^line/i, "").trim();
+  return TTC_LINE_LOGOS[id] ? id : null;
+}
 
 function CongestionBadge({ level }: { level?: string }) {
   if (!level || level === "low") return null;
@@ -124,12 +132,25 @@ function RoutePreviewTimeline({ segments }: { segments: RouteSegment[] }) {
           <div key={i} className="flex gap-3">
             {/* Timeline bar */}
             <div className="flex flex-col items-center">
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-white ${SEGMENT_BAR_COLOR[seg.mode] || "bg-slate-500"}`}
-                style={seg.color ? { backgroundColor: seg.color } : {}}
-              >
-                {SEGMENT_ICON[seg.mode] || <MapPin className="w-3 h-3" />}
-              </div>
+              {(() => {
+                const lineId = getSegmentLineId(seg);
+                return lineId ? (
+                  <Image
+                    src={TTC_LINE_LOGOS[lineId]}
+                    alt={`Line ${lineId}`}
+                    width={24}
+                    height={24}
+                    className="rounded-full flex-shrink-0"
+                  />
+                ) : (
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-white ${SEGMENT_BAR_COLOR[seg.mode] || "bg-slate-500"}`}
+                    style={seg.color ? { backgroundColor: seg.color } : {}}
+                  >
+                    {SEGMENT_ICON[seg.mode] || <MapPin className="w-3 h-3" />}
+                  </div>
+                );
+              })()}
               {i < segments.length - 1 && (
                 <div
                   className="w-0.5 flex-1 min-h-[20px]"
@@ -154,11 +175,25 @@ function RoutePreviewTimeline({ segments }: { segments: RouteSegment[] }) {
                     : `${seg.distance_km.toFixed(1)} km`}
                 </span>
                 {seg.transit_line && (
-                  <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                    style={{ backgroundColor: `${seg.color}25`, color: seg.color }}
-                  >
-                    {seg.transit_line}
+                  <span className="flex items-center gap-1">
+                    {(() => {
+                      const lineId = getSegmentLineId(seg);
+                      return lineId ? (
+                        <Image
+                          src={TTC_LINE_LOGOS[lineId]}
+                          alt={`Line ${lineId}`}
+                          width={16}
+                          height={16}
+                          className="rounded-full flex-shrink-0"
+                        />
+                      ) : null;
+                    })()}
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      style={{ backgroundColor: `${seg.color}25`, color: seg.color }}
+                    >
+                      {seg.transit_line}
+                    </span>
                   </span>
                 )}
                 {seg.congestion_level && <CongestionBadge level={seg.congestion_level} />}

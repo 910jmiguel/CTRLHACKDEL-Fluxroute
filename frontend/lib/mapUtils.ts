@@ -68,8 +68,8 @@ export function drawMultimodalRoute(
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
           "line-color": "#1a1a2e",
-          "line-width": isSelected ? 8 : 5,
-          "line-opacity": isSelected ? 0.9 : 0.4,
+          "line-width": isSelected ? 8 : 3,
+          "line-opacity": isSelected ? 0.9 : 0.12,
         },
       });
 
@@ -100,8 +100,8 @@ export function drawMultimodalRoute(
           layout: { "line-join": "round", "line-cap": "round" },
           paint: {
             "line-color": subColor,
-            "line-width": isSelected ? 5 : 3,
-            "line-opacity": isSelected ? 0.9 : 0.5,
+            "line-width": isSelected ? 5 : 2,
+            "line-opacity": isSelected ? 0.9 : 0.12,
           },
         });
       });
@@ -129,8 +129,8 @@ export function drawMultimodalRoute(
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
           "line-color": color,
-          "line-width": isSelected ? 5 : 3,
-          "line-opacity": isSelected ? 0.9 : 0.4,
+          "line-width": isSelected ? 5 : 2,
+          "line-opacity": isSelected ? 0.9 : 0.12,
           ...(segment.mode === "walking"
             ? { "line-dasharray": [2, 2] }
             : {}),
@@ -374,6 +374,31 @@ export function removeTransitOverlay(map: mapboxgl.Map) {
   if (map.getSource(TRANSIT_STATIONS_SOURCE)) map.removeSource(TRANSIT_STATIONS_SOURCE);
 }
 
+export function setTransitOverlayDimmed(map: mapboxgl.Map, dimmed: boolean) {
+  try {
+    if (map.getLayer(TRANSIT_LINES_LAYER)) {
+      map.setPaintProperty(TRANSIT_LINES_LAYER, "line-opacity", dimmed ? 0.15 : 0.6);
+    }
+    if (map.getLayer(TRANSIT_LINES_CASING)) {
+      map.setPaintProperty(TRANSIT_LINES_CASING, "line-opacity", dimmed ? 0.1 : 0.3);
+    }
+    if (map.getLayer(TRANSIT_STATIONS_LAYER)) {
+      map.setPaintProperty(TRANSIT_STATIONS_LAYER, "circle-opacity", dimmed ? 0.25 : 0.85);
+      map.setPaintProperty(TRANSIT_STATIONS_LAYER, "circle-stroke-opacity", dimmed ? 0.15 : 0.7);
+    }
+    if (map.getLayer(TRANSIT_STATION_LABELS)) {
+      map.setPaintProperty(
+        TRANSIT_STATION_LABELS,
+        "text-opacity",
+        dimmed
+          ? 0.3
+          : ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1]
+      );
+    }
+  } catch {
+    // Layers may not exist yet
+  }
+}
 
 // --- Navigation Map Utils (Phase 1 & 2) ---
 
