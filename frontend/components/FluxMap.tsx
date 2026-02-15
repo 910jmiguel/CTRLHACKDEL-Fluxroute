@@ -5,6 +5,7 @@ import mapboxgl from "mapbox-gl";
 import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "@/lib/types";
 import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
+import type { TransitLineVisibility } from "./MapLayersControl";
 import {
   clearRoutes,
   drawMultimodalRoute,
@@ -25,6 +26,8 @@ interface FluxMapProps {
   theme: MapTheme;
   showTraffic: boolean;
   transitLines: TransitLinesData | null;
+  transitLineVisibility?: TransitLineVisibility;
+  showVehicles?: boolean;
   isochroneData?: IsochroneResponse | null;
   userPosition?: { lat: number; lng: number; bearing: number | null } | null;
   isNavigating?: boolean;
@@ -43,6 +46,8 @@ export default function FluxMap({
   theme,
   showTraffic,
   transitLines,
+  transitLineVisibility,
+  showVehicles = true,
   isochroneData,
   userPosition,
   isNavigating,
@@ -203,6 +208,55 @@ export default function FluxMap({
       m.off("mouseleave", "transit-stations-layer", onLeave);
     };
   }, [transitLines, mapLoaded]);
+
+  // Apply transit line visibility filters
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !transitLines || !transitLineVisibility) return;
+    const m = map.current;
+
+    // Build filter for lines
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lineConditions: any[] = [];
+    if (transitLineVisibility.line1) lineConditions.push(["all", ["==", ["get", "mode"], "SUBWAY"], ["==", ["get", "shortName"], "1"]]);
+    if (transitLineVisibility.line2) lineConditions.push(["all", ["==", ["get", "mode"], "SUBWAY"], ["==", ["get", "shortName"], "2"]]);
+    if (transitLineVisibility.line4) lineConditions.push(["all", ["==", ["get", "mode"], "SUBWAY"], ["==", ["get", "shortName"], "4"]]);
+    if (transitLineVisibility.line5) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "5"]]);
+    if (transitLineVisibility.line6) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "6"]]);
+    if (transitLineVisibility.streetcars) lineConditions.push(["==", ["get", "mode"], "TRAM"]);
+
+    // Also allow RAIL mode through (GO trains etc.) if any line is visible
+    const anyVisible = Object.values(transitLineVisibility).some(Boolean);
+    if (anyVisible) lineConditions.push(["==", ["get", "mode"], "RAIL"]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filter: any = lineConditions.length > 0
+      ? ["any", ...lineConditions]
+      : ["==", "mode", "__none__"]; // Hide everything
+
+    try {
+      for (const layerId of ["transit-lines-casing", "transit-lines-layer"]) {
+        if (m.getLayer(layerId)) m.setFilter(layerId, filter);
+      }
+      for (const layerId of ["transit-stations-layer", "transit-station-labels"]) {
+        if (m.getLayer(layerId)) m.setFilter(layerId, filter);
+      }
+    } catch (err) {
+      console.warn("Failed to apply transit filters:", err);
+    }
+  }, [transitLineVisibility, transitLines, mapLoaded]);
+
+  // Toggle vehicle layer visibility
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
+    try {
+      if (m.getLayer("vehicles-layer")) {
+        m.setLayoutProperty("vehicles-layer", "visibility", showVehicles ? "visible" : "none");
+      }
+    } catch {
+      // Layer may not exist yet
+    }
+  }, [showVehicles, mapLoaded, vehicles]);
 
   // Draw routes when they change
   useEffect(() => {
