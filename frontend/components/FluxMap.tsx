@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "@/lib/types";
-import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS } from "@/lib/constants";
+import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS, API_URL } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
 import type { TransitLineVisibility } from "./MapLayersControl";
 import {
@@ -607,7 +607,7 @@ export default function FluxMap({
         if (!m.getSource("road-closures")) {
           m.addSource("road-closures", {
             type: "geojson",
-            data: "/api/road-closures", // Proxy to backend
+            data: `${API_URL}/api/road-closures`, // Absolute URL to backend
           });
         }
 
