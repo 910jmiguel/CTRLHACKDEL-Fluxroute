@@ -183,28 +183,32 @@ body {
 /* GO Train: left → right */
 @keyframes trainMoveRight {
   0% {
-    transform: translateX(-500px);
+    transform: translateX(-600px);
   }
   100% {
-    transform: translateX(calc(100vw + 500px));
+    transform: translateX(calc(100vw + 600px));
   }
 }
 
 .train-go {
+  left: 0;
+  transform: translateX(-600px);
   animation: trainMoveRight 18s linear infinite;
 }
 
 /* Subway: right → left */
 @keyframes trainMoveLeft {
   0% {
-    transform: translateX(calc(100vw + 400px));
+    transform: translateX(calc(100vw + 600px));
   }
   100% {
-    transform: translateX(-400px);
+    transform: translateX(-600px);
   }
 }
 
 .train-subway {
+  left: 0;
+  transform: translateX(calc(100vw + 600px));
   animation: trainMoveLeft 22s linear infinite;
   animation-delay: 4s;
 }

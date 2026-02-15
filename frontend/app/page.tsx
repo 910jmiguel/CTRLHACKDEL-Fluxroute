@@ -162,9 +162,9 @@ export default function LandingPage() {
         <Image
           src="/images/subway.png"
           alt="TTC Subway"
-          width={450}
-          height={56}
-          className="h-14 w-auto"
+          width={600}
+          height={64}
+          className="h-16 w-auto"
           draggable={false}
           priority
         />
@@ -174,9 +174,8 @@ export default function LandingPage() {
       <div className="relative z-20 flex flex-col items-center justify-center h-full px-4 pointer-events-none">
         {/* Logo / Title */}
         <div
-          className={`transition-all duration-1000 ${
-            mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
+          className={`transition-all duration-1000 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
         >
           <h1 className="text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight text-center">
             <span className="bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
@@ -188,9 +187,8 @@ export default function LandingPage() {
 
         {/* Tagline */}
         <div
-          className={`transition-all duration-1000 delay-300 ${
-            mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
+          className={`transition-all duration-1000 delay-300 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
         >
           <p className="mt-4 text-lg sm:text-xl md:text-2xl text-slate-400 text-center max-w-2xl leading-relaxed">
             AI-Powered Multimodal Transit Routing
@@ -201,9 +199,8 @@ export default function LandingPage() {
 
         {/* Feature pills */}
         <div
-          className={`transition-all duration-1000 delay-500 ${
-            mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
+          className={`transition-all duration-1000 delay-500 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
         >
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             {[
@@ -224,9 +221,8 @@ export default function LandingPage() {
 
         {/* CTA Button */}
         <div
-          className={`transition-all duration-1000 delay-700 pointer-events-auto ${
-            mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
+          className={`transition-all duration-1000 delay-700 pointer-events-auto ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
         >
           <Link href="/map">
             <button className="mt-10 group relative px-8 py-4 rounded-xl text-lg font-semibold text-white bg-blue-600/80 backdrop-blur-md border border-blue-400/30 hover:bg-blue-500/90 hover:border-blue-400/50 hover:scale-105 active:scale-95 transition-all duration-300 cta-glow">
@@ -248,9 +244,8 @@ export default function LandingPage() {
 
         {/* Subtle scroll hint */}
         <div
-          className={`absolute bottom-32 transition-all duration-1000 delay-1000 ${
-            mounted ? "opacity-60" : "opacity-0"
-          }`}
+          className={`absolute bottom-32 transition-all duration-1000 delay-1000 ${mounted ? "opacity-60" : "opacity-0"
+            }`}
         >
           <p className="text-xs text-slate-600 tracking-widest uppercase">
             CTRL+HACK+DEL 2025
