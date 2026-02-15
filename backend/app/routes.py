@@ -28,6 +28,17 @@ async def health():
     return {"status": "ok", "service": "FluxRoute API"}
 
 
+@router.get("/otp/status")
+async def get_otp_status():
+    """Check connection to OpenTripPlanner."""
+    state = _get_state()
+    available = state.get("otp_available", False)
+    return {
+        "available": available,
+        "message": "Multi-agency routing active" if available else "Using GTFS fallback",
+    }
+
+
 @router.post("/routes", response_model=RouteResponse)
 async def get_routes(request: RouteRequest):
     """Generate multimodal route options."""
