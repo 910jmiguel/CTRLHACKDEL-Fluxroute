@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "@/lib/types";
-import { MAPBOX_TOKEN, TORONTO_CENTER, TORONTO_ZOOM, MAP_STYLE, CONGESTION_COLORS, INITIAL_ZOOM, INTRO_DURATION_MS, CN_TOWER_CENTER, INTRO_END_ZOOM } from "@/lib/constants";
+import { MAPBOX_TOKEN, MAP_STYLE, CONGESTION_COLORS, INITIAL_ZOOM, INTRO_DURATION_MS, CN_TOWER_CENTER, INTRO_END_ZOOM } from "@/lib/constants";
 import type { MapTheme } from "@/hooks/useTimeBasedTheme";
 import type { TransitLineVisibility } from "./MapLayersControl";
 import {
