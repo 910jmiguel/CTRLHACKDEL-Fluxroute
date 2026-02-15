@@ -237,58 +237,66 @@ export default function FluxMap({
       severe: "Severe Traffic — significant delays",
     };
 
+    // Track all registered listeners for cleanup
+    const registeredListeners: Array<{ layerId: string; event: string; handler: (e: any) => void }> = [];
+
     const style = m.getStyle();
     if (style?.layers) {
       style.layers.forEach((layer) => {
         if (layer.id.startsWith("route-layer-congestion-")) {
-          // ... (existing congestion logic) ...
-          m.on("mouseenter", layer.id, (e) => {
+          const onEnter = (e: mapboxgl.MapMouseEvent) => {
             m.getCanvas().style.cursor = "pointer";
             if (e.features && e.features[0]) {
               const congestion = e.features[0].properties?.congestion as string;
               const desc = congestionDescriptions[congestion] || congestion;
               popup.setLngLat(e.lngLat).setHTML(desc).addTo(m!);
             }
-          });
-          m.on("mouseleave", layer.id, () => {
+          };
+          const onLeave = () => {
             m.getCanvas().style.cursor = "";
             popup.remove();
-          });
+          };
+          m.on("mouseenter", layer.id, onEnter);
+          m.on("mouseleave", layer.id, onLeave);
+          registeredListeners.push({ layerId: layer.id, event: "mouseenter", handler: onEnter });
+          registeredListeners.push({ layerId: layer.id, event: "mouseleave", handler: onLeave });
         }
       });
     }
 
     // Road Closure Tooltips
     ["road-closure-line", "road-closure-symbol"].forEach((layerId) => {
-      // Only register if layer exists (might be added async, but we are in useEffect depending on showTraffic)
-      // Actually, these events bind even if layer doesn't exist yet? No.
-      // But we just added them in the same render cycle (effectively).
-      // Safer to check if getLayer returns something, but 'on' listener doesn't throw.
-      m.on("mouseenter", layerId, (e) => {
+      const onEnter = (e: mapboxgl.MapMouseEvent) => {
         m.getCanvas().style.cursor = "pointer";
         if (e.features && e.features[0]) {
           const props = e.features[0].properties;
           if (props) {
             const road = props.road || "Road Closure";
             const desc = props.description || props.reason || "No details available";
-            const time = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
+            const endDate = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
 
             popup.setLngLat(e.lngLat).setHTML(
-              `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${time}`
+              `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${endDate}`
             ).addTo(m!);
           }
         }
-      });
-      m.on("mouseleave", layerId, () => {
+      };
+      const onLeave = () => {
         m.getCanvas().style.cursor = "";
         popup.remove();
-      });
+      };
+      m.on("mouseenter", layerId, onEnter);
+      m.on("mouseleave", layerId, onLeave);
+      registeredListeners.push({ layerId, event: "mouseenter", handler: onEnter });
+      registeredListeners.push({ layerId, event: "mouseleave", handler: onLeave });
     });
-
-
 
     return () => {
       popup.remove();
+      // Clean up all registered listeners to prevent memory leaks
+      for (const { layerId, event, handler } of registeredListeners) {
+        m.off(event, layerId, handler);
+      }
     };
   }, [routes, selectedRoute, mapLoaded]);
 
@@ -403,31 +411,31 @@ export default function FluxMap({
         });
       }
 
-      // Start pulse animation
+      // Start pulse animation using setInterval (cleaner than mixed RAF/setTimeout)
       let growing = true;
-      const animatePulse = () => {
-        if (!m.getLayer("user-location-pulse")) return;
-        const currentRadius = growing ? 20 : 12;
-        m.setPaintProperty("user-location-pulse", "circle-radius", currentRadius);
+      const pulseInterval = window.setInterval(() => {
+        if (!m.getLayer("user-location-pulse")) {
+          clearInterval(pulseInterval);
+          return;
+        }
+        m.setPaintProperty("user-location-pulse", "circle-radius", growing ? 20 : 12);
         m.setPaintProperty("user-location-pulse", "circle-opacity", growing ? 0.1 : 0.3);
         growing = !growing;
-        pulseAnimRef.current = window.setTimeout(() => {
-          pulseAnimRef.current = requestAnimationFrame(animatePulse);
-        }, 1200) as unknown as number;
-      };
-      pulseAnimRef.current = requestAnimationFrame(animatePulse);
+      }, 1200);
+      pulseAnimRef.current = pulseInterval;
 
       return () => {
         m.off("dragstart", onInteraction);
         if (pulseAnimRef.current !== null) {
-          cancelAnimationFrame(pulseAnimRef.current);
-          clearTimeout(pulseAnimRef.current);
+          clearInterval(pulseAnimRef.current);
           pulseAnimRef.current = null;
         }
       };
     } else if (wasNavigatingRef.current) {
       // Navigation just stopped — clean up
       wasNavigatingRef.current = false;
+      userInteractedRef.current = false;
+      lastBearingRef.current = 0;
       setShowRecenter(false);
 
       if (m.getLayer("user-location-heading")) m.removeLayer("user-location-heading");
@@ -436,8 +444,7 @@ export default function FluxMap({
       if (m.getSource("user-location")) m.removeSource("user-location");
 
       if (pulseAnimRef.current !== null) {
-        cancelAnimationFrame(pulseAnimRef.current);
-        clearTimeout(pulseAnimRef.current);
+        clearInterval(pulseAnimRef.current);
         pulseAnimRef.current = null;
       }
 

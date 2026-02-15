@@ -61,7 +61,7 @@ async def _mapbox_directions(
                 resp.raise_for_status()
                 data = resp.json()
             else:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0")) as client:
                     resp = await client.get(url)
                     resp.raise_for_status()
                     data = resp.json()
@@ -567,8 +567,8 @@ async def _generate_transit_route(
     route_id = origin_stop.get("route_id") or (transit_route.get("route_id") if transit_route else None)
 
     # Determine transit line color
-    line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
-    color = line_colors.get(str(route_id), "#FFCC00")
+    line_colors = {"1": "#F0CC49", "2": "#549F4D", "4": "#9C246E", "5": "#DE7731", "6": "#959595"}
+    color = line_colors.get(str(route_id), "#F0CC49")
 
     segments.append(RouteSegment(
         mode=RouteMode.TRANSIT,
@@ -1099,7 +1099,7 @@ async def _build_single_hybrid_route(
                 duration_min=round(transit_dur, 1),
                 instructions=f"Take transit to destination",
                 transit_line=transit_label,
-                color="#FFCC00",
+                color="#F0CC49",
             )]
         else:
             # Build heuristic transit + walk segments
@@ -1114,8 +1114,8 @@ async def _build_single_hybrid_route(
                 else _straight_line_geometry(station_coord, Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]))
             )
 
-            line_colors = {"1": "#FFCC00", "2": "#00A651", "4": "#A8518A", "5": "#FF6600", "6": "#8B4513"}
-            color = line_colors.get(str(route_id), "#FFCC00")
+            line_colors = {"1": "#F0CC49", "2": "#549F4D", "4": "#9C246E", "5": "#DE7731", "6": "#959595"}
+            color = line_colors.get(str(route_id), "#F0CC49")
 
             transit_segments.append(RouteSegment(
                 mode=RouteMode.TRANSIT,
@@ -1361,7 +1361,7 @@ async def calculate_custom_route(
 
             line_info = TTC_LINE_INFO.get(seg_req.line_id, {})
             line_name = line_info.get("name", f"Line {seg_req.line_id}")
-            line_color = line_info.get("color", "#FFCC00")
+            line_color = line_info.get("color", "#F0CC49")
 
             segments.append(RouteSegment(
                 mode=RouteMode.TRANSIT,

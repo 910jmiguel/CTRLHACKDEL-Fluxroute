@@ -228,6 +228,11 @@ export function useNavigation(options: UseNavigationOptions = {}) {
               },
               (err) => {
                 console.warn("Geolocation error:", err.message);
+                if (err.code === err.PERMISSION_DENIED) {
+                  onErrorRef.current?.("Location permission denied. Enable location access to use navigation.");
+                } else if (err.code === err.POSITION_UNAVAILABLE) {
+                  onErrorRef.current?.("GPS position unavailable. Check your device location settings.");
+                }
               },
               {
                 enableHighAccuracy: true,
@@ -324,7 +329,17 @@ export function useNavigation(options: UseNavigationOptions = {}) {
         };
 
         ws.onclose = () => {
-          setState((prev) => ({ ...prev, isConnected: false }));
+          // Stop navigation UI when WebSocket disconnects
+          if (watchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
+          stopSpeaking();
+          setState((prev) => ({
+            ...prev,
+            isConnected: false,
+            isNavigating: false,
+          }));
         };
 
         ws.onerror = () => {

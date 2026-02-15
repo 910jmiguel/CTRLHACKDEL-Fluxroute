@@ -358,7 +358,7 @@ def get_fallback_transit_lines() -> dict:
         routes[rid].append(station)
 
         mode = _TTC_MODE_MAP.get(rid, "SUBWAY")
-        color = _TTC_LINE_COLORS.get(rid, "#FFCC00")
+        color = _TTC_LINE_COLORS.get(rid, "#F0CC49")
 
         station_features.append({
             "type": "Feature",
@@ -382,7 +382,7 @@ def get_fallback_transit_lines() -> dict:
         if len(coordinates) < 2:
             continue
 
-        color = _TTC_LINE_COLORS.get(rid, "#FFCC00")
+        color = _TTC_LINE_COLORS.get(rid, "#F0CC49")
         mode = _TTC_MODE_MAP.get(rid, "SUBWAY")
         line_name = stations[0].get("line", f"Line {rid}")
 

@@ -54,10 +54,10 @@ _AGENCY_COLORS = {
 }
 
 _TRANSIT_MODE_COLORS = {
-    "SUBWAY": "#FFCC00",
+    "SUBWAY": "#F0CC49",
     "RAIL": "#3D8B37",
     "BUS": "#DA291C",
-    "TRAM": "#FF6600",
+    "TRAM": "#DE7731",
 }
 
 

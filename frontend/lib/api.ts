@@ -12,6 +12,13 @@ import type {
   LineInfo,
   CustomRouteRequest,
   StopSearchResult,
+  NavigationRouteRequest,
+  NavigationRoute,
+  OptimizationRequest,
+  OptimizationResponse,
+  IsochroneRequest,
+  IsochroneResponse,
+  NavigationSessionResponse,
 } from "./types";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -104,6 +111,44 @@ export async function searchStops(query: string): Promise<{ stops: StopSearchRes
 
 export async function calculateCustomRoute(request: CustomRouteRequest): Promise<RouteOption> {
   return fetchApi<RouteOption>("/custom-route", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+// --- Navigation API (Phase 1 & 2) ---
+
+export async function getNavigationRoute(
+  request: NavigationRouteRequest
+): Promise<NavigationRoute> {
+  return fetchApi<NavigationRoute>("/navigation-route", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function optimizeRoute(
+  request: OptimizationRequest
+): Promise<OptimizationResponse> {
+  return fetchApi<OptimizationResponse>("/optimize-route", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function getIsochrone(
+  request: IsochroneRequest
+): Promise<IsochroneResponse> {
+  return fetchApi<IsochroneResponse>("/isochrone", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function createNavigationSession(
+  request: NavigationRouteRequest
+): Promise<NavigationSessionResponse> {
+  return fetchApi<NavigationSessionResponse>("/navigation-session", {
     method: "POST",
     body: JSON.stringify(request),
   });
