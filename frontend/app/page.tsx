@@ -19,6 +19,7 @@ export default function Home() {
     error,
     fetchRoutes,
     selectRoute,
+    clearRoutes,
   } = useRoutes();
 
   const { theme } = useTimeBasedTheme();
@@ -26,6 +27,7 @@ export default function Home() {
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
   const [showTraffic, setShowTraffic] = useState(true);
+  const [originLabel, setOriginLabel] = useState<string | null>(null);
 
   const prevOriginRef = useRef<Coordinate | null>(null);
   const prevDestRef = useRef<Coordinate | null>(null);
@@ -49,11 +51,48 @@ export default function Home() {
 
   const handleMapClick = useCallback((coord: { lat: number; lng: number }) => {
     if (!origin) {
+      setOriginLabel(null);
       setOrigin(coord);
     } else {
       setDestination(coord);
     }
   }, [origin]);
+
+  const handleGeolocate = useCallback((coord: { lat: number; lng: number }) => {
+    setOriginLabel("Current Location");
+    setOrigin(coord);
+  }, []);
+
+  const handleClearOrigin = useCallback(() => {
+    setOrigin(null);
+    setOriginLabel(null);
+    prevOriginRef.current = null;
+  }, []);
+
+  const handleClearDestination = useCallback(() => {
+    setDestination(null);
+    prevDestRef.current = null;
+  }, []);
+
+  const handleSwap = useCallback((newOrigin: Coordinate | null, newDest: Coordinate | null) => {
+    setOrigin(newOrigin);
+    setDestination(newDest);
+    setOriginLabel(null);
+    prevOriginRef.current = newOrigin;
+    prevDestRef.current = newDest;
+    if (newOrigin && newDest) {
+      fetchRoutes(newOrigin, newDest);
+    }
+  }, [fetchRoutes]);
+
+  const handleMarkerDrag = useCallback((type: "origin" | "destination", coord: { lat: number; lng: number }) => {
+    if (type === "origin") {
+      setOriginLabel(null);
+      setOrigin(coord);
+    } else {
+      setDestination(coord);
+    }
+  }, []);
 
   // Auto-search when both origin and destination are set via map clicks
   useEffect(() => {
@@ -106,6 +145,13 @@ export default function Home() {
           onSelectRoute={selectRoute}
           showTraffic={showTraffic}
           onToggleTraffic={() => setShowTraffic(!showTraffic)}
+          originLabel={originLabel}
+          origin={origin}
+          destination={destination}
+          onClearOrigin={handleClearOrigin}
+          onClearDestination={handleClearDestination}
+          onSwap={handleSwap}
+          onClearRoutes={clearRoutes}
         />
 
         {/* Map */}
@@ -119,6 +165,8 @@ export default function Home() {
             theme={theme}
             showTraffic={showTraffic}
             onMapClick={handleMapClick}
+            onGeolocate={handleGeolocate}
+            onMarkerDrag={handleMarkerDrag}
           />
 
           {/* Loading overlay */}
