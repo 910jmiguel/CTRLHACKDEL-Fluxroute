@@ -261,7 +261,7 @@ export function drawTransitOverlay(
     data: transitData.lines,
   });
 
-  // Dark casing layer (outline)
+  // Dark casing layer (outline) — fades in at higher zoom to avoid hiding color
   map.addLayer({
     id: TRANSIT_LINES_CASING,
     type: "line",
@@ -270,14 +270,16 @@ export function drawTransitOverlay(
     paint: {
       "line-color": "#0a0a1a",
       "line-width": [
-        "match",
-        ["get", "mode"],
-        "SUBWAY", 5,
-        "RAIL", 4.5,
-        "TRAM", 3.5,
-        4,
+        "interpolate", ["linear"], ["zoom"],
+        8, 0,
+        12, ["match", ["get", "mode"], "SUBWAY", 5, "RAIL", 4.5, "TRAM", 3.5, 4],
+        16, ["match", ["get", "mode"], "SUBWAY", 7, "RAIL", 6, "TRAM", 5, 6],
       ],
-      "line-opacity": 0.3,
+      "line-opacity": [
+        "interpolate", ["linear"], ["zoom"],
+        8, 0,
+        12, 0.3,
+      ],
     },
   });
 
@@ -290,14 +292,12 @@ export function drawTransitOverlay(
     paint: {
       "line-color": ["get", "color"],
       "line-width": [
-        "match",
-        ["get", "mode"],
-        "SUBWAY", 3,
-        "RAIL", 2.5,
-        "TRAM", 2,
-        2.5,
+        "interpolate", ["linear"], ["zoom"],
+        8, 1.5,
+        12, ["match", ["get", "mode"], "SUBWAY", 3, "RAIL", 2.5, "TRAM", 2, 2.5],
+        16, ["match", ["get", "mode"], "SUBWAY", 5, "RAIL", 4, "TRAM", 3, 4],
       ],
-      "line-opacity": 0.6,
+      "line-opacity": 0.85,
     },
   });
 

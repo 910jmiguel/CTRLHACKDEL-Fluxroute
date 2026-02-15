@@ -123,8 +123,8 @@ export default function LandingPage() {
             }`}
         >
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-slate-800 leading-tight">
-            navigating toronto&apos;s <br />
-            transit landscape with precision
+            Navigating Toronto&apos;s <br />
+            Transit Landscape with Precision
           </h2>
         </div>
 
@@ -168,7 +168,7 @@ export default function LandingPage() {
             }`}
         >
           <p className="text-xs font-black text-slate-900 tracking-[0.25em] uppercase">
-            CTRL+HACK+DEL 2025
+            CTRL+HACK+DEL 2026
           </p>
         </div>
       </div>

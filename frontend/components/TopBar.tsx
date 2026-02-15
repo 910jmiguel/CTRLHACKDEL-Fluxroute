@@ -400,7 +400,7 @@ export default function TopBar({
 
         {/* Desktop: right actions */}
         {!isMobile && (
-          <div className="flex items-center gap-0.5 pl-2 border-l border-[var(--border)] ml-1 flex-shrink-0">
+          <div className="flex items-center gap-0.5 pl-2 border-l border-[var(--actions-border)] ml-1 flex-shrink-0">
             <AlertsBell count={alertCount} onClick={onAlertsClick} />
             <ThemeToggle theme={theme} onToggle={onThemeToggle} />
             <button

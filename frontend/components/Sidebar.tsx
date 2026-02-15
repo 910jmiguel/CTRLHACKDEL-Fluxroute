@@ -73,7 +73,7 @@ export default function Sidebar({
   }
 
   return (
-    <div className="w-[420px] h-full glass-card flex flex-col z-20 relative">
+    <div className="w-[420px] h-full flex flex-col z-20 relative rounded-xl backdrop-blur-2xl bg-[var(--topbar-bg)] border border-[var(--glass-border)]">
       {/* Header with collapse */}
       <div className="flex items-center justify-between p-4 pb-0">
         <div /> {/* Spacer for alignment */}
