@@ -1,7 +1,19 @@
 "use client";
 
-import { Clock, MapPin, DollarSign, Train, Car, Footprints, Repeat } from "lucide-react";
-import type { RouteOption } from "@/lib/types";
+import { useState } from "react";
+import {
+  Clock,
+  MapPin,
+  DollarSign,
+  Train,
+  Car,
+  Footprints,
+  Repeat,
+  ParkingCircle,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import type { RouteOption, RouteSegment } from "@/lib/types";
 import DelayIndicator from "./DelayIndicator";
 import CostBreakdown from "./CostBreakdown";
 import DirectionSteps from "./DirectionSteps";
@@ -28,6 +40,179 @@ const MODE_COLOR: Record<string, string> = {
   cycling: "border-orange-500/40",
 };
 
+const SEGMENT_BAR_COLOR: Record<string, string> = {
+  transit: "bg-yellow-500",
+  driving: "bg-blue-500",
+  walking: "bg-emerald-500",
+  hybrid: "bg-purple-500",
+};
+
+const SEGMENT_ICON: Record<string, React.ReactNode> = {
+  transit: <Train className="w-3.5 h-3.5" />,
+  driving: <Car className="w-3.5 h-3.5" />,
+  walking: <Footprints className="w-3.5 h-3.5" />,
+};
+
+function CongestionBadge({ level }: { level?: string }) {
+  if (!level || level === "low") return null;
+  const colors: Record<string, string> = {
+    moderate: "bg-yellow-500/20 text-yellow-400",
+    heavy: "bg-orange-500/20 text-orange-400",
+    severe: "bg-red-500/20 text-red-400",
+  };
+  const labels: Record<string, string> = {
+    moderate: "Moderate Traffic",
+    heavy: "Heavy Traffic",
+    severe: "Severe Traffic",
+  };
+  return (
+    <span
+      className={`text-[10px] px-1.5 py-0.5 rounded-full ${colors[level] || ""}`}
+    >
+      {labels[level] || level}
+    </span>
+  );
+}
+
+function SegmentTimeline({
+  segments,
+  parkingInfo,
+}: {
+  segments: RouteSegment[];
+  parkingInfo?: RouteOption["parking_info"];
+}) {
+  const [expandedSeg, setExpandedSeg] = useState<number | null>(null);
+
+  // Find where to insert parking info (after driving segment in hybrid)
+  let parkingInsertAfter = -1;
+  if (parkingInfo) {
+    for (let i = 0; i < segments.length; i++) {
+      if (
+        segments[i].mode === "driving" &&
+        i + 1 < segments.length &&
+        segments[i + 1].mode === "transit"
+      ) {
+        parkingInsertAfter = i;
+        break;
+      }
+    }
+  }
+
+  const items: React.ReactNode[] = [];
+
+  segments.forEach((seg, i) => {
+    const isExpanded = expandedSeg === i;
+    const hasSteps = seg.steps && seg.steps.length > 0;
+    const barColor = seg.color
+      ? `bg-[${seg.color}]`
+      : SEGMENT_BAR_COLOR[seg.mode] || "bg-slate-500";
+
+    items.push(
+      <div key={`seg-${i}`} className="flex gap-2">
+        {/* Timeline bar */}
+        <div className="flex flex-col items-center">
+          <div
+            className={`w-5 h-5 rounded-full flex items-center justify-center text-white ${barColor}`}
+            style={seg.color ? { backgroundColor: seg.color } : {}}
+          >
+            {SEGMENT_ICON[seg.mode] || <MapPin className="w-3 h-3" />}
+          </div>
+          {i < segments.length - 1 && (
+            <div
+              className="w-0.5 flex-1 min-h-[16px]"
+              style={{
+                backgroundColor: seg.color || "#64748b",
+                opacity: 0.4,
+              }}
+            />
+          )}
+        </div>
+
+        {/* Segment info */}
+        <div className="flex-1 pb-2 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-white">
+              {seg.instructions || `${seg.mode} segment`}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-400">
+            <span>{Math.round(seg.duration_min)} min</span>
+            <span>
+              {seg.distance_km < 1
+                ? `${Math.round(seg.distance_km * 1000)}m`
+                : `${seg.distance_km.toFixed(1)} km`}
+            </span>
+            {seg.congestion_level && (
+              <CongestionBadge level={seg.congestion_level} />
+            )}
+          </div>
+
+          {/* Expandable driving directions */}
+          {hasSteps && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpandedSeg(isExpanded ? null : i);
+              }}
+              className="flex items-center gap-1 mt-1 text-[11px] text-blue-400 hover:text-blue-300"
+            >
+              {isExpanded ? (
+                <ChevronUp className="w-3 h-3" />
+              ) : (
+                <ChevronDown className="w-3 h-3" />
+              )}
+              {isExpanded ? "Hide" : "Show"} {seg.steps!.length} directions
+            </button>
+          )}
+
+          {isExpanded && hasSteps && (
+            <div
+              className="mt-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DirectionSteps steps={seg.steps!} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+
+    // Insert parking info after driving segment
+    if (i === parkingInsertAfter && parkingInfo) {
+      const rate =
+        parkingInfo.daily_rate === 0
+          ? "Free"
+          : `$${parkingInfo.daily_rate.toFixed(0)}/day`;
+      items.push(
+        <div key="parking" className="flex gap-2">
+          <div className="flex flex-col items-center">
+            <div className="w-5 h-5 rounded-full flex items-center justify-center bg-cyan-600 text-white">
+              <ParkingCircle className="w-3 h-3" />
+            </div>
+            <div className="w-0.5 flex-1 min-h-[16px] bg-cyan-600/40" />
+          </div>
+          <div className="flex-1 pb-2">
+            <span className="text-xs font-medium text-cyan-400">
+              Park at {parkingInfo.station_name}
+            </span>
+            <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-400">
+              <span>{rate}</span>
+              {parkingInfo.capacity > 0 && (
+                <span>~{parkingInfo.capacity} spots</span>
+              )}
+              {parkingInfo.parking_type && (
+                <span className="capitalize">{parkingInfo.parking_type} lot</span>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+  });
+
+  return <div className="mt-2 ml-0.5">{items}</div>;
+}
+
 export default function RouteCards({
   routes,
   selectedRoute,
@@ -40,7 +225,7 @@ export default function RouteCards({
       <h3 className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wide px-1">
         Routes
       </h3>
-      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+      <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
         {routes.map((route) => {
           const isSelected = selectedRoute?.id === route.id;
           return (
@@ -93,26 +278,46 @@ export default function RouteCards({
 
               {route.traffic_summary && (
                 <div className="text-xs mt-1.5 flex items-center gap-1">
-                  <span className={`inline-block w-2 h-2 rounded-full ${
-                    route.traffic_summary.includes("Severe") ? "bg-red-500" :
-                    route.traffic_summary.includes("Heavy") ? "bg-orange-500" :
-                    route.traffic_summary.includes("Moderate") ? "bg-yellow-500" :
-                    "bg-emerald-500"
-                  }`} />
-                  <span className="text-[var(--text-secondary)]">{route.traffic_summary}</span>
+                  <span
+                    className={`inline-block w-2 h-2 rounded-full ${
+                      route.traffic_summary.includes("Severe")
+                        ? "bg-red-500"
+                        : route.traffic_summary.includes("Heavy")
+                          ? "bg-orange-500"
+                          : route.traffic_summary.includes("Moderate")
+                            ? "bg-yellow-500"
+                            : "bg-emerald-500"
+                    }`}
+                  />
+                  <span className="text-[var(--text-secondary)]">
+                    {route.traffic_summary}
+                  </span>
                 </div>
               )}
 
-              {route.summary && (
+              {/* Segment timeline (shows per-segment breakdown) */}
+              {isSelected && route.segments.length > 1 && (
+                <SegmentTimeline
+                  segments={route.segments}
+                  parkingInfo={route.parking_info}
+                />
+              )}
+
+              {/* For single-segment routes (pure driving/walking), show direction steps */}
+              {isSelected &&
+                route.segments.length === 1 &&
+                route.segments[0].steps &&
+                route.segments[0].steps.length > 0 && (
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <DirectionSteps steps={route.segments[0].steps} />
+                  </div>
+                )}
+
+              {!isSelected && route.summary && (
                 <div className="text-xs text-[var(--text-muted)] mt-1.5 truncate">
                   {route.summary}
                 </div>
               )}
-
-              {(() => {
-                const allSteps = route.segments.flatMap(s => s.steps || []);
-                return allSteps.length > 0 ? <DirectionSteps steps={allSteps} /> : null;
-              })()}
             </button>
           );
         })}

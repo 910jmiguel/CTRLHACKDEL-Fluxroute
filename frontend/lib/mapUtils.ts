@@ -1,10 +1,16 @@
 import mapboxgl from "mapbox-gl";
-import type { RouteOption, VehiclePosition } from "./types";
+import type { RouteOption, VehiclePosition, TransitLinesData } from "./types";
 import { MODE_COLORS, CONGESTION_COLORS } from "./constants";
 
 const ROUTE_SOURCE_PREFIX = "route-";
 const ROUTE_LAYER_PREFIX = "route-layer-";
 const VEHICLES_SOURCE = "vehicles-source";
+const TRANSIT_LINES_SOURCE = "transit-lines-source";
+const TRANSIT_STATIONS_SOURCE = "transit-stations-source";
+const TRANSIT_LINES_CASING = "transit-lines-casing";
+const TRANSIT_LINES_LAYER = "transit-lines-layer";
+const TRANSIT_STATIONS_LAYER = "transit-stations-layer";
+const TRANSIT_STATION_LABELS = "transit-station-labels";
 
 export function clearRoutes(map: mapboxgl.Map) {
   // Remove all route layers and sources
@@ -233,4 +239,130 @@ export function updateVehicles(
       },
     });
   }
+}
+
+export function drawTransitOverlay(
+  map: mapboxgl.Map,
+  transitData: TransitLinesData
+) {
+  // Remove existing transit overlay if present
+  removeTransitOverlay(map);
+
+  // --- Lines source + layers ---
+  map.addSource(TRANSIT_LINES_SOURCE, {
+    type: "geojson",
+    data: transitData.lines,
+  });
+
+  // Dark casing layer (outline)
+  map.addLayer({
+    id: TRANSIT_LINES_CASING,
+    type: "line",
+    source: TRANSIT_LINES_SOURCE,
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: {
+      "line-color": "#0a0a1a",
+      "line-width": [
+        "match",
+        ["get", "mode"],
+        "SUBWAY", 5,
+        "RAIL", 4.5,
+        "TRAM", 3.5,
+        4,
+      ],
+      "line-opacity": 0.3,
+    },
+  });
+
+  // Colored line layer on top of casing
+  map.addLayer({
+    id: TRANSIT_LINES_LAYER,
+    type: "line",
+    source: TRANSIT_LINES_SOURCE,
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": [
+        "match",
+        ["get", "mode"],
+        "SUBWAY", 3,
+        "RAIL", 2.5,
+        "TRAM", 2,
+        2.5,
+      ],
+      "line-opacity": 0.6,
+    },
+  });
+
+  // --- Stations source + layers ---
+  map.addSource(TRANSIT_STATIONS_SOURCE, {
+    type: "geojson",
+    data: transitData.stations,
+  });
+
+  // Station circle markers
+  map.addLayer({
+    id: TRANSIT_STATIONS_LAYER,
+    type: "circle",
+    source: TRANSIT_STATIONS_SOURCE,
+    paint: {
+      "circle-radius": [
+        "match",
+        ["get", "mode"],
+        "SUBWAY", 5,
+        "RAIL", 5,
+        "TRAM", 3.5,
+        4,
+      ],
+      "circle-color": ["get", "color"],
+      "circle-opacity": 0.85,
+      "circle-stroke-width": 1.5,
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-opacity": 0.7,
+    },
+  });
+
+  // Station name labels
+  map.addLayer({
+    id: TRANSIT_STATION_LABELS,
+    type: "symbol",
+    source: TRANSIT_STATIONS_SOURCE,
+    layout: {
+      "text-field": ["get", "name"],
+      "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+      "text-size": [
+        "interpolate", ["linear"], ["zoom"],
+        10, 0,     // hidden at low zoom
+        12, 9,     // appear at zoom 12
+        15, 12,
+      ],
+      "text-offset": [0, 1.2],
+      "text-anchor": "top",
+      "text-optional": true,
+      "text-allow-overlap": false,
+    },
+    paint: {
+      "text-color": "#e2e8f0",
+      "text-halo-color": "#0f172a",
+      "text-halo-width": 1.5,
+      "text-opacity": [
+        "interpolate", ["linear"], ["zoom"],
+        11, 0,
+        12, 1,
+      ],
+    },
+  });
+}
+
+export function removeTransitOverlay(map: mapboxgl.Map) {
+  for (const layerId of [
+    TRANSIT_STATION_LABELS,
+    TRANSIT_STATIONS_LAYER,
+    TRANSIT_LINES_LAYER,
+    TRANSIT_LINES_CASING,
+  ]) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+  }
+  if (map.getSource(TRANSIT_LINES_SOURCE)) map.removeSource(TRANSIT_LINES_SOURCE);
+  if (map.getSource(TRANSIT_STATIONS_SOURCE)) map.removeSource(TRANSIT_STATIONS_SOURCE);
 }

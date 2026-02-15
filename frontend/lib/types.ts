@@ -44,6 +44,14 @@ export interface DelayInfo {
   factors: string[];
 }
 
+export interface ParkingInfo {
+  station_name: string;
+  daily_rate: number;
+  capacity: number;
+  parking_type: string; // "surface", "structure"
+  agency: string;
+}
+
 export interface RouteOption {
   id: string;
   label: string;
@@ -58,6 +66,7 @@ export interface RouteOption {
   arrival_time?: string;
   summary: string;
   traffic_summary?: string; // "Heavy traffic", "Moderate traffic", etc.
+  parking_info?: ParkingInfo;
 }
 
 export interface RouteRequest {
@@ -107,4 +116,9 @@ export interface VehiclePosition {
   bearing?: number;
   speed?: number;
   timestamp?: number;
+}
+
+export interface TransitLinesData {
+  lines: GeoJSON.FeatureCollection;
+  stations: GeoJSON.FeatureCollection;
 }

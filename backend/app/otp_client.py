@@ -61,6 +61,88 @@ _TRANSIT_MODE_COLORS = {
 }
 
 
+_RAPID_TRANSIT_MODES = {"SUBWAY", "RAIL"}
+
+
+async def find_park_and_ride_stations(
+    lat: float,
+    lng: float,
+    radius_km: float = 15.0,
+    http_client: Optional[httpx.AsyncClient] = None,
+) -> list[dict]:
+    """Find subway/rail stations near a point using the OTP index API.
+
+    Returns a list of dicts with stop_id, name, lat, lng, mode, agencyName.
+    """
+    base = _get_otp_url()
+    # OTP index API uses bounding box — convert radius to approx degrees
+    delta_lat = radius_km / 111.0
+    delta_lng = radius_km / (111.0 * 0.7)  # cos(~43.7°) ≈ 0.72
+
+    params = {
+        "minLat": str(lat - delta_lat),
+        "maxLat": str(lat + delta_lat),
+        "minLon": str(lng - delta_lng),
+        "maxLon": str(lng + delta_lng),
+    }
+
+    try:
+        url = f"{base}/otp/routers/default/index/stops"
+        if http_client:
+            resp = await http_client.get(url, params=params, timeout=5.0)
+        else:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        stops = resp.json()
+    except Exception as e:
+        logger.warning(f"OTP stop search failed: {e}")
+        return []
+
+    results = []
+    for stop in stops:
+        # Filter to stops that serve rapid transit routes
+        modes = stop.get("modes", [])
+        if not any(m in _RAPID_TRANSIT_MODES for m in modes):
+            # Check routes if modes not directly available
+            routes = stop.get("routes", [])
+            if routes:
+                has_rapid = any(
+                    r.get("mode") in _RAPID_TRANSIT_MODES for r in routes
+                )
+                if not has_rapid:
+                    continue
+            else:
+                continue
+
+        stop_lat = stop.get("lat", 0)
+        stop_lng = stop.get("lon", 0)
+
+        # Determine mode
+        mode = "SUBWAY"
+        agency = ""
+        if stop.get("routes"):
+            for r in stop["routes"]:
+                if r.get("mode") in _RAPID_TRANSIT_MODES:
+                    mode = r["mode"]
+                    agency = r.get("agencyName", "")
+                    break
+        elif "RAIL" in modes:
+            mode = "RAIL"
+
+        results.append({
+            "stop_id": stop.get("id", ""),
+            "stop_name": stop.get("name", ""),
+            "lat": stop_lat,
+            "lng": stop_lng,
+            "mode": mode,
+            "agencyName": agency,
+        })
+
+    logger.info(f"Found {len(results)} park-and-ride station candidates near ({lat:.4f}, {lng:.4f})")
+    return results
+
+
 async def check_otp_health(http_client: Optional[httpx.AsyncClient] = None) -> bool:
     """Check if OTP server is available."""
     base = _get_otp_url()
