@@ -42,7 +42,7 @@ export default function SegmentEditor({
   }, [segment.mode, segment.line_id, segment.lineInfo, segment.id, onUpdate, onFetchLine]);
 
   const lineStops = segment.lineInfo?.stops || [];
-  const lineColor = TTC_LINES.find((l) => l.id === segment.line_id)?.color || "#FFCC00";
+  const lineColor = TTC_LINES.find((l) => l.id === segment.line_id)?.color || "#F0CC49";
 
   return (
     <div className="glass-card p-3 border border-slate-700/40">

@@ -16,11 +16,11 @@ export interface CustomSegment {
 }
 
 export const TTC_LINES = [
-  { id: "1", name: "Line 1 Yonge-University", color: "#FFCC00" },
-  { id: "2", name: "Line 2 Bloor-Danforth", color: "#00A651" },
-  { id: "4", name: "Line 4 Sheppard", color: "#A8518A" },
-  { id: "5", name: "Line 5 Eglinton", color: "#FF6600" },
-  { id: "6", name: "Line 6 Finch West", color: "#8B4513" },
+  { id: "1", name: "Line 1 Yonge-University", color: "#F0CC49" },
+  { id: "2", name: "Line 2 Bloor-Danforth", color: "#549F4D" },
+  { id: "4", name: "Line 4 Sheppard", color: "#9C246E" },
+  { id: "5", name: "Line 5 Eglinton", color: "#DE7731" },
+  { id: "6", name: "Line 6 Finch West", color: "#959595" },
 ];
 
 let segIdCounter = 0;

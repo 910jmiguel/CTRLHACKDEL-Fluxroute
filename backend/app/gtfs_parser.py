@@ -500,11 +500,11 @@ def _generate_mock_departures(stop_id: str, limit: int) -> list[dict]:
 
 
 TTC_LINE_INFO = {
-    "1": {"name": "Line 1 Yonge-University", "color": "#FFCC00"},
-    "2": {"name": "Line 2 Bloor-Danforth", "color": "#00A651"},
-    "4": {"name": "Line 4 Sheppard", "color": "#A8518A"},
-    "5": {"name": "Line 5 Eglinton", "color": "#FF6600"},
-    "6": {"name": "Line 6 Finch West", "color": "#8B4513"},
+    "1": {"name": "Line 1 Yonge-University", "color": "#F0CC49"},
+    "2": {"name": "Line 2 Bloor-Danforth", "color": "#549F4D"},
+    "4": {"name": "Line 4 Sheppard", "color": "#9C246E"},
+    "5": {"name": "Line 5 Eglinton", "color": "#DE7731"},
+    "6": {"name": "Line 6 Finch West", "color": "#959595"},
 }
 
 

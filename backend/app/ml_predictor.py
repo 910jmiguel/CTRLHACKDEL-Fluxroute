@@ -135,7 +135,7 @@ class DelayPredictor:
             "is_rush_hour": is_rush,
             "is_weekend": is_weekend,
             "mode_encoded": mode_encoded,
-            "line_encoded": int(line),
+            "line_encoded": int(line) if line.isdigit() else 1,
             "station_encoded": 0,
             "bound_encoded": 0,
             "code_encoded": 0,

@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
 export const TORONTO_CENTER: [number, number] = [-79.3832, 43.6532];
@@ -20,7 +20,7 @@ export const TTC_COLORS: Record<string, string> = {
 };
 
 export const MODE_COLORS: Record<string, string> = {
-  transit: "#FFCC00",
+  transit: "#F0CC49",
   driving: "#3B82F6",
   walking: "#10B981",
   cycling: "#F59E0B",
@@ -48,3 +48,17 @@ export const CONGESTION_COLORS: Record<string, string> = {
   severe: "#EF4444",   // Red
   unknown: "#3B82F6",  // Blue (fallback)
 };
+
+export const ISOCHRONE_COLORS: string[] = [
+  "rgba(16, 185, 129, 0.25)",  // 10 min — green
+  "rgba(245, 158, 11, 0.20)",  // 20 min — amber
+  "rgba(239, 68, 68, 0.15)",   // 30 min — red
+  "rgba(139, 92, 246, 0.12)",  // 40 min — purple
+];
+
+export const ISOCHRONE_BORDER_COLORS: string[] = [
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+  "#8B5CF6",
+];
