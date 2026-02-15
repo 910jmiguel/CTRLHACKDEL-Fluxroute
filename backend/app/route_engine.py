@@ -210,13 +210,16 @@ def _make_direction_steps(raw_steps: list[dict]) -> list[DirectionStep]:
     return [DirectionStep(**s) for s in raw_steps]
 
 
-async def _fetch_weather(lat: float, lng: float, http_client=None) -> bool:
-    """Fetch weather and return is_adverse flag. Returns False on failure."""
+async def _fetch_weather_full(lat: float, lng: float, http_client=None) -> dict:
+    """Fetch full weather data. Returns defaults on failure."""
     try:
         weather = await get_current_weather(lat, lng, http_client=http_client)
-        return weather.get("is_adverse", False)
+        return weather
     except Exception:
-        return False
+        return {
+            "temperature": 5.0, "precipitation": 0.0, "snowfall": 0.0,
+            "wind_speed": 15.0, "is_adverse": False,
+        }
 
 
 async def _fetch_otp(origin, destination, now, modes, otp_available, http_client=None):
@@ -260,14 +263,15 @@ async def generate_routes(
     otp_available = (app_state or {}).get("otp_available", False)
 
     # Phase 1: Fetch weather + OTP concurrently (instead of sequentially)
-    weather_task = _fetch_weather(origin.lat, origin.lng, http_client=http_client)
+    weather_task = _fetch_weather_full(origin.lat, origin.lng, http_client=http_client)
     otp_task = _fetch_otp(origin, destination, now, modes, otp_available, http_client=http_client)
-    is_adverse, (otp_used, otp_itineraries) = await asyncio.gather(weather_task, otp_task)
+    weather, (otp_used, otp_itineraries) = await asyncio.gather(weather_task, otp_task)
+    is_adverse = weather.get("is_adverse", False)
 
     # Process OTP results
     if otp_used:
         for itin in otp_itineraries[:2]:  # Take best 2 OTP results
-            otp_route = parse_otp_itinerary(itin, predictor=predictor, is_adverse=is_adverse)
+            otp_route = parse_otp_itinerary(itin, predictor=predictor, weather=weather)
             routes.append(otp_route)
         logger.info(f"Used {min(2, len(otp_itineraries))} OTP itineraries")
 
@@ -560,14 +564,34 @@ async def _generate_transit_route(
     total_duration += walk_from_geo["duration_min"] if walk_from_geo else walk_from_dur
     total_dist += walk_from_geo["distance_km"] if walk_from_geo else walk_from_dist
 
-    # ML delay prediction
+    # ML delay prediction with granular weather
     line_for_pred = str(route_id) if route_id else "1"
+    
+    # Determine mode string for predictor
+    pred_mode = "subway"
+    if str(route_id) in ["5", "6"]:
+        pred_mode = "streetcar" # LRT treated as streetcar/surface for now
+    elif len(str(route_id)) > 1 and str(route_id) not in ["1", "2", "4"]:
+        # Heuristic: 3-digit routes are bus/streetcar. 
+        # But we need to distinguish bus vs streetcar if possible.
+        # For now, default to bus for non-subway, unless it's a known streetcar line.
+        # Streetcars: 501, 503, 504, 505, 506, 509, 510, 511, 512, 301, 304, etc.
+        rt_str = str(route_id)
+        if rt_str.startswith("5") and len(rt_str) == 3:
+             pred_mode = "streetcar"
+        elif rt_str.startswith("3") and len(rt_str) == 3 and int(rt_str) < 320:
+             # Night streetcars usually low 300s
+             pred_mode = "streetcar"
+        else:
+             pred_mode = "bus"
+
     prediction = predictor.predict(
         line=line_for_pred,
         hour=now.hour,
         day_of_week=now.weekday(),
         month=now.month,
         is_adverse_weather=is_adverse,
+        mode=pred_mode,
     )
 
     delay_info = DelayInfo(
@@ -1068,12 +1092,27 @@ async def _build_single_hybrid_route(
 
     # --- Delay prediction ---
     line_for_pred = str(route_id) if route_id else "1"
+    
+    # Determine mode string for predictor (Hybrid uses the transit part's mode)
+    pred_mode = "subway"
+    rt_str = str(route_id) if route_id else ""
+    if rt_str in ["5", "6"]:
+        pred_mode = "streetcar"
+    elif len(rt_str) > 1 and rt_str not in ["1", "2", "4"]:
+        if rt_str.startswith("5") and len(rt_str) == 3:
+             pred_mode = "streetcar"
+        elif rt_str.startswith("3") and len(rt_str) == 3 and int(rt_str) < 320:
+             pred_mode = "streetcar"
+        else:
+             pred_mode = "bus"
+
     prediction = predictor.predict(
         line=line_for_pred,
         hour=now.hour,
         day_of_week=now.weekday(),
         month=now.month,
         is_adverse_weather=is_adverse,
+        mode=pred_mode,
     )
 
     delay_info = DelayInfo(

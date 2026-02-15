@@ -313,11 +313,13 @@ def _leg_to_segment(leg: dict) -> RouteSegment:
 def parse_otp_itinerary(
     itinerary: dict,
     predictor=None,
+    weather: Optional[dict] = None,
     is_adverse: bool = False,
 ) -> RouteOption:
     """Convert an OTP itinerary into our RouteOption model.
 
     Adds delay prediction and cost calculation on top of OTP data.
+    Accepts either a weather dict (preferred) or is_adverse bool (backward compat).
     """
     from app.cost_calculator import calculate_cost
 
@@ -340,6 +342,11 @@ def parse_otp_itinerary(
         if _OTP_MODE_MAP.get(leg.get("mode", "")) == RouteMode.TRANSIT:
             transit_modes.add(leg.get("mode", ""))
 
+    # Resolve weather params
+    if weather is None:
+        weather = {}
+    _is_adverse = weather.get("is_adverse", is_adverse)
+
     # Delay prediction (use first transit leg's line)
     delay_info = DelayInfo()
     now = datetime.now()
@@ -352,7 +359,12 @@ def parse_otp_itinerary(
                 hour=now.hour,
                 day_of_week=now.weekday(),
                 month=now.month,
-                is_adverse_weather=is_adverse,
+                temperature=weather.get("temperature"),
+                precipitation=weather.get("precipitation"),
+                snowfall=weather.get("snowfall"),
+                wind_speed=weather.get("wind_speed"),
+                is_adverse_weather=_is_adverse if not weather else None,
+                mode=first_transit.get("mode", "SUBWAY").lower(), # Pass OTP mode (BUS, SUBWAY, TRAM)
             )
             delay_info = DelayInfo(
                 probability=prediction["delay_probability"],
@@ -365,7 +377,7 @@ def parse_otp_itinerary(
 
     # Stress score
     stress_score = 0.2 + transfers * 0.1 + delay_info.probability * 0.3
-    if is_adverse:
+    if _is_adverse:
         stress_score += 0.1
     stress_score = min(1.0, stress_score)
 
