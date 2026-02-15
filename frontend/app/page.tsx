@@ -19,6 +19,7 @@ export default function Home() {
     error,
     fetchRoutes,
     selectRoute,
+    clearRoutes,
   } = useRoutes();
 
   const { theme } = useTimeBasedTheme();
@@ -60,6 +61,37 @@ export default function Home() {
   const handleGeolocate = useCallback((coord: { lat: number; lng: number }) => {
     setOriginLabel("Current Location");
     setOrigin(coord);
+  }, []);
+
+  const handleClearOrigin = useCallback(() => {
+    setOrigin(null);
+    setOriginLabel(null);
+    prevOriginRef.current = null;
+  }, []);
+
+  const handleClearDestination = useCallback(() => {
+    setDestination(null);
+    prevDestRef.current = null;
+  }, []);
+
+  const handleSwap = useCallback((newOrigin: Coordinate | null, newDest: Coordinate | null) => {
+    setOrigin(newOrigin);
+    setDestination(newDest);
+    setOriginLabel(null);
+    prevOriginRef.current = newOrigin;
+    prevDestRef.current = newDest;
+    if (newOrigin && newDest) {
+      fetchRoutes(newOrigin, newDest);
+    }
+  }, [fetchRoutes]);
+
+  const handleMarkerDrag = useCallback((type: "origin" | "destination", coord: { lat: number; lng: number }) => {
+    if (type === "origin") {
+      setOriginLabel(null);
+      setOrigin(coord);
+    } else {
+      setDestination(coord);
+    }
   }, []);
 
   // Auto-search when both origin and destination are set via map clicks
@@ -115,6 +147,11 @@ export default function Home() {
           onToggleTraffic={() => setShowTraffic(!showTraffic)}
           originLabel={originLabel}
           origin={origin}
+          destination={destination}
+          onClearOrigin={handleClearOrigin}
+          onClearDestination={handleClearDestination}
+          onSwap={handleSwap}
+          onClearRoutes={clearRoutes}
         />
 
         {/* Map */}
@@ -129,6 +166,7 @@ export default function Home() {
             showTraffic={showTraffic}
             onMapClick={handleMapClick}
             onGeolocate={handleGeolocate}
+            onMarkerDrag={handleMarkerDrag}
           />
 
           {/* Loading overlay */}

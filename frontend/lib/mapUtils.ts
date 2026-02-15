@@ -138,39 +138,46 @@ export function addMarkers(
   map: mapboxgl.Map,
   origin: { lat: number; lng: number } | null,
   destination: { lat: number; lng: number } | null,
-  existingMarkers: mapboxgl.Marker[]
+  existingMarkers: mapboxgl.Marker[],
+  onMarkerDrag?: (type: "origin" | "destination", coord: { lat: number; lng: number }) => void
 ): mapboxgl.Marker[] {
   // Remove existing markers
   existingMarkers.forEach((m) => m.remove());
 
   const markers: mapboxgl.Marker[] = [];
 
-  // Origin marker (green)
+  // Origin marker (green) — draggable
   if (origin) {
     const originEl = document.createElement("div");
     originEl.className = "origin-marker";
     originEl.style.cssText =
-      "width:16px;height:16px;background:#10B981;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(16,185,129,0.5)";
-    markers.push(
-      new mapboxgl.Marker(originEl)
-        .setLngLat([origin.lng, origin.lat])
-        .setPopup(new mapboxgl.Popup().setText("Origin"))
-        .addTo(map)
-    );
+      "width:16px;height:16px;background:#10B981;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(16,185,129,0.5);cursor:grab";
+    const originMarker = new mapboxgl.Marker({ element: originEl, draggable: true })
+      .setLngLat([origin.lng, origin.lat])
+      .setPopup(new mapboxgl.Popup().setText("Origin"))
+      .addTo(map);
+    originMarker.on("dragend", () => {
+      const lngLat = originMarker.getLngLat();
+      onMarkerDrag?.("origin", { lat: lngLat.lat, lng: lngLat.lng });
+    });
+    markers.push(originMarker);
   }
 
-  // Destination marker (red)
+  // Destination marker (red) — draggable
   if (destination) {
     const destEl = document.createElement("div");
     destEl.className = "dest-marker";
     destEl.style.cssText =
-      "width:16px;height:16px;background:#EF4444;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(239,68,68,0.5)";
-    markers.push(
-      new mapboxgl.Marker(destEl)
-        .setLngLat([destination.lng, destination.lat])
-        .setPopup(new mapboxgl.Popup().setText("Destination"))
-        .addTo(map)
-    );
+      "width:16px;height:16px;background:#EF4444;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(239,68,68,0.5);cursor:grab";
+    const destMarker = new mapboxgl.Marker({ element: destEl, draggable: true })
+      .setLngLat([destination.lng, destination.lat])
+      .setPopup(new mapboxgl.Popup().setText("Destination"))
+      .addTo(map);
+    destMarker.on("dragend", () => {
+      const lngLat = destMarker.getLngLat();
+      onMarkerDrag?.("destination", { lat: lngLat.lat, lng: lngLat.lng });
+    });
+    markers.push(destMarker);
   }
 
   return markers;

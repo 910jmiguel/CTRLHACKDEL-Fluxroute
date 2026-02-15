@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { MapPin, Navigation, Search, X } from "lucide-react";
+import { MapPin, Navigation, Search, X, ArrowUpDown } from "lucide-react";
 import type { Coordinate } from "@/lib/types";
 import { MAPBOX_TOKEN } from "@/lib/constants";
 
@@ -11,6 +11,9 @@ interface RouteInputProps {
   origin?: Coordinate | null;
   destination?: Coordinate | null;
   originLabel?: string | null;
+  onClearOrigin?: () => void;
+  onClearDestination?: () => void;
+  onSwap?: (newOrigin: Coordinate | null, newDest: Coordinate | null) => void;
 }
 
 interface GeocoderResult {
@@ -31,7 +34,7 @@ async function reverseGeocode(coord: Coordinate): Promise<string> {
   }
 }
 
-export default function RouteInput({ onSearch, loading, origin, destination, originLabel }: RouteInputProps) {
+export default function RouteInput({ onSearch, loading, origin, destination, originLabel, onClearOrigin, onClearDestination, onSwap }: RouteInputProps) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
   const [originCoord, setOriginCoord] = useState<Coordinate | null>(null);
@@ -49,6 +52,13 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
 
   // Sync external origin (from map click or geolocation) into text field
   useEffect(() => {
+    if (origin === null && lastExternalOrigin.current !== null && lastExternalOrigin.current !== undefined) {
+      lastExternalOrigin.current = null;
+      setOriginCoord(null);
+      setOriginText("");
+      setOriginSuggestions([]);
+      return;
+    }
     if (
       origin &&
       (lastExternalOrigin.current?.lat !== origin.lat ||
@@ -67,6 +77,13 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
 
   // Sync external destination (from map click) into text field
   useEffect(() => {
+    if (destination === null && lastExternalDest.current !== null && lastExternalDest.current !== undefined) {
+      lastExternalDest.current = null;
+      setDestCoord(null);
+      setDestText("");
+      setDestSuggestions([]);
+      return;
+    }
     if (
       destination &&
       (lastExternalDest.current?.lat !== destination.lat ||
@@ -140,6 +157,22 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
     }
   };
 
+  const handleSwap = () => {
+    const prevOriginText = originText;
+    const prevOriginCoord = originCoord;
+    const prevDestText = destText;
+    const prevDestCoord = destCoord;
+    setOriginText(prevDestText);
+    setOriginCoord(prevDestCoord);
+    setDestText(prevOriginText);
+    setDestCoord(prevOriginCoord);
+    setOriginSuggestions([]);
+    setDestSuggestions([]);
+    lastExternalOrigin.current = prevDestCoord;
+    lastExternalDest.current = prevOriginCoord;
+    onSwap?.(prevDestCoord, prevOriginCoord);
+  };
+
   const canSearch = originCoord && destCoord && !loading;
 
   return (
@@ -149,82 +182,103 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
         FluxRoute
       </h2>
 
-      {/* Origin input */}
-      <div className="relative">
-        <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-700/50 px-3 py-2">
-          <MapPin className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <input
-            type="text"
-            value={originText}
-            onChange={(e) => handleOriginChange(e.target.value)}
-            onFocus={() => setFocusedField("origin")}
-            placeholder="Origin — e.g. Finch Station"
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-500"
-          />
-          {originText && (
-            <button
-              onClick={() => {
-                setOriginText("");
-                setOriginCoord(null);
-                setOriginSuggestions([]);
-              }}
-            >
-              <X className="w-3.5 h-3.5 text-slate-500" />
-            </button>
-          )}
-        </div>
-        {focusedField === "origin" && originSuggestions.length > 0 && (
-          <div className="absolute z-20 w-full mt-1 glass-card overflow-hidden">
-            {originSuggestions.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => selectOrigin(s)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 truncate text-slate-200"
-              >
-                {s.place_name}
-              </button>
-            ))}
+      {/* Origin + Destination inputs with swap button on the side */}
+      <div className="flex items-stretch gap-2">
+        {/* Input fields column */}
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* Origin input */}
+          <div className="relative">
+            <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-700/50 px-3 py-2">
+              <MapPin className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <input
+                type="text"
+                value={originText}
+                onChange={(e) => handleOriginChange(e.target.value)}
+                onFocus={() => setFocusedField("origin")}
+                placeholder="Origin — e.g. Finch Station"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-500 min-w-0"
+              />
+              {originText && (
+                <button
+                  onClick={() => {
+                    setOriginText("");
+                    setOriginCoord(null);
+                    setOriginSuggestions([]);
+                    lastExternalOrigin.current = undefined;
+                    onClearOrigin?.();
+                  }}
+                >
+                  <X className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors" />
+                </button>
+              )}
+            </div>
+            {focusedField === "origin" && originSuggestions.length > 0 && (
+              <div className="absolute z-20 w-full mt-1 glass-card overflow-hidden">
+                {originSuggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => selectOrigin(s)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 truncate text-slate-200"
+                  >
+                    {s.place_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Destination input */}
-      <div className="relative">
-        <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-700/50 px-3 py-2">
-          <MapPin className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <input
-            type="text"
-            value={destText}
-            onChange={(e) => handleDestChange(e.target.value)}
-            onFocus={() => setFocusedField("dest")}
-            placeholder="Destination — e.g. Union Station"
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-500"
-          />
-          {destText && (
-            <button
-              onClick={() => {
-                setDestText("");
-                setDestCoord(null);
-                setDestSuggestions([]);
-              }}
-            >
-              <X className="w-3.5 h-3.5 text-slate-500" />
-            </button>
-          )}
-        </div>
-        {focusedField === "dest" && destSuggestions.length > 0 && (
-          <div className="absolute z-20 w-full mt-1 glass-card overflow-hidden">
-            {destSuggestions.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => selectDest(s)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 truncate text-slate-200"
-              >
-                {s.place_name}
-              </button>
-            ))}
+          {/* Destination input */}
+          <div className="relative">
+            <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-700/50 px-3 py-2">
+              <MapPin className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <input
+                type="text"
+                value={destText}
+                onChange={(e) => handleDestChange(e.target.value)}
+                onFocus={() => setFocusedField("dest")}
+                placeholder="Destination — e.g. Union Station"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-500 min-w-0"
+              />
+              {destText && (
+                <button
+                  onClick={() => {
+                    setDestText("");
+                    setDestCoord(null);
+                    setDestSuggestions([]);
+                    lastExternalDest.current = undefined;
+                    onClearDestination?.();
+                  }}
+                >
+                  <X className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors" />
+                </button>
+              )}
+            </div>
+            {focusedField === "dest" && destSuggestions.length > 0 && (
+              <div className="absolute z-20 w-full mt-1 glass-card overflow-hidden">
+                {destSuggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => selectDest(s)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 truncate text-slate-200"
+                  >
+                    {s.place_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Swap button — right side, vertically centered */}
+        <div className="flex items-center">
+          <button
+            onClick={handleSwap}
+            className="p-2 rounded-full bg-slate-800/60 border border-slate-700/50 hover:bg-slate-700/80 hover:border-slate-600 transition-all text-slate-400 hover:text-white"
+            title="Swap origin and destination"
+          >
+            <ArrowUpDown className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Search button */}

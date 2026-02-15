@@ -18,6 +18,11 @@ interface SidebarProps {
   onToggleTraffic: () => void;
   originLabel?: string | null;
   origin?: Coordinate | null;
+  destination?: Coordinate | null;
+  onClearOrigin?: () => void;
+  onClearDestination?: () => void;
+  onSwap?: (newOrigin: Coordinate | null, newDest: Coordinate | null) => void;
+  onClearRoutes?: () => void;
 }
 
 export default function Sidebar({
@@ -31,6 +36,11 @@ export default function Sidebar({
   onToggleTraffic,
   originLabel,
   origin,
+  destination,
+  onClearOrigin,
+  onClearDestination,
+  onSwap,
+  onClearRoutes,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -46,7 +56,7 @@ export default function Sidebar({
   }
 
   return (
-    <div className="w-[380px] h-full glass-card flex flex-col z-20 relative">
+    <div className="w-[420px] h-full glass-card flex flex-col z-20 relative">
       {/* Header with collapse */}
       <div className="flex items-center justify-between p-4 pb-0">
         <div /> {/* Spacer for alignment */}
@@ -60,7 +70,16 @@ export default function Sidebar({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <RouteInput onSearch={onSearch} loading={loading} originLabel={originLabel} origin={origin} />
+        <RouteInput
+          onSearch={onSearch}
+          loading={loading}
+          originLabel={originLabel}
+          origin={origin}
+          destination={destination}
+          onClearOrigin={() => { onClearOrigin?.(); onClearRoutes?.(); }}
+          onClearDestination={() => { onClearDestination?.(); onClearRoutes?.(); }}
+          onSwap={onSwap}
+        />
 
         {error && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">

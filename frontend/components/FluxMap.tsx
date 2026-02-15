@@ -23,6 +23,7 @@ interface FluxMapProps {
   showTraffic: boolean;
   onMapClick?: (coord: { lat: number; lng: number }) => void;
   onGeolocate?: (coord: { lat: number; lng: number }) => void;
+  onMarkerDrag?: (type: "origin" | "destination", coord: { lat: number; lng: number }) => void;
 }
 
 export default function FluxMap({
@@ -35,6 +36,7 @@ export default function FluxMap({
   showTraffic,
   onMapClick,
   onGeolocate,
+  onMarkerDrag,
 }: FluxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -217,9 +219,10 @@ export default function FluxMap({
       map.current,
       origin,
       destination,
-      markers.current
+      markers.current,
+      onMarkerDrag
     );
-  }, [origin, destination, mapLoaded]);
+  }, [origin, destination, mapLoaded, onMarkerDrag]);
 
   // Update vehicle positions
   useEffect(() => {
