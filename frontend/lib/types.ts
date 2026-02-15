@@ -1,5 +1,8 @@
 export type RouteMode = "transit" | "driving" | "walking" | "cycling" | "hybrid";
 
+export type ViewMode = "map" | "dashboard" | "navigation";
+export type ThemeMode = "light" | "dark";
+
 export interface Coordinate {
   lat: number;
   lng: number;

@@ -62,3 +62,20 @@ export const ISOCHRONE_BORDER_COLORS: string[] = [
   "#EF4444",
   "#8B5CF6",
 ];
+
+// Panel widths
+export const PANEL_WIDTH_DESKTOP = 420;
+export const PANEL_WIDTH_TABLET = 360;
+
+// Map styles
+export const MAP_STYLE_LIGHT = "mapbox://styles/mapbox/standard";
+export const MAP_STYLE_DARK = "mapbox://styles/mapbox/standard";
+
+// TTC Line Logos
+export const TTC_LINE_LOGOS: Record<string, string> = {
+  "1": "/images/line-logos/line1.png",
+  "2": "/images/line-logos/line2.png",
+  "4": "/images/line-logos/line4.svg",
+  "5": "/images/line-logos/line5.png",
+  "6": "/images/line-logos/line6.png",
+};

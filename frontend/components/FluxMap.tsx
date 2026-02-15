@@ -113,15 +113,16 @@ export default function FluxMap({
     return () => ro.disconnect();
   }, [mapLoaded]);
 
-  // Apply dawn light preset on load (Mapbox Standard style)
+  // Apply light preset based on theme prop
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
     try {
-      map.current.setConfigProperty("basemap", "lightPreset", "dawn");
+      const preset = theme === "day" ? "day" : theme === "dusk" ? "dusk" : theme === "night" ? "night" : "dawn";
+      map.current.setConfigProperty("basemap", "lightPreset", preset);
     } catch {
       // setConfigProperty not supported on classic styles (dark-v11, etc.)
     }
-  }, [mapLoaded]);
+  }, [mapLoaded, theme]);
 
   // Click handler for setting origin/destination on map
   useEffect(() => {

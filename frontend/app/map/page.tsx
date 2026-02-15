@@ -1,20 +1,22 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Coordinate, VehiclePosition, TransitLinesData, RouteOption, IsochroneResponse } from "@/lib/types";
+import type { Coordinate, VehiclePosition, TransitLinesData, RouteOption, IsochroneResponse, ServiceAlert, ThemeMode, ViewMode } from "@/lib/types";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useNavigation } from "@/hooks/useNavigation";
-import { useTimeBasedTheme } from "@/hooks/useTimeBasedTheme";
-import { getVehicles, getTransitLines } from "@/lib/api";
-import Sidebar from "@/components/Sidebar";
+import { getVehicles, getTransitLines, getAlerts } from "@/lib/api";
 import FluxMap from "@/components/FluxMap";
 import ChatAssistant from "@/components/ChatAssistant";
-import LiveAlerts from "@/components/LiveAlerts";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import NavigationView from "@/components/NavigationView";
 import RouteBuilderModal from "@/components/RouteBuilderModal";
 import MapLayersControl from "@/components/MapLayersControl";
 import type { TransitLineVisibility } from "@/components/MapLayersControl";
+import TopBar from "@/components/TopBar";
+import RoutePanel from "@/components/RoutePanel";
+import AlertsPanel from "@/components/AlertsPanel";
+import DashboardView from "@/components/DashboardView";
+import IsochronePanel from "@/components/IsochronePanel";
 
 export default function MapPage() {
   const {
@@ -31,16 +33,25 @@ export default function MapPage() {
     addCustomRoute,
   } = useRoutes();
 
-  const { theme } = useTimeBasedTheme();
+  // View & theme state
+  const [viewMode, setViewMode] = useState<ViewMode>("map");
+  const [theme, setTheme] = useState<ThemeMode>("dark");
+
   const [origin, setOrigin] = useState<Coordinate | null>(null);
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
   const [showTraffic, setShowTraffic] = useState(true);
   const [transitLines, setTransitLines] = useState<TransitLinesData | null>(null);
   const [originLabel, setOriginLabel] = useState<string | null>(null);
+  const [destinationLabel, setDestinationLabel] = useState<string | null>(null);
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
   const [customizeBaseRoute, setCustomizeBaseRoute] = useState<RouteOption | null>(null);
   const [isochroneData, setIsochroneData] = useState<IsochroneResponse | null>(null);
+
+  // Panel states
+  const [routePanelOpen, setRoutePanelOpen] = useState(false);
+  const [alertsPanelOpen, setAlertsPanelOpen] = useState(false);
+  const [alerts, setAlerts] = useState<ServiceAlert[]>([]);
 
   // Layer visibility state
   const [transitLineVisibility, setTransitLineVisibility] = useState<TransitLineVisibility>({
@@ -74,7 +85,6 @@ export default function MapPage() {
       if (origin) {
         navigation.startNavigation(origin, destination);
       } else if ("geolocation" in navigator) {
-        // Auto-geolocate if no origin set
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const geoOrigin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -94,31 +104,73 @@ export default function MapPage() {
   const prevOriginRef = useRef<Coordinate | null>(null);
   const prevDestRef = useRef<Coordinate | null>(null);
 
-  // Always keep UI in dark mode (map still uses time-based theme)
+  // Theme management
   useEffect(() => {
-    document.documentElement.dataset.theme = "dark";
+    const saved = localStorage.getItem("fluxroute-theme") as ThemeMode | null;
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.dataset.theme = saved;
+    } else {
+      // Auto-detect from system preference
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const initial = prefersDark ? "dark" : "dark"; // Default to dark
+      setTheme(initial);
+      document.documentElement.dataset.theme = initial;
+    }
   }, []);
 
-  // Fetch transit line overlay on mount (always-visible subway/rail/LRT)
+  const handleThemeToggle = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("fluxroute-theme", next);
+      return next;
+    });
+  }, []);
+
+  const handleViewModeToggle = useCallback(() => {
+    setViewMode((prev) => (prev === "dashboard" ? "map" : "dashboard"));
+  }, []);
+
+  // Fetch transit line overlay on mount
   useEffect(() => {
     getTransitLines()
       .then(setTransitLines)
-      .catch(() => {
-        // Silent fail — transit overlay is non-critical
-      });
+      .catch(() => {});
+  }, []);
+
+  // Fetch alerts
+  useEffect(() => {
+    const fetchAlertsData = async () => {
+      try {
+        const data = await getAlerts();
+        setAlerts(data.alerts || []);
+      } catch {}
+    };
+    fetchAlertsData();
+    const interval = setInterval(fetchAlertsData, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSearch = useCallback(
     (orig: Coordinate, dest: Coordinate) => {
       setOrigin(orig);
       setDestination(dest);
-      // Update refs so auto-search effect doesn't double-fire
       prevOriginRef.current = orig;
       prevDestRef.current = dest;
       fetchRoutes(orig, dest);
+      setRoutePanelOpen(true);
     },
     [fetchRoutes]
   );
+
+  // Auto-open route panel when routes arrive
+  useEffect(() => {
+    if (routes.length > 0) {
+      setRoutePanelOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes.length]);
 
   const handleMapClick = useCallback((coord: { lat: number; lng: number }) => {
     if (!origin) {
@@ -126,6 +178,7 @@ export default function MapPage() {
       setOrigin(coord);
     } else {
       setDestination(coord);
+      setDestinationLabel(null);
     }
   }, [origin]);
 
@@ -138,17 +191,21 @@ export default function MapPage() {
     setOrigin(null);
     setOriginLabel(null);
     prevOriginRef.current = null;
-  }, []);
+    clearRoutes();
+  }, [clearRoutes]);
 
   const handleClearDestination = useCallback(() => {
     setDestination(null);
+    setDestinationLabel(null);
     prevDestRef.current = null;
-  }, []);
+    clearRoutes();
+  }, [clearRoutes]);
 
   const handleSwap = useCallback((newOrigin: Coordinate | null, newDest: Coordinate | null) => {
     setOrigin(newOrigin);
     setDestination(newDest);
     setOriginLabel(null);
+    setDestinationLabel(null);
     prevOriginRef.current = newOrigin;
     prevDestRef.current = newDest;
     if (newOrigin && newDest) {
@@ -160,14 +217,11 @@ export default function MapPage() {
     if (type === "origin") {
       setOriginLabel(null);
       setOrigin(coord);
-      if (destination) {
-        fetchRoutes(coord, destination);
-      }
+      if (destination) fetchRoutes(coord, destination);
     } else {
+      setDestinationLabel(null);
       setDestination(coord);
-      if (origin) {
-        fetchRoutes(origin, coord);
-      }
+      if (origin) fetchRoutes(origin, coord);
     }
   }, [origin, destination, fetchRoutes]);
 
@@ -182,30 +236,25 @@ export default function MapPage() {
     setCustomizeBaseRoute(null);
   }, [addCustomRoute]);
 
-  // Keep refs in sync (no auto-search — routes are fetched only via Find Routes or swap)
-  useEffect(() => {
-    prevOriginRef.current = origin;
-  }, [origin]);
-
-  useEffect(() => {
-    prevDestRef.current = destination;
-  }, [destination]);
+  // Keep refs in sync
+  useEffect(() => { prevOriginRef.current = origin; }, [origin]);
+  useEffect(() => { prevDestRef.current = destination; }, [destination]);
 
   // Poll vehicles every 15 seconds
   useEffect(() => {
-    const fetchVehicles = async () => {
+    const fetchVehiclesData = async () => {
       try {
         const data = await getVehicles();
         setVehicles(data.vehicles || []);
-      } catch {
-        // Silent fail
-      }
+      } catch {}
     };
-
-    fetchVehicles();
-    const interval = setInterval(fetchVehicles, 15000);
+    fetchVehiclesData();
+    const interval = setInterval(fetchVehiclesData, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Map theme preset
+  const mapTheme = theme === "light" ? "day" as const : "dawn" as const;
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
@@ -227,79 +276,119 @@ export default function MapPage() {
         onToggleVoice={navigation.toggleVoice}
       />
 
-      {/* Top alert banner */}
-      <LiveAlerts />
+      {/* TopBar — floating navigation bar */}
+      <TopBar
+        onSearch={handleSearch}
+        loading={loading}
+        origin={origin}
+        destination={destination}
+        originLabel={originLabel}
+        onClearOrigin={handleClearOrigin}
+        onClearDestination={handleClearDestination}
+        onSwap={handleSwap}
+        alertCount={alerts.length}
+        onAlertsClick={() => setAlertsPanelOpen(true)}
+        theme={theme}
+        onThemeToggle={handleThemeToggle}
+        viewMode={viewMode}
+        onViewModeToggle={handleViewModeToggle}
+      />
 
-      {/* Main content */}
-      <div className="flex-1 flex relative">
-        {/* Sidebar */}
-        <Sidebar
-          routes={routes}
-          filteredRoutes={filteredRoutes}
-          selectedRoute={selectedRoute}
-          loading={loading}
-          error={error}
-          onSearch={handleSearch}
-          onSelectRoute={selectRoute}
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
-          originLabel={originLabel}
-          origin={origin}
-          destination={destination}
-          onClearOrigin={handleClearOrigin}
-          onClearDestination={handleClearDestination}
-          onSwap={handleSwap}
-          onClearRoutes={clearRoutes}
-          onCustomize={handleCustomize}
-          onStartNavigation={selectedRoute && origin && destination ? handleStartNavigation : undefined}
-          isNavigating={navigation.isNavigating}
-          isochroneData={isochroneData}
-          onIsochroneLoaded={setIsochroneData}
-          onClearIsochrone={() => setIsochroneData(null)}
-        />
+      {/* Main content area */}
+      <div className="flex-1 relative">
+        {viewMode === "dashboard" ? (
+          /* Dashboard mode: full-width comparison */
+          <div className="h-full pt-16">
+            <DashboardView
+              routes={routes}
+              filteredRoutes={filteredRoutes}
+              selectedRoute={selectedRoute}
+              onSelectRoute={selectRoute}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+            />
+          </div>
+        ) : (
+          /* Map mode: full-screen map with overlays */
+          <>
+            <FluxMap
+              selectedRoute={navigation.isNavigating && navigation.navigationRoute
+                ? navigation.navigationRoute.route
+                : selectedRoute}
+              routes={navigation.isNavigating && navigation.navigationRoute
+                ? [navigation.navigationRoute.route]
+                : routes}
+              origin={origin}
+              destination={destination}
+              vehicles={vehicles}
+              theme={mapTheme}
+              showTraffic={showTraffic}
+              transitLines={transitLines}
+              transitLineVisibility={transitLineVisibility}
+              showVehicles={showVehicles}
+              isochroneData={isochroneData}
+              userPosition={navigation.currentPosition}
+              isNavigating={navigation.isNavigating}
+              onMapClick={navigation.isNavigating ? undefined : handleMapClick}
+              onGeolocate={handleGeolocate}
+              onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
+            />
 
-        {/* Map */}
-        <div className="flex-1 relative">
-          <FluxMap
-            selectedRoute={navigation.isNavigating && navigation.navigationRoute
-              ? navigation.navigationRoute.route
-              : selectedRoute}
-            routes={navigation.isNavigating && navigation.navigationRoute
-              ? [navigation.navigationRoute.route]
-              : routes}
-            origin={origin}
-            destination={destination}
-            vehicles={vehicles}
-            theme={theme}
-            showTraffic={showTraffic}
-            transitLines={transitLines}
-            transitLineVisibility={transitLineVisibility}
-            showVehicles={showVehicles}
-            isochroneData={isochroneData}
-            userPosition={navigation.currentPosition}
-            isNavigating={navigation.isNavigating}
-            onMapClick={navigation.isNavigating ? undefined : handleMapClick}
-            onGeolocate={handleGeolocate}
-            onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
-          />
+            {/* Map Layers Control — top-left */}
+            <MapLayersControl
+              transitLineVisibility={transitLineVisibility}
+              onToggleTransitLine={handleToggleTransitLine}
+              showVehicles={showVehicles}
+              onToggleVehicles={() => setShowVehicles((v) => !v)}
+              showTraffic={showTraffic}
+              onToggleTraffic={() => setShowTraffic((v) => !v)}
+            />
 
-          {/* Map Layers Control */}
-          <MapLayersControl
-            transitLineVisibility={transitLineVisibility}
-            onToggleTransitLine={handleToggleTransitLine}
-            showVehicles={showVehicles}
-            onToggleVehicles={() => setShowVehicles((v) => !v)}
-            showTraffic={showTraffic}
-            onToggleTraffic={() => setShowTraffic((v) => !v)}
-          />
+            {/* Isochrone Panel — visible when origin set, positioned below layers */}
+            {origin && (
+              <div className="absolute top-28 left-4 z-20">
+                <IsochronePanel
+                  center={origin}
+                  onIsochroneLoaded={setIsochroneData}
+                  onClear={() => setIsochroneData(null)}
+                  isochroneActive={!!isochroneData}
+                />
+              </div>
+            )}
 
-          {/* Loading overlay */}
-          {loading && <LoadingOverlay />}
-        </div>
+            {/* Route Panel — right slide-over / mobile bottom sheet */}
+            <RoutePanel
+              open={routePanelOpen}
+              onClose={() => setRoutePanelOpen(false)}
+              routes={routes}
+              filteredRoutes={filteredRoutes}
+              selectedRoute={selectedRoute}
+              onSelectRoute={selectRoute}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+              onCustomize={handleCustomize}
+              onStartNavigation={selectedRoute && origin && destination ? handleStartNavigation : undefined}
+              isNavigating={navigation.isNavigating}
+              originLabel={originLabel || undefined}
+              destinationLabel={destinationLabel || undefined}
+              error={error}
+            />
 
-        {/* Chat assistant */}
+            {/* Loading overlay */}
+            {loading && <LoadingOverlay />}
+          </>
+        )}
+
+        {/* Chat assistant — always available */}
         <ChatAssistant />
       </div>
+
+      {/* Alerts Panel — slide-out */}
+      <AlertsPanel
+        open={alertsPanelOpen}
+        onClose={() => setAlertsPanelOpen(false)}
+        alerts={alerts}
+      />
 
       {/* Route Builder Modal */}
       {showRouteBuilder && (
