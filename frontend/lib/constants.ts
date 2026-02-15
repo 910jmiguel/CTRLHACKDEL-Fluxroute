@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
 export const TORONTO_CENTER: [number, number] = [-79.3832, 43.6532];
@@ -12,15 +12,15 @@ export const TORONTO_BOUNDS: [[number, number], [number, number]] = [
 export const MAP_STYLE = "mapbox://styles/mapbox/standard";
 
 export const TTC_COLORS: Record<string, string> = {
-  "1": "#FFCC00", // Line 1 Yonge-University (Yellow)
-  "2": "#00A651", // Line 2 Bloor-Danforth (Green)
-  "4": "#A8518A", // Line 4 Sheppard (Purple)
-  "5": "#FF6600", // Line 5 Eglinton Crosstown (Orange)
-  "6": "#8B4513", // Line 6 Finch West (Brown)
+  "1": "#F0CC49", // Line 1 Yonge-University (Yellow)
+  "2": "#549F4D", // Line 2 Bloor-Danforth (Green)
+  "4": "#9C246E", // Line 4 Sheppard (Purple)
+  "5": "#DE7731", // Line 5 Eglinton Crosstown (Orange)
+  "6": "#959595", // Line 6 Finch West (Grey)
 };
 
 export const MODE_COLORS: Record<string, string> = {
-  transit: "#FFCC00",
+  transit: "#F0CC49",
   driving: "#3B82F6",
   walking: "#10B981",
   cycling: "#F59E0B",
@@ -48,3 +48,17 @@ export const CONGESTION_COLORS: Record<string, string> = {
   severe: "#EF4444",   // Red
   unknown: "#3B82F6",  // Blue (fallback)
 };
+
+export const ISOCHRONE_COLORS: string[] = [
+  "rgba(16, 185, 129, 0.25)",  // 10 min — green
+  "rgba(245, 158, 11, 0.20)",  // 20 min — amber
+  "rgba(239, 68, 68, 0.15)",   // 30 min — red
+  "rgba(139, 92, 246, 0.12)",  // 40 min — purple
+];
+
+export const ISOCHRONE_BORDER_COLORS: string[] = [
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+  "#8B5CF6",
+];

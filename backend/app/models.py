@@ -236,3 +236,111 @@ class CustomRouteRequestV2(BaseModel):
     segments: list[CustomSegmentRequestV2]
     trip_origin: Coordinate
     trip_destination: Coordinate
+
+
+class StopSearchResult(BaseModel):
+    stop_id: str
+    stop_name: str
+    lat: float
+    lng: float
+    route_id: Optional[str] = None
+    line: Optional[str] = None
+
+
+class StopSearchResponse(BaseModel):
+    stops: list[StopSearchResult]
+
+
+# --- Navigation Models (Phase 1 & 2) ---
+
+class NavigationInstruction(BaseModel):
+    """Navigation-grade instruction for a single maneuver."""
+    instruction: str = ""
+    distance_km: float = 0.0
+    duration_min: float = 0.0
+    maneuver_type: str = ""
+    maneuver_modifier: str = ""
+    voice_instruction: Optional[str] = None  # SSML or plain text for TTS
+    banner_primary: Optional[str] = None  # Primary banner text (e.g. "Turn right onto Yonge St")
+    banner_secondary: Optional[str] = None  # Secondary banner (e.g. "Then continue for 2 km")
+    lane_guidance: Optional[list[dict]] = None  # Lane arrow indicators
+    geometry: Optional[dict] = None  # Step-level GeoJSON LineString
+
+
+class NavigationRoute(BaseModel):
+    """Route with full navigation instructions (voice, banner, lanes)."""
+    route: RouteOption
+    navigation_instructions: list[NavigationInstruction] = Field(default_factory=list)
+    voice_locale: str = "en-US"
+    alternatives: list[RouteOption] = Field(default_factory=list)
+
+
+class NavigationRouteRequest(BaseModel):
+    """Extended route request with navigation options."""
+    origin: Coordinate
+    destination: Coordinate
+    waypoints: list[Coordinate] = Field(default_factory=list)
+    profile: str = "driving-traffic"  # driving-traffic, driving, walking, cycling
+    alternatives: bool = True
+    voice_instructions: bool = True
+    banner_instructions: bool = True
+    exclude: list[str] = Field(default_factory=list)  # toll, ferry, motorway
+    depart_at: Optional[str] = None  # ISO 8601 datetime
+    voice_locale: str = "en-US"
+
+
+class IsochroneRequest(BaseModel):
+    """Request for reachability polygons."""
+    center: Coordinate
+    profile: str = "driving"  # driving, walking, cycling
+    contours_minutes: list[int] = Field(default_factory=lambda: [10, 20, 30])
+    polygons: bool = True
+
+
+class IsochroneResponse(BaseModel):
+    """GeoJSON FeatureCollection of isochrone polygons."""
+    geojson: dict  # GeoJSON FeatureCollection
+    center: Coordinate
+    profile: str
+    contours_minutes: list[int]
+
+
+class OptimizationRequest(BaseModel):
+    """Multi-stop route optimization request."""
+    coordinates: list[Coordinate]  # First = start, last = end, middle = waypoints to optimize
+    profile: str = "driving"
+    roundtrip: bool = False
+    source: str = "first"  # first, last, any
+    destination: str = "last"  # first, last, any
+
+
+class OptimizationResponse(BaseModel):
+    """Optimized multi-stop route response."""
+    waypoint_order: list[int]  # Optimized ordering indices
+    routes: list[RouteOption]
+    total_distance_km: float
+    total_duration_min: float
+
+
+class NavigationPositionUpdate(BaseModel):
+    """Client position update during active navigation."""
+    lat: float
+    lng: float
+    speed: Optional[float] = None  # m/s
+    bearing: Optional[float] = None  # degrees from north
+    timestamp: Optional[float] = None
+
+
+class NavigationUpdate(BaseModel):
+    """Server-sent navigation state update."""
+    type: str = "navigation_update"  # navigation_update, reroute, traffic_update, arrival
+    step_index: int = 0
+    remaining_distance_km: float = 0.0
+    remaining_duration_min: float = 0.0
+    eta: Optional[str] = None
+    instruction: Optional[str] = None
+    voice_instruction: Optional[str] = None
+    lane_guidance: Optional[list[dict]] = None
+    speed_limit: Optional[float] = None  # km/h
+    new_route: Optional[dict] = None  # Only for reroute type
+    reason: Optional[str] = None  # Reroute reason

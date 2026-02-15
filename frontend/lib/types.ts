@@ -207,3 +207,123 @@ export interface CustomRouteRequestV2 {
   trip_origin: Coordinate;
   trip_destination: Coordinate;
 }
+
+export interface StopSearchResult {
+  stop_id: string;
+  stop_name: string;
+  lat: number;
+  lng: number;
+  route_id?: string;
+  line?: string;
+}
+
+export type SearchSuggestion =
+  | { type: "station"; data: StopSearchResult }
+  | { type: "address"; data: { place_name: string; center: [number, number] } };
+
+// --- Navigation Types (Phase 1 & 2) ---
+
+export interface NavigationInstruction {
+  instruction: string;
+  distance_km: number;
+  duration_min: number;
+  maneuver_type: string;
+  maneuver_modifier: string;
+  voice_instruction?: string;
+  banner_primary?: string;
+  banner_secondary?: string;
+  lane_guidance?: Array<{
+    indications: string[];
+    valid: boolean;
+    active?: boolean;
+  }>;
+  geometry?: GeoJSON.LineString;
+}
+
+export interface NavigationRoute {
+  route: RouteOption;
+  navigation_instructions: NavigationInstruction[];
+  voice_locale: string;
+  alternatives: RouteOption[];
+}
+
+export interface NavigationRouteRequest {
+  origin: Coordinate;
+  destination: Coordinate;
+  waypoints?: Coordinate[];
+  profile?: string;
+  alternatives?: boolean;
+  voice_instructions?: boolean;
+  banner_instructions?: boolean;
+  exclude?: string[];
+  depart_at?: string;
+  voice_locale?: string;
+}
+
+export interface IsochroneRequest {
+  center: Coordinate;
+  profile?: string;
+  contours_minutes?: number[];
+  polygons?: boolean;
+}
+
+export interface IsochroneResponse {
+  geojson: GeoJSON.FeatureCollection;
+  center: Coordinate;
+  profile: string;
+  contours_minutes: number[];
+}
+
+export interface OptimizationRequest {
+  coordinates: Coordinate[];
+  profile?: string;
+  roundtrip?: boolean;
+  source?: string;
+  destination?: string;
+}
+
+export interface OptimizationResponse {
+  waypoint_order: number[];
+  routes: RouteOption[];
+  total_distance_km: number;
+  total_duration_min: number;
+}
+
+export interface NavigationPositionUpdate {
+  type: "position_update";
+  lat: number;
+  lng: number;
+  speed?: number;
+  bearing?: number;
+}
+
+export interface NavigationUpdate {
+  type: "navigation_update" | "reroute" | "traffic_update" | "arrival" | "error";
+  step_index?: number;
+  remaining_distance_km?: number;
+  remaining_duration_min?: number;
+  eta?: string;
+  instruction?: string;
+  voice_instruction?: string;
+  lane_guidance?: Array<{
+    indications: string[];
+    valid: boolean;
+    active?: boolean;
+  }>;
+  speed_limit?: number;
+  destination_reached?: boolean;
+  new_route?: {
+    geometry: GeoJSON.LineString;
+    distance_km: number;
+    duration_min: number;
+    steps: Array<Record<string, unknown>>;
+    navigation_instructions: NavigationInstruction[];
+  };
+  reason?: string;
+}
+
+export interface NavigationSessionResponse {
+  session_id: string;
+  websocket_url: string;
+  route: Record<string, unknown>;
+}

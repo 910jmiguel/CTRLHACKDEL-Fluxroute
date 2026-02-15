@@ -54,12 +54,17 @@ async def lifespan(app: FastAPI):
         logger.info("OpenTripPlanner not available — using heuristic transit routing (fallback)")
 
     # Shared httpx client for connection pooling across all API calls
+    # Force IPv4 via custom transport — IPv6 to Mapbox/CloudFront can timeout
+    transport = httpx.AsyncHTTPTransport(
+        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        local_address="0.0.0.0",
+    )
     http_client = httpx.AsyncClient(
         timeout=12.0,
-        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        transport=transport,
     )
     app_state["http_client"] = http_client
-    logger.info("Shared HTTP client created (connection pooling enabled)")
+    logger.info("Shared HTTP client created (IPv4, connection pooling enabled)")
 
     # Load transit line geometries + stations for always-visible overlay
     from app.transit_lines import fetch_transit_lines
@@ -71,6 +76,12 @@ async def lifespan(app: FastAPI):
     line_count = len(transit_data.get("lines", {}).get("features", []))
     station_count = len(transit_data.get("stations", {}).get("features", []))
     logger.info(f"Transit overlay loaded: {line_count} lines, {station_count} stations")
+
+    # Initialize navigation session manager
+    from app.navigation_service import NavigationSessionManager
+    nav_manager = NavigationSessionManager()
+    app_state["nav_manager"] = nav_manager
+    logger.info("Navigation session manager initialized")
 
     logger.info("Starting real-time poller...")
     poller_task = await start_realtime_poller(app_state)
@@ -88,7 +99,14 @@ app = FastAPI(title="FluxRoute API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,6 +1,6 @@
 import mapboxgl from "mapbox-gl";
-import type { RouteOption, VehiclePosition, TransitLinesData } from "./types";
-import { MODE_COLORS, CONGESTION_COLORS } from "./constants";
+import type { RouteOption, VehiclePosition, TransitLinesData, IsochroneResponse } from "./types";
+import { MODE_COLORS, CONGESTION_COLORS, ISOCHRONE_COLORS, ISOCHRONE_BORDER_COLORS } from "./constants";
 
 const ROUTE_SOURCE_PREFIX = "route-";
 const ROUTE_LAYER_PREFIX = "route-layer-";
@@ -239,7 +239,7 @@ export function updateVehicles(
       source: VEHICLES_SOURCE,
       paint: {
         "circle-radius": 4,
-        "circle-color": "#FFCC00",
+        "circle-color": "#F0CC49",
         "circle-opacity": 0.8,
         "circle-stroke-width": 1,
         "circle-stroke-color": "#000",
@@ -372,4 +372,134 @@ export function removeTransitOverlay(map: mapboxgl.Map) {
   }
   if (map.getSource(TRANSIT_LINES_SOURCE)) map.removeSource(TRANSIT_LINES_SOURCE);
   if (map.getSource(TRANSIT_STATIONS_SOURCE)) map.removeSource(TRANSIT_STATIONS_SOURCE);
+}
+
+
+// --- Navigation Map Utils (Phase 1 & 2) ---
+
+const ISOCHRONE_SOURCE_PREFIX = "isochrone-";
+const ISOCHRONE_FILL_PREFIX = "isochrone-fill-";
+const ISOCHRONE_BORDER_PREFIX = "isochrone-border-";
+const ALT_ROUTE_SOURCE_PREFIX = "alt-route-";
+const ALT_ROUTE_LAYER_PREFIX = "alt-route-layer-";
+
+export function drawIsochrone(map: mapboxgl.Map, data: IsochroneResponse) {
+  clearIsochrone(map);
+
+  const features = data.geojson.features || [];
+
+  features.forEach((feature, idx) => {
+    const sourceId = `${ISOCHRONE_SOURCE_PREFIX}${idx}`;
+    const fillId = `${ISOCHRONE_FILL_PREFIX}${idx}`;
+    const borderId = `${ISOCHRONE_BORDER_PREFIX}${idx}`;
+
+    const fillColor = ISOCHRONE_COLORS[idx] || ISOCHRONE_COLORS[ISOCHRONE_COLORS.length - 1];
+    const borderColor = ISOCHRONE_BORDER_COLORS[idx] || ISOCHRONE_BORDER_COLORS[ISOCHRONE_BORDER_COLORS.length - 1];
+
+    map.addSource(sourceId, {
+      type: "geojson",
+      data: {
+        type: "Feature",
+        properties: feature.properties || {},
+        geometry: feature.geometry,
+      },
+    });
+
+    // Fill layer
+    map.addLayer({
+      id: fillId,
+      type: "fill",
+      source: sourceId,
+      paint: {
+        "fill-color": fillColor,
+        "fill-opacity": 0.15 - idx * 0.03,
+      },
+    });
+
+    // Border layer
+    map.addLayer({
+      id: borderId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": borderColor,
+        "line-width": 2,
+        "line-opacity": 0.7,
+        "line-dasharray": [3, 2],
+      },
+    });
+  });
+}
+
+export function clearIsochrone(map: mapboxgl.Map) {
+  const style = map.getStyle();
+  if (!style?.layers) return;
+
+  for (const layer of style.layers) {
+    if (
+      layer.id.startsWith(ISOCHRONE_FILL_PREFIX) ||
+      layer.id.startsWith(ISOCHRONE_BORDER_PREFIX)
+    ) {
+      map.removeLayer(layer.id);
+    }
+  }
+
+  for (const sourceId of Object.keys(style.sources || {})) {
+    if (sourceId.startsWith(ISOCHRONE_SOURCE_PREFIX)) {
+      map.removeSource(sourceId);
+    }
+  }
+}
+
+export function drawAlternativeRoutes(
+  map: mapboxgl.Map,
+  alternatives: RouteOption[]
+) {
+  clearAlternativeRoutes(map);
+
+  alternatives.forEach((alt, idx) => {
+    alt.segments.forEach((segment, segIdx) => {
+      const sourceId = `${ALT_ROUTE_SOURCE_PREFIX}${idx}-${segIdx}`;
+      const layerId = `${ALT_ROUTE_LAYER_PREFIX}${idx}-${segIdx}`;
+
+      map.addSource(sourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: segment.geometry,
+        },
+      });
+
+      map.addLayer({
+        id: layerId,
+        type: "line",
+        source: sourceId,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#6B7280",
+          "line-width": 4,
+          "line-opacity": 0.4,
+          "line-dasharray": [4, 3],
+        },
+      });
+    });
+  });
+}
+
+export function clearAlternativeRoutes(map: mapboxgl.Map) {
+  const style = map.getStyle();
+  if (!style?.layers) return;
+
+  for (const layer of style.layers) {
+    if (layer.id.startsWith(ALT_ROUTE_LAYER_PREFIX)) {
+      map.removeLayer(layer.id);
+    }
+  }
+
+  for (const sourceId of Object.keys(style.sources || {})) {
+    if (sourceId.startsWith(ALT_ROUTE_SOURCE_PREFIX)) {
+      map.removeSource(sourceId);
+    }
+  }
 }

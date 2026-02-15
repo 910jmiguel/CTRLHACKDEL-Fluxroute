@@ -7,8 +7,29 @@ import type {
   TransitRouteSuggestion,
   CustomSegmentV2,
   CustomSegmentRequestV2,
+  CustomSegmentRequest,
+  LineInfo,
 } from "@/lib/types";
-import { getTransitSuggestions, calculateCustomRouteV2 } from "@/lib/api";
+import { getTransitSuggestions, calculateCustomRouteV2, calculateCustomRoute, getLineStops } from "@/lib/api";
+
+export interface CustomSegment {
+  id: string;
+  mode: "driving" | "walking" | "transit";
+  line_id?: string;
+  start_station_id?: string;
+  end_station_id?: string;
+  origin?: Coordinate;
+  destination?: Coordinate;
+  lineInfo?: LineInfo;
+}
+
+export const TTC_LINES = [
+  { id: "1", name: "Line 1 Yonge-University", color: "#F0CC49" },
+  { id: "2", name: "Line 2 Bloor-Danforth", color: "#549F4D" },
+  { id: "4", name: "Line 4 Sheppard", color: "#9C246E" },
+  { id: "5", name: "Line 5 Eglinton", color: "#DE7731" },
+  { id: "6", name: "Line 6 Finch West", color: "#959595" },
+];
 
 let segIdCounter = 0;
 

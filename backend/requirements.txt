@@ -10,3 +10,4 @@ python-dotenv
 pydantic
 gtfs-realtime-bindings
 protobuf
+websockets

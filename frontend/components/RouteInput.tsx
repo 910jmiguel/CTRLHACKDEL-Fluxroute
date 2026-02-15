@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { MapPin, Navigation, Search, X, ArrowUpDown } from "lucide-react";
-import type { Coordinate } from "@/lib/types";
+import { MapPin, Navigation, Search, X, ArrowUpDown, Train } from "lucide-react";
+import type { Coordinate, SearchSuggestion } from "@/lib/types";
 import { MAPBOX_TOKEN } from "@/lib/constants";
+import { searchStops } from "@/lib/api";
 
 interface RouteInputProps {
   onSearch: (origin: Coordinate, destination: Coordinate) => void;
@@ -39,16 +40,17 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
   const [destText, setDestText] = useState("");
   const [originCoord, setOriginCoord] = useState<Coordinate | null>(null);
   const [destCoord, setDestCoord] = useState<Coordinate | null>(null);
-  const [originSuggestions, setOriginSuggestions] = useState<GeocoderResult[]>(
-    []
-  );
-  const [destSuggestions, setDestSuggestions] = useState<GeocoderResult[]>([]);
+  const [originSuggestions, setOriginSuggestions] = useState<SearchSuggestion[]>([]);
+  const [destSuggestions, setDestSuggestions] = useState<SearchSuggestion[]>([]);
   const [focusedField, setFocusedField] = useState<
     "origin" | "dest" | null
   >(null);
 
   const lastExternalOrigin = useRef<Coordinate | null | undefined>(undefined);
   const lastExternalDest = useRef<Coordinate | null | undefined>(undefined);
+  const debounceOriginRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceDestRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchIdRef = useRef(0);
 
   // Sync external origin (from map click or geolocation) into text field
   useEffect(() => {
@@ -115,38 +117,92 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
     []
   );
 
-  const handleOriginChange = async (value: string) => {
+  const federatedSearch = useCallback(
+    async (query: string, setSuggestions: (s: SearchSuggestion[]) => void) => {
+      if (query.length < 2) {
+        setSuggestions([]);
+        return;
+      }
+
+      const requestId = ++searchIdRef.current;
+
+      const [stopsResult, geocodeResult] = await Promise.allSettled([
+        query.length >= 2 ? searchStops(query) : Promise.resolve({ stops: [] }),
+        query.length >= 3 ? geocode(query) : Promise.resolve([]),
+      ]);
+
+      // Guard against stale responses
+      if (searchIdRef.current !== requestId) return;
+
+      const stationSuggestions: SearchSuggestion[] =
+        stopsResult.status === "fulfilled"
+          ? stopsResult.value.stops.map((s) => ({ type: "station" as const, data: s }))
+          : [];
+
+      const addressSuggestions: SearchSuggestion[] =
+        geocodeResult.status === "fulfilled"
+          ? (geocodeResult.value as GeocoderResult[]).map((r) => ({ type: "address" as const, data: r }))
+          : [];
+
+      setSuggestions([...stationSuggestions, ...addressSuggestions]);
+    },
+    [geocode]
+  );
+
+  const handleOriginChange = (value: string) => {
     setOriginText(value);
     setOriginCoord(null);
-    if (value.length >= 3) {
-      const results = await geocode(value);
-      setOriginSuggestions(results);
-    } else {
+    if (debounceOriginRef.current) clearTimeout(debounceOriginRef.current);
+    if (value.length < 2) {
       setOriginSuggestions([]);
+      return;
     }
+    debounceOriginRef.current = setTimeout(() => {
+      federatedSearch(value, setOriginSuggestions);
+    }, 250);
   };
 
-  const handleDestChange = async (value: string) => {
+  const handleDestChange = (value: string) => {
     setDestText(value);
     setDestCoord(null);
-    if (value.length >= 3) {
-      const results = await geocode(value);
-      setDestSuggestions(results);
-    } else {
+    if (debounceDestRef.current) clearTimeout(debounceDestRef.current);
+    if (value.length < 2) {
       setDestSuggestions([]);
+      return;
     }
+    debounceDestRef.current = setTimeout(() => {
+      federatedSearch(value, setDestSuggestions);
+    }, 250);
   };
 
-  const selectOrigin = (result: GeocoderResult) => {
-    setOriginText(result.place_name);
-    setOriginCoord({ lat: result.center[1], lng: result.center[0] });
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceOriginRef.current) clearTimeout(debounceOriginRef.current);
+      if (debounceDestRef.current) clearTimeout(debounceDestRef.current);
+    };
+  }, []);
+
+  const selectOrigin = (suggestion: SearchSuggestion) => {
+    if (suggestion.type === "station") {
+      setOriginText(suggestion.data.stop_name);
+      setOriginCoord({ lat: suggestion.data.lat, lng: suggestion.data.lng });
+    } else {
+      setOriginText(suggestion.data.place_name);
+      setOriginCoord({ lat: suggestion.data.center[1], lng: suggestion.data.center[0] });
+    }
     setOriginSuggestions([]);
     setFocusedField(null);
   };
 
-  const selectDest = (result: GeocoderResult) => {
-    setDestText(result.place_name);
-    setDestCoord({ lat: result.center[1], lng: result.center[0] });
+  const selectDest = (suggestion: SearchSuggestion) => {
+    if (suggestion.type === "station") {
+      setDestText(suggestion.data.stop_name);
+      setDestCoord({ lat: suggestion.data.lat, lng: suggestion.data.lng });
+    } else {
+      setDestText(suggestion.data.place_name);
+      setDestCoord({ lat: suggestion.data.center[1], lng: suggestion.data.center[0] });
+    }
     setDestSuggestions([]);
     setFocusedField(null);
   };
@@ -218,9 +274,21 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
                   <button
                     key={i}
                     onClick={() => selectOrigin(s)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 truncate text-slate-200"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 flex items-center gap-2"
                   >
-                    {s.place_name}
+                    {s.type === "station" ? (
+                      <Train className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                    ) : (
+                      <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="truncate text-white font-medium">
+                        {s.type === "station" ? s.data.stop_name : s.data.place_name}
+                      </div>
+                      {s.type === "station" && s.data.line && (
+                        <div className="text-xs text-yellow-400/70 truncate">{s.data.line}</div>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -259,9 +327,21 @@ export default function RouteInput({ onSearch, loading, origin, destination, ori
                   <button
                     key={i}
                     onClick={() => selectDest(s)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 truncate text-slate-200"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700/50 flex items-center gap-2"
                   >
-                    {s.place_name}
+                    {s.type === "station" ? (
+                      <Train className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                    ) : (
+                      <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="truncate text-white font-medium">
+                        {s.type === "station" ? s.data.stop_name : s.data.place_name}
+                      </div>
+                      {s.type === "station" && s.data.line && (
+                        <div className="text-xs text-yellow-400/70 truncate">{s.data.line}</div>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>

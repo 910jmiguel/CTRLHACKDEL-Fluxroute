@@ -29,11 +29,11 @@ _ROUTE_TYPE_MODE = {
 
 # Fallback colors for TTC lines
 _TTC_LINE_COLORS = {
-    "1": "#FFCC00",  # Line 1 Yonge-University
-    "2": "#00A651",  # Line 2 Bloor-Danforth
-    "4": "#A8518A",  # Line 4 Sheppard
-    "5": "#FF6600",  # Line 5 Eglinton Crosstown
-    "6": "#8B4513",  # Line 6 Finch West
+    "1": "#F0CC49",  # Line 1 Yonge-University
+    "2": "#549F4D",  # Line 2 Bloor-Danforth
+    "4": "#9C246E",  # Line 4 Sheppard
+    "5": "#DE7731",  # Line 5 Eglinton Crosstown
+    "6": "#959595",  # Line 6 Finch West
 }
 
 _TTC_MODE_MAP = {
@@ -381,7 +381,7 @@ def get_fallback_transit_lines() -> dict:
         routes[rid].append(station)
 
         mode = _TTC_MODE_MAP.get(rid, "SUBWAY")
-        color = _TTC_LINE_COLORS.get(rid, "#FFCC00")
+        color = _TTC_LINE_COLORS.get(rid, "#F0CC49")
 
         station_features.append({
             "type": "Feature",
@@ -405,7 +405,7 @@ def get_fallback_transit_lines() -> dict:
         if len(coordinates) < 2:
             continue
 
-        color = _TTC_LINE_COLORS.get(rid, "#FFCC00")
+        color = _TTC_LINE_COLORS.get(rid, "#F0CC49")
         mode = _TTC_MODE_MAP.get(rid, "SUBWAY")
         line_name = stations[0].get("line", f"Line {rid}")
 

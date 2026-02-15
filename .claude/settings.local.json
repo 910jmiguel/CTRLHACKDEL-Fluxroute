@@ -19,7 +19,10 @@
       "Bash(python3 -m uvicorn:*)",
       "Bash(lsof:*)",
       "Bash(xargs:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(git clean:*)",
+      "Bash(python3:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
