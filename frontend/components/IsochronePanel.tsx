@@ -64,21 +64,21 @@ export default function IsochronePanel({
   const isShowing = active || isochroneActive;
 
   return (
-    <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/10">
+    <div className="panel-glass rounded-xl">
       {/* Collapsible header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-white/5 transition-colors rounded-xl"
+        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-[var(--surface-hover)] transition-colors rounded-xl"
       >
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+          <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
         )}
-        <MapPin className="w-4 h-4 text-emerald-400" />
-        <h3 className="text-sm font-semibold text-slate-200">Reachability</h3>
+        <MapPin className="w-4 h-4 text-emerald-500" />
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Reachability</h3>
         {isShowing && (
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30">
             Active
           </span>
         )}
@@ -88,7 +88,7 @@ export default function IsochronePanel({
       {expanded && (
         <div className="px-4 pb-4">
           {!center && (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[var(--text-muted)]">
               Set an origin point to see how far you can travel.
             </p>
           )}
@@ -103,8 +103,8 @@ export default function IsochronePanel({
                     onClick={() => setProfile(p.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                       profile === p.id
-                        ? "bg-blue-500/30 text-blue-300 border border-blue-400/30"
-                        : "bg-slate-700/40 text-slate-400 hover:bg-slate-700/60"
+                        ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30"
+                        : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
                     }`}
                   >
                     <p.icon className="w-3.5 h-3.5" />
@@ -121,8 +121,8 @@ export default function IsochronePanel({
                     onClick={() => setContours(preset.minutes)}
                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
                       JSON.stringify(contours) === JSON.stringify(preset.minutes)
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-                        : "bg-slate-700/40 text-slate-400 hover:bg-slate-700/60"
+                        ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30"
+                        : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
                     }`}
                   >
                     <Clock className="w-3 h-3" />
@@ -149,7 +149,7 @@ export default function IsochronePanel({
                 {active && (
                   <button
                     onClick={handleClear}
-                    className="px-3 py-2 bg-slate-700/60 hover:bg-slate-700/80 text-slate-300 text-sm rounded-lg transition-colors"
+                    className="px-3 py-2 bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] text-sm rounded-lg transition-colors"
                   >
                     Clear
                   </button>

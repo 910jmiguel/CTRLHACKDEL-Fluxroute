@@ -79,3 +79,26 @@ export const TTC_LINE_LOGOS: Record<string, string> = {
   "5": "/images/line-logos/line5.png",
   "6": "/images/line-logos/line6.png",
 };
+
+// TTC Line Alert Logos — keyed by `${lineId}-${severity}`
+// severity mapping: info → Check, warning → !, error → X
+export const TTC_LINE_ALERT_LOGOS: Record<string, string> = {
+  "1-info":    "/images/line-alerts/Line 1 Check.png",
+  "1-warning": "/images/line-alerts/Line 1 !.png",
+  "1-error":   "/images/line-alerts/Line 1 X.png",
+  "2-info":    "/images/line-alerts/Line 2 Check.png",
+  "2-warning": "/images/line-alerts/Line 2 !.png",
+  "2-error":   "/images/line-alerts/Line 2 X.png",
+  "4-info":    "/images/line-alerts/Line 4 Check.png",
+  "4-warning": "/images/line-alerts/Line 4 !.png",
+  "4-error":   "/images/line-alerts/Line 4 X.png",
+  "5-info":    "/images/line-alerts/Line 5 Check.png",
+  "5-warning": "/images/line-alerts/Line 5 !.png",
+  "5-error":   "/images/line-alerts/Line 5 X.png",
+  "6-info":    "/images/line-alerts/Line 6 Check.png",
+  "6-warning": "/images/line-alerts/Line 6 !.png",
+  "6-error":   "/images/line-alerts/Line 6 X.png",
+};
+
+// Line IDs that have alert logos
+export const TTC_ALERT_LINE_IDS = ["1", "2", "4", "5", "6"];

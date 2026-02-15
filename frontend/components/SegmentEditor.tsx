@@ -1,8 +1,15 @@
 "use client";
 
 import { Car, Footprints, Train, Bus, X, ChevronUp, ChevronDown, Check, ArrowRightLeft } from "lucide-react";
+import Image from "next/image";
 import type { TransitRouteSuggestion, CustomSegmentV2 } from "@/lib/types";
+import { TTC_LINE_LOGOS } from "@/lib/constants";
 import { useMemo } from "react";
+
+function getLineLogoId(suggestion: TransitRouteSuggestion): string | null {
+  const id = suggestion.route_id?.replace(/^line\s*/i, "").trim();
+  return id && TTC_LINE_LOGOS[id] ? id : null;
+}
 
 interface SegmentEditorProps {
   segment: CustomSegmentV2;
@@ -57,13 +64,26 @@ function SuggestionCard({
       }`}
     >
       <div className="flex items-start gap-2.5">
-        {/* Color dot + mode icon */}
-        <div
-          className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center mt-0.5"
-          style={{ backgroundColor: `${suggestion.color}20`, color: suggestion.color }}
-        >
-          <ModeIcon mode={suggestion.transit_mode} />
-        </div>
+        {/* Color dot + mode icon or TTC line logo */}
+        {(() => {
+          const lineId = getLineLogoId(suggestion);
+          return lineId ? (
+            <Image
+              src={TTC_LINE_LOGOS[lineId]}
+              alt={`Line ${lineId}`}
+              width={32}
+              height={32}
+              className="rounded-full flex-shrink-0 mt-0.5"
+            />
+          ) : (
+            <div
+              className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center mt-0.5"
+              style={{ backgroundColor: `${suggestion.color}20`, color: suggestion.color }}
+            >
+              <ModeIcon mode={suggestion.transit_mode} />
+            </div>
+          );
+        })()}
 
         {/* Route info */}
         <div className="flex-1 min-w-0">
@@ -118,12 +138,25 @@ function TransferSuggestionCard({
     >
       {/* Leg 1 */}
       <div className="flex items-center gap-2">
-        <div
-          className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center"
-          style={{ backgroundColor: `${leg1.color}20`, color: leg1.color }}
-        >
-          <ModeIcon mode={leg1.transit_mode} />
-        </div>
+        {(() => {
+          const lineId = getLineLogoId(leg1);
+          return lineId ? (
+            <Image
+              src={TTC_LINE_LOGOS[lineId]}
+              alt={`Line ${lineId}`}
+              width={24}
+              height={24}
+              className="rounded-full flex-shrink-0"
+            />
+          ) : (
+            <div
+              className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center"
+              style={{ backgroundColor: `${leg1.color}20`, color: leg1.color }}
+            >
+              <ModeIcon mode={leg1.transit_mode} />
+            </div>
+          );
+        })()}
         <span
           className="text-[11px] font-bold px-1.5 py-0.5 rounded"
           style={{ backgroundColor: `${leg1.color}25`, color: leg1.color }}
@@ -145,12 +178,25 @@ function TransferSuggestionCard({
 
       {/* Leg 2 */}
       <div className="flex items-center gap-2">
-        <div
-          className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center"
-          style={{ backgroundColor: `${leg2.color}20`, color: leg2.color }}
-        >
-          <ModeIcon mode={leg2.transit_mode} />
-        </div>
+        {(() => {
+          const lineId = getLineLogoId(leg2);
+          return lineId ? (
+            <Image
+              src={TTC_LINE_LOGOS[lineId]}
+              alt={`Line ${lineId}`}
+              width={24}
+              height={24}
+              className="rounded-full flex-shrink-0"
+            />
+          ) : (
+            <div
+              className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center"
+              style={{ backgroundColor: `${leg2.color}20`, color: leg2.color }}
+            >
+              <ModeIcon mode={leg2.transit_mode} />
+            </div>
+          );
+        })()}
         <span
           className="text-[11px] font-bold px-1.5 py-0.5 rounded"
           style={{ backgroundColor: `${leg2.color}25`, color: leg2.color }}
@@ -181,12 +227,25 @@ function SelectedRouteCard({
 }) {
   return (
     <div className="flex items-center gap-2.5 p-2.5 rounded-lg border border-blue-500/40 bg-blue-500/10">
-      <div
-        className="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center"
-        style={{ backgroundColor: `${suggestion.color}25`, color: suggestion.color }}
-      >
-        <ModeIcon mode={suggestion.transit_mode} />
-      </div>
+      {(() => {
+        const lineId = getLineLogoId(suggestion);
+        return lineId ? (
+          <Image
+            src={TTC_LINE_LOGOS[lineId]}
+            alt={`Line ${lineId}`}
+            width={28}
+            height={28}
+            className="rounded-full flex-shrink-0"
+          />
+        ) : (
+          <div
+            className="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center"
+            style={{ backgroundColor: `${suggestion.color}25`, color: suggestion.color }}
+          >
+            <ModeIcon mode={suggestion.transit_mode} />
+          </div>
+        );
+      })()}
       <div className="flex-1 min-w-0">
         <span
           className="text-xs font-bold px-1.5 py-0.5 rounded"

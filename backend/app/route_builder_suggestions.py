@@ -22,7 +22,7 @@ _LINE_COLORS = {
     "2": "#00A651",
     "4": "#A8518A",
     "5": "#FF6600",
-    "6": "#8B4513",
+    "6": "#808080",
 }
 
 # Transit mode display colors (non-subway)
@@ -38,8 +38,8 @@ TTC_TRANSFER_STATIONS = [
     {"name": "St George",      "lines": ["1", "2"], "stop_ids": {"1": "YU_STGR", "2": "BD_STGR"}, "lat": 43.6683, "lng": -79.3997},
     {"name": "Spadina",        "lines": ["1", "2"], "stop_ids": {"1": "YU_SPAD", "2": "BD_SPAD"}, "lat": 43.6672, "lng": -79.4037},
     {"name": "Sheppard-Yonge", "lines": ["1", "4"], "stop_ids": {"1": "YU_SHEPY", "4": "SH_SHPY"}, "lat": 43.7615, "lng": -79.4111},
-    {"name": "Cedarvale",      "lines": ["1", "5"], "stop_ids": {"1": "YU_CDRV", "5": "EC_CDVL"}, "lat": 43.6998, "lng": -79.4362},
-    {"name": "Eglinton",       "lines": ["1", "5"], "stop_ids": {"1": "YU_EGLN", "5": "EC_EGLN"}, "lat": 43.7057, "lng": -79.3984},
+    {"name": "Cedarvale",      "lines": ["1", "5"], "stop_ids": {"1": "YU_CDRV", "5": "EC_CDVL"}, "lat": 43.6989, "lng": -79.4356},
+    {"name": "Eglinton",       "lines": ["1", "5"], "stop_ids": {"1": "YU_EGLN", "5": "EC_EGLN"}, "lat": 43.7064, "lng": -79.3988},
     {"name": "Kennedy",        "lines": ["2", "5"], "stop_ids": {"2": "BD_KNDY", "5": "EC_KNDY"}, "lat": 43.7326, "lng": -79.2637},
     {"name": "Finch West",     "lines": ["1", "6"], "stop_ids": {"1": "YU_FNWT", "6": "FW_FNCH"}, "lat": 43.7649, "lng": -79.4912},
 ]
@@ -433,7 +433,8 @@ def _suggestions_from_gtfs(
         route_type = rinfo.get("route_type", 3)
 
         # Determine transit mode from GTFS route_type
-        if route_type in (0, 1):
+        # 0 = Tram/Streetcar/LRT, 1 = Subway/Metro, 2 = Rail, 3 = Bus
+        if route_type == 1:
             transit_mode = "SUBWAY"
         elif route_type == 0:
             transit_mode = "TRAM"
@@ -548,7 +549,12 @@ def _subway_line_fallback(
         {
             "id": "5", "name": "Line 5 Eglinton", "color": "#FF6600",
             "corridor": "east-west", "mode": "TRAM",
-            "lat_range": (43.69, 43.73), "lng_range": (-79.55, -79.27),
+            "lat_range": (43.68, 43.74), "lng_range": (-79.50, -79.26),
+        },
+        {
+            "id": "6", "name": "Line 6 Finch West", "color": "#808080",
+            "corridor": "east-west", "mode": "TRAM",
+            "lat_range": (43.72, 43.77), "lng_range": (-79.61, -79.49),
         },
     ]
 
@@ -658,7 +664,7 @@ def _transfer_suggestions(
         "2": {"name": "Line 2 Bloor-Danforth", "color": "#00A651", "mode": "SUBWAY"},
         "4": {"name": "Line 4 Sheppard", "color": "#A8518A", "mode": "SUBWAY"},
         "5": {"name": "Line 5 Eglinton", "color": "#FF6600", "mode": "TRAM"},
-        "6": {"name": "Line 6 Finch West", "color": "#8B4513", "mode": "TRAM"},
+        "6": {"name": "Line 6 Finch West", "color": "#808080", "mode": "TRAM"},
     }
 
     trip_bearing = _bearing(origin.lat, origin.lng, destination.lat, destination.lng)

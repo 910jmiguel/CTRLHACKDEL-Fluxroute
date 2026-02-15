@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { X, AlertTriangle, Info, XCircle } from "lucide-react";
+import Image from "next/image";
 import type { ServiceAlert } from "@/lib/types";
 import { useIsMobile } from "@/hooks/useMediaQuery";
+import { TTC_LINE_ALERT_LOGOS, TTC_ALERT_LINE_IDS } from "@/lib/constants";
 
 interface AlertsPanelProps {
   open: boolean;
@@ -28,6 +30,29 @@ const SEVERITY_CONFIG = {
     badge: "bg-red-500/10 text-red-400 border-red-500/30",
   },
 };
+
+/**
+ * Extract the TTC line ID from an alert's route_id or title.
+ * Matches things like "Line 1", "line1", "1", route_id "1", etc.
+ */
+function extractLineId(alert: ServiceAlert): string | null {
+  // Check route_id first
+  if (alert.route_id) {
+    const cleaned = alert.route_id.replace(/^line\s*/i, "").trim();
+    if (TTC_ALERT_LINE_IDS.includes(cleaned)) return cleaned;
+  }
+  // Fallback: scan title for "Line X"
+  const match = alert.title.match(/line\s*(\d)/i);
+  if (match && TTC_ALERT_LINE_IDS.includes(match[1])) return match[1];
+  return null;
+}
+
+function getAlertLogo(alert: ServiceAlert): string | null {
+  const lineId = extractLineId(alert);
+  if (!lineId) return null;
+  const key = `${lineId}-${alert.severity}`;
+  return TTC_LINE_ALERT_LOGOS[key] || null;
+}
 
 export default function AlertsPanel({ open, onClose, alerts }: AlertsPanelProps) {
   const isMobile = useIsMobile();
@@ -90,6 +115,8 @@ export default function AlertsPanel({ open, onClose, alerts }: AlertsPanelProps)
           {visibleAlerts.map((alert, i) => {
             const config = SEVERITY_CONFIG[alert.severity];
             const Icon = config.icon;
+            const alertLogo = getAlertLogo(alert);
+
             return (
               <div
                 key={alert.id}
@@ -100,8 +127,34 @@ export default function AlertsPanel({ open, onClose, alerts }: AlertsPanelProps)
                 <div className={`h-1 ${config.bar}`} />
 
                 <div className="p-3">
-                  <div className="flex items-start gap-2">
-                    <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: `var(--${alert.severity === "error" ? "red" : alert.severity === "warning" ? "amber" : "blue"}-400, currentColor)` }} />
+                  <div className="flex items-start gap-3">
+                    {/* Line alert logo or fallback severity icon */}
+                    {alertLogo ? (
+                      <Image
+                        src={alertLogo}
+                        alt={`Line ${extractLineId(alert)} ${alert.severity}`}
+                        width={32}
+                        height={32}
+                        className="rounded-full flex-shrink-0 mt-0.5"
+                      />
+                    ) : (
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                        alert.severity === "error"
+                          ? "bg-red-500/15"
+                          : alert.severity === "warning"
+                          ? "bg-amber-500/15"
+                          : "bg-blue-500/15"
+                      }`}>
+                        <Icon className={`w-4 h-4 ${
+                          alert.severity === "error"
+                            ? "text-red-400"
+                            : alert.severity === "warning"
+                            ? "text-amber-400"
+                            : "text-blue-400"
+                        }`} />
+                      </div>
+                    )}
+
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="text-sm font-medium text-[var(--text-primary)]">
@@ -118,7 +171,7 @@ export default function AlertsPanel({ open, onClose, alerts }: AlertsPanelProps)
                       <p className="text-xs text-[var(--text-secondary)] mt-1">
                         {alert.description}
                       </p>
-                      {alert.route_id && (
+                      {alert.route_id && !alertLogo && (
                         <span className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded-full border ${config.badge}`}>
                           Route {alert.route_id}
                         </span>

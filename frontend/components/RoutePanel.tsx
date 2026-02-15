@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Play, Wand2 } from "lucide-react";
+import { X, Play, Wand2, ChevronLeft } from "lucide-react";
 import type { RouteOption } from "@/lib/types";
 import type { ModeFilter } from "@/hooks/useRoutes";
 import { useIsMobile } from "@/hooks/useMediaQuery";
@@ -13,6 +13,7 @@ import BottomSheet from "./BottomSheet";
 interface RoutePanelProps {
   open: boolean;
   onClose: () => void;
+  onOpen: () => void;
   routes: RouteOption[];
   filteredRoutes: RouteOption[];
   selectedRoute: RouteOption | null;
@@ -39,7 +40,7 @@ function PanelContent({
   originLabel,
   destinationLabel,
   error,
-}: Omit<RoutePanelProps, "open" | "onClose" | "filteredRoutes">) {
+}: Omit<RoutePanelProps, "open" | "onClose" | "onOpen" | "filteredRoutes">) {
   return (
     <div className="space-y-4">
       {error && (
@@ -107,11 +108,26 @@ function PanelContent({
 }
 
 export default function RoutePanel(props: RoutePanelProps) {
-  const { open, onClose } = props;
+  const { open, onClose, onOpen, routes } = props;
   const isMobile = useIsMobile();
   const isTablet = useIsTablet();
 
-  if (!open) return null;
+  // Mobile: when closed, fully unmount (no reopen tab)
+  if (!open && isMobile) return null;
+
+  // Desktop: when closed, show a reopen tab if there are routes
+  if (!open) {
+    if (routes.length === 0) return null;
+    return (
+      <button
+        onClick={onOpen}
+        className="absolute top-16 right-0 z-30 panel-glass rounded-l-lg px-2 py-3 hover:bg-[var(--surface-hover)] transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] shadow-lg border-l border-y border-[var(--glass-border)]"
+        aria-label="Open route panel"
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+    );
+  }
 
   // Mobile: bottom sheet
   if (isMobile) {
