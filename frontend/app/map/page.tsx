@@ -241,8 +241,12 @@ export default function MapPage() {
   useEffect(() => { prevOriginRef.current = origin; }, [origin]);
   useEffect(() => { prevDestRef.current = destination; }, [destination]);
 
-  // Poll vehicles every 15 seconds
+  // Poll vehicles every 15 seconds — only when vehicle layer is visible
   useEffect(() => {
+    if (!showVehicles) {
+      setVehicles([]);
+      return;
+    }
     const fetchVehiclesData = async () => {
       try {
         const data = await getVehicles();
@@ -252,7 +256,7 @@ export default function MapPage() {
     fetchVehiclesData();
     const interval = setInterval(fetchVehiclesData, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [showVehicles]);
 
   // Filter vehicles to only show lines used by the selected route
   const filteredVehicles = useMemo(() => {

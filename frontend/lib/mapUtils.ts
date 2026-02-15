@@ -12,22 +12,53 @@ const TRANSIT_LINES_LAYER = "transit-lines-layer";
 const TRANSIT_STATIONS_LAYER = "transit-stations-layer";
 const TRANSIT_STATION_LABELS = "transit-station-labels";
 
+// Track which route sources/layers are currently active
+let activeRouteSources = new Set<string>();
+let activeRouteLayers = new Set<string>();
+
 export function clearRoutes(map: mapboxgl.Map) {
   // Remove all route layers and sources
-  const style = map.getStyle();
-  if (!style || !style.layers) return;
+  for (const layerId of activeRouteLayers) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+  }
+  for (const sourceId of activeRouteSources) {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
+  activeRouteLayers.clear();
+  activeRouteSources.clear();
+}
 
-  for (const layer of style.layers) {
-    if (layer.id.startsWith(ROUTE_LAYER_PREFIX)) {
-      map.removeLayer(layer.id);
+/**
+ * Helper: update an existing source's data or create source + layer if new.
+ * Returns true if the source already existed (update path), false if created.
+ */
+function _upsertSourceAndLayer(
+  map: mapboxgl.Map,
+  sourceId: string,
+  layerId: string,
+  geojsonData: GeoJSON.Feature,
+  layerConfig: Omit<mapboxgl.AnyLayer, "id" | "source">,
+  paintOverrides?: Record<string, unknown>
+): void {
+  const existingSource = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
+
+  if (existingSource) {
+    // Fast path: update data in place (no style recalculation)
+    existingSource.setData(geojsonData);
+    // Update paint properties individually
+    if (paintOverrides && map.getLayer(layerId)) {
+      for (const [key, value] of Object.entries(paintOverrides)) {
+        map.setPaintProperty(layerId, key, value);
+      }
     }
+  } else {
+    // Create new source + layer
+    map.addSource(sourceId, { type: "geojson", data: geojsonData });
+    map.addLayer({ id: layerId, source: sourceId, ...layerConfig } as mapboxgl.AnyLayer);
   }
 
-  for (const sourceId of Object.keys(style.sources || {})) {
-    if (sourceId.startsWith(ROUTE_SOURCE_PREFIX)) {
-      map.removeSource(sourceId);
-    }
-  }
+  activeRouteSources.add(sourceId);
+  activeRouteLayers.add(layerId);
 }
 
 export function drawMultimodalRoute(
@@ -49,93 +80,69 @@ export function drawMultimodalRoute(
       const outlineSourceId = `${baseSourceId}-outline`;
       const outlineLayerId = `${baseLayerId}-outline`;
 
-      if (map.getLayer(outlineLayerId)) map.removeLayer(outlineLayerId);
-      if (map.getSource(outlineSourceId)) map.removeSource(outlineSourceId);
-
-      map.addSource(outlineSourceId, {
-        type: "geojson",
-        data: {
-          type: "Feature",
-          properties: {},
-          geometry: segment.geometry,
+      _upsertSourceAndLayer(
+        map, outlineSourceId, outlineLayerId,
+        { type: "Feature", properties: {}, geometry: segment.geometry },
+        {
+          type: "line",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#1a1a2e",
+            "line-width": isSelected ? 8 : 3,
+            "line-opacity": isSelected ? 0.9 : 0.12,
+          },
         },
-      });
-
-      map.addLayer({
-        id: outlineLayerId,
-        type: "line",
-        source: outlineSourceId,
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#1a1a2e",
-          "line-width": isSelected ? 8 : 3,
-          "line-opacity": isSelected ? 0.9 : 0.12,
-        },
-      });
+        { "line-width": isSelected ? 8 : 3, "line-opacity": isSelected ? 0.9 : 0.12 }
+      );
 
       // --- Colored sub-segment layers (on top) ---
       segment.congestion_segments.forEach((sub, subIdx) => {
         const subSourceId = `${baseSourceId}-cong-${subIdx}`;
         const subLayerId = `${baseLayerId}-cong-${subIdx}`;
-
-        if (map.getLayer(subLayerId)) map.removeLayer(subLayerId);
-        if (map.getSource(subSourceId)) map.removeSource(subSourceId);
-
         const subColor =
           CONGESTION_COLORS[sub.congestion] || CONGESTION_COLORS.unknown;
 
-        map.addSource(subSourceId, {
-          type: "geojson",
-          data: {
-            type: "Feature",
-            properties: { congestion: sub.congestion },
-            geometry: sub.geometry,
+        _upsertSourceAndLayer(
+          map, subSourceId, subLayerId,
+          { type: "Feature", properties: { congestion: sub.congestion }, geometry: sub.geometry },
+          {
+            type: "line",
+            layout: { "line-join": "round", "line-cap": "round" },
+            paint: {
+              "line-color": subColor,
+              "line-width": isSelected ? 5 : 2,
+              "line-opacity": isSelected ? 0.9 : 0.12,
+            },
           },
-        });
-
-        map.addLayer({
-          id: subLayerId,
-          type: "line",
-          source: subSourceId,
-          layout: { "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-color": subColor,
-            "line-width": isSelected ? 5 : 2,
-            "line-opacity": isSelected ? 0.9 : 0.12,
-          },
-        });
+          { "line-width": isSelected ? 5 : 2, "line-opacity": isSelected ? 0.9 : 0.12 }
+        );
       });
     } else {
       // --- Standard single-color segment (non-driving or no congestion data) ---
-      if (map.getLayer(baseLayerId)) map.removeLayer(baseLayerId);
-      if (map.getSource(baseSourceId)) map.removeSource(baseSourceId);
-
       const color =
         segment.color || MODE_COLORS[segment.mode] || "#FFFFFF";
 
-      map.addSource(baseSourceId, {
-        type: "geojson",
-        data: {
-          type: "Feature",
-          properties: {},
-          geometry: segment.geometry,
+      _upsertSourceAndLayer(
+        map, baseSourceId, baseLayerId,
+        { type: "Feature", properties: {}, geometry: segment.geometry },
+        {
+          type: "line",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": color,
+            "line-width": isSelected ? 5 : 2,
+            "line-opacity": isSelected ? 0.9 : 0.12,
+            ...(segment.mode === "walking"
+              ? { "line-dasharray": [2, 2] }
+              : {}),
+          },
         },
-      });
-
-      map.addLayer({
-        id: baseLayerId,
-        type: "line",
-        source: baseSourceId,
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
+        {
           "line-color": color,
           "line-width": isSelected ? 5 : 2,
           "line-opacity": isSelected ? 0.9 : 0.12,
-          ...(segment.mode === "walking"
-            ? { "line-dasharray": [2, 2] }
-            : {}),
-        },
-      });
+        }
+      );
     }
   });
 }

@@ -35,6 +35,30 @@ def _get_mapbox_token() -> str:
 MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
 
 
+def _cache_key(origin: Coordinate, destination: Coordinate, profile: str) -> str:
+    """Generate a cache key from rounded coordinates + profile."""
+    return f"{round(origin.lat, 4)},{round(origin.lng, 4)}|{round(destination.lat, 4)},{round(destination.lng, 4)}|{profile}"
+
+
+async def _cached_mapbox_directions(
+    origin: Coordinate,
+    destination: Coordinate,
+    profile: str = "driving-traffic",
+    http_client: Optional[httpx.AsyncClient] = None,
+    cache: Optional[dict] = None,
+) -> Optional[dict]:
+    """Mapbox directions with per-request caching."""
+    if cache is not None:
+        key = _cache_key(origin, destination, profile)
+        if key in cache:
+            logger.debug(f"Mapbox cache hit: {profile} ({key[:40]}...)")
+            return cache[key]
+        result = await _mapbox_directions(origin, destination, profile, http_client)
+        cache[key] = result
+        return result
+    return await _mapbox_directions(origin, destination, profile, http_client)
+
+
 async def _mapbox_directions(
     origin: Coordinate,
     destination: Coordinate,
@@ -269,6 +293,9 @@ async def generate_routes(
     routes: list[RouteOption] = []
     now = datetime.now()
 
+    # Per-request Mapbox directions cache (avoids duplicate API calls for same legs)
+    mapbox_cache: dict = {}
+
     # Get shared http client for connection pooling (falls back to per-call clients)
     http_client = (app_state or {}).get("http_client")
     otp_available = (app_state or {}).get("otp_available", False)
@@ -302,6 +329,7 @@ async def generate_routes(
                 otp_available=otp_available,
                 app_state=app_state,
                 weather=weather,
+                mapbox_cache=mapbox_cache,
             )
             continue
         tasks.append(_generate_single_route(
@@ -309,6 +337,7 @@ async def generate_routes(
             http_client=http_client,
             weather=weather,
             app_state=app_state,
+            mapbox_cache=mapbox_cache,
         ))
 
     # Run single-mode routes + hybrid in parallel
@@ -344,6 +373,7 @@ async def _generate_single_route(
     http_client=None,
     weather: Optional[dict] = None,
     app_state: Optional[dict] = None,
+    mapbox_cache: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a single route option."""
 
@@ -360,10 +390,11 @@ async def _generate_single_route(
             http_client=http_client,
             weather=weather,
             app_state=app_state,
+            mapbox_cache=mapbox_cache,
         )
 
     elif mode == RouteMode.DRIVING:
-        mapbox = await _mapbox_directions(origin, destination, "driving-traffic", http_client=http_client)
+        mapbox = await _cached_mapbox_directions(origin, destination, "driving-traffic", http_client=http_client, cache=mapbox_cache)
 
         if mapbox:
             geometry = mapbox["geometry"]
@@ -413,7 +444,7 @@ async def _generate_single_route(
         cost = calculate_cost(RouteMode.DRIVING, total_dist, destination.lat, destination.lng)
 
     elif mode == RouteMode.WALKING:
-        mapbox = await _mapbox_directions(origin, destination, "walking", http_client=http_client)
+        mapbox = await _cached_mapbox_directions(origin, destination, "walking", http_client=http_client, cache=mapbox_cache)
 
         if mapbox:
             geometry = mapbox["geometry"]
@@ -562,6 +593,7 @@ async def _generate_transit_route(
     http_client=None,
     weather: Optional[dict] = None,
     app_state: Optional[dict] = None,
+    mapbox_cache: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
     # Find nearest stops — progressive radius expansion for suburban origins
@@ -600,8 +632,8 @@ async def _generate_transit_route(
     dest_profile = "driving-traffic" if drive_from_dest_station else "walking"
 
     access_to_geo, access_from_geo = await asyncio.gather(
-        _mapbox_directions(origin, origin_station_coord, origin_profile, http_client=http_client),
-        _mapbox_directions(dest_station_coord, destination, dest_profile, http_client=http_client),
+        _cached_mapbox_directions(origin, origin_station_coord, origin_profile, http_client=http_client, cache=mapbox_cache),
+        _cached_mapbox_directions(dest_station_coord, destination, dest_profile, http_client=http_client, cache=mapbox_cache),
     )
 
     # --- Access TO origin station ---
@@ -941,6 +973,7 @@ async def _generate_hybrid_routes(
     otp_available: bool = False,
     weather: Optional[dict] = None,
     app_state: Optional[dict] = None,
+    mapbox_cache: Optional[dict] = None,
 ) -> list[RouteOption]:
     """Generate 1-3 hybrid (drive + transit) routes via multiple station candidates.
 
@@ -1105,6 +1138,7 @@ async def _generate_hybrid_routes(
             origin, destination, candidate, gtfs, predictor,
             is_adverse, now, http_client, otp_available,
             weather=weather,
+            mapbox_cache=mapbox_cache,
         )
         for candidate in top_candidates
     ]
@@ -1132,6 +1166,7 @@ async def _build_single_hybrid_route(
     http_client=None,
     otp_available: bool = False,
     weather: Optional[dict] = None,
+    mapbox_cache: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Build a single hybrid route via a specific park-and-ride station."""
 
@@ -1142,8 +1177,8 @@ async def _build_single_hybrid_route(
     station_coord = Coordinate(lat=park_stop["lat"], lng=park_stop["lng"])
 
     # --- Drive to station (Mapbox driving-traffic) ---
-    drive_geo = await _mapbox_directions(
-        origin, station_coord, "driving-traffic", http_client=http_client,
+    drive_geo = await _cached_mapbox_directions(
+        origin, station_coord, "driving-traffic", http_client=http_client, cache=mapbox_cache,
     )
 
     drive_dist = drive_geo["distance_km"] if drive_geo else haversine(origin.lat, origin.lng, park_stop["lat"], park_stop["lng"]) * 1.3
@@ -1253,9 +1288,9 @@ async def _build_single_hybrid_route(
             # Walk from final station
             walk_dist = dest_stop["distance_km"]
             walk_dur = _estimate_duration(walk_dist, RouteMode.WALKING)
-            walk_geo = await _mapbox_directions(
+            walk_geo = await _cached_mapbox_directions(
                 Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"]),
-                destination, "walking", http_client=http_client,
+                destination, "walking", http_client=http_client, cache=mapbox_cache,
             )
             transit_segments.append(RouteSegment(
                 mode=RouteMode.WALKING,

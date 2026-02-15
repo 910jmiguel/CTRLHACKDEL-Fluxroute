@@ -342,87 +342,108 @@ async def _try_fetch_trip_updates_protobuf(client: httpx.AsyncClient) -> dict:
     return updates
 
 
-async def _try_fetch_realtime(app_state: dict) -> None:
-    """Try to fetch real GTFS-RT data, fall back to mock."""
-    vehicles_fetched = False
-    alerts_fetched = False
+async def _fetch_vehicles(client: httpx.AsyncClient) -> list[VehiclePosition]:
+    """Fetch vehicles: try protobuf first, then JSON fallback."""
+    try:
+        vehicles = await _try_fetch_vehicles_protobuf(client)
+        if vehicles:
+            logger.info(f"Fetched {len(vehicles)} real vehicle positions (protobuf)")
+            return vehicles
+    except Exception as e:
+        logger.debug(f"TTC protobuf vehicle feed unavailable: {e}")
 
     try:
+        vehicles = await _try_fetch_vehicles_json(client)
+        if vehicles:
+            logger.info(f"Fetched {len(vehicles)} real vehicle positions (JSON)")
+            return vehicles
+    except Exception as e:
+        logger.debug(f"TTC JSON vehicle feed unavailable: {e}")
+
+    return []
+
+
+async def _fetch_alerts(client: httpx.AsyncClient) -> list[ServiceAlert]:
+    """Fetch alerts: try protobuf first, then JSON fallback."""
+    try:
+        alerts = await _try_fetch_alerts_protobuf(client)
+        if alerts:
+            logger.info(f"Fetched {len(alerts)} real alerts (protobuf)")
+            return alerts
+    except Exception as e:
+        logger.debug(f"TTC protobuf alerts feed unavailable: {e}")
+
+    try:
+        alerts = await _try_fetch_alerts_json(client)
+        if alerts:
+            logger.info(f"Fetched {len(alerts)} real alerts (JSON)")
+            return alerts
+    except Exception as e:
+        logger.debug(f"TTC JSON alerts feed unavailable: {e}")
+
+    return []
+
+
+async def _fetch_trip_updates(client: httpx.AsyncClient) -> dict:
+    """Fetch trip updates (protobuf only)."""
+    try:
+        updates = await _try_fetch_trip_updates_protobuf(client)
+        if updates:
+            logger.info(f"Fetched {len(updates)} trip updates")
+            return updates
+    except Exception as e:
+        logger.debug(f"TTC trip updates feed unavailable: {e}")
+    return {}
+
+
+async def _try_fetch_realtime(app_state: dict) -> None:
+    """Try to fetch real GTFS-RT data in parallel, fall back to mock."""
+    try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            # Try vehicle positions: protobuf first, then JSON
-            try:
-                vehicles = await _try_fetch_vehicles_protobuf(client)
-                if vehicles:
-                    app_state["vehicles"] = vehicles
-                    vehicles_fetched = True
-                    logger.info(f"Fetched {len(vehicles)} real vehicle positions (protobuf)")
-            except Exception as e:
-                logger.debug(f"TTC protobuf vehicle feed unavailable: {e}")
+            # Fetch all three feeds in parallel
+            vehicles, alerts, trip_updates = await asyncio.gather(
+                _fetch_vehicles(client),
+                _fetch_alerts(client),
+                _fetch_trip_updates(client),
+            )
 
-            if not vehicles_fetched:
-                try:
-                    vehicles = await _try_fetch_vehicles_json(client)
-                    if vehicles:
-                        app_state["vehicles"] = vehicles
-                        vehicles_fetched = True
-                        logger.info(f"Fetched {len(vehicles)} real vehicle positions (JSON)")
-                except Exception as e:
-                    logger.debug(f"TTC JSON vehicle feed unavailable: {e}")
+            app_state["vehicles"] = vehicles if vehicles else _generate_mock_vehicles()
+            app_state["alerts"] = alerts if alerts else _get_mock_alerts()
+            app_state["trip_updates"] = trip_updates
 
-            # Try alerts: protobuf first, then JSON
-            try:
-                alerts = await _try_fetch_alerts_protobuf(client)
-                if alerts:
-                    app_state["alerts"] = alerts
-                    alerts_fetched = True
-                    logger.info(f"Fetched {len(alerts)} real alerts (protobuf)")
-            except Exception as e:
-                logger.debug(f"TTC protobuf alerts feed unavailable: {e}")
-
-            if not alerts_fetched:
-                try:
-                    alerts = await _try_fetch_alerts_json(client)
-                    if alerts:
-                        app_state["alerts"] = alerts
-                        alerts_fetched = True
-                        logger.info(f"Fetched {len(alerts)} real alerts (JSON)")
-                except Exception as e:
-                    logger.debug(f"TTC JSON alerts feed unavailable: {e}")
-
-            # Try trip updates (protobuf only — no JSON fallback)
-            try:
-                trip_updates = await _try_fetch_trip_updates_protobuf(client)
-                if trip_updates:
-                    app_state["trip_updates"] = trip_updates
-                    logger.info(f"Fetched {len(trip_updates)} trip updates")
-                else:
-                    app_state["trip_updates"] = {}
-            except Exception as e:
-                logger.debug(f"TTC trip updates feed unavailable: {e}")
-                app_state["trip_updates"] = {}
+            if not vehicles:
+                logger.debug("Using mock vehicle data")
+            if not alerts:
+                logger.debug("Using mock alert data")
 
     except Exception as e:
         logger.debug(f"Real-time fetch failed: {e}")
-
-    # Fallback to mock data for anything we couldn't fetch
-    if not vehicles_fetched:
         app_state["vehicles"] = _generate_mock_vehicles()
-        logger.debug("Using mock vehicle data")
-    if not alerts_fetched:
         app_state["alerts"] = _get_mock_alerts()
-        logger.debug("Using mock alert data")
+        app_state["trip_updates"] = {}
 
 
 async def _poller_loop(app_state: dict):
-    """Background polling loop."""
+    """Background polling loop with exponential backoff on failures."""
+    consecutive_failures = 0
+
     while True:
         try:
             await _try_fetch_realtime(app_state)
+            consecutive_failures = 0  # Reset on success
         except Exception as e:
-            logger.error(f"Poller error: {e}")
+            consecutive_failures += 1
+            logger.error(f"Poller error (failure #{consecutive_failures}): {e}")
             app_state["vehicles"] = _generate_mock_vehicles()
             app_state["alerts"] = _get_mock_alerts()
-        await asyncio.sleep(POLL_INTERVAL)
+
+        # Exponential backoff: min(30 * 2^failures, 300) on failures, normal interval on success
+        if consecutive_failures > 0:
+            backoff = min(POLL_INTERVAL * (2 ** consecutive_failures), 300)
+            logger.debug(f"Poller backing off for {backoff}s")
+            await asyncio.sleep(backoff)
+        else:
+            await asyncio.sleep(POLL_INTERVAL)
 
 
 async def start_realtime_poller(app_state: dict) -> Optional[asyncio.Task]:

@@ -307,7 +307,7 @@ export default function FluxMap({
       fitToRoute(map.current, selectedRoute);
     }
 
-    // Register congestion tooltips on sub-segment layers
+    // Delegated tooltip handler for congestion + road closures via single mousemove
     const m = map.current;
     const popup = new mapboxgl.Popup({
       closeButton: false,
@@ -322,66 +322,56 @@ export default function FluxMap({
       severe: "Severe Traffic — significant delays",
     };
 
-    // Track all registered listeners for cleanup
-    const registeredListeners: Array<{ layerId: string; event: string; handler: (e: mapboxgl.MapMouseEvent) => void }> = [];
+    let tooltipVisible = false;
 
-    const style = m.getStyle();
-    if (style?.layers) {
-      style.layers.forEach((layer) => {
-        if (layer.id.startsWith("route-layer-congestion-")) {
-          const onEnter = (e: mapboxgl.MapMouseEvent) => {
-            m.getCanvas().style.cursor = "pointer";
-            if (e.features && e.features[0]) {
-              const congestion = e.features[0].properties?.congestion as string;
-              const desc = congestionDescriptions[congestion] || congestion;
-              popup.setLngLat(e.lngLat).setHTML(desc).addTo(m!);
-            }
-          };
-          const onLeave = () => {
-            m.getCanvas().style.cursor = "";
-            popup.remove();
-          };
-          m.on("mouseenter", layer.id, onEnter);
-          m.on("mouseleave", layer.id, onLeave);
-          registeredListeners.push({ layerId: layer.id, event: "mouseenter", handler: onEnter });
-          registeredListeners.push({ layerId: layer.id, event: "mouseleave", handler: onLeave });
-        }
+    const onMouseMove = (e: mapboxgl.MapMouseEvent) => {
+      // Query all interactive layers at once (congestion + road closures)
+      const features = m.queryRenderedFeatures(e.point, {
+        layers: [
+          // Collect congestion layers dynamically from active style
+          ...(m.getStyle()?.layers?.filter(l => l.id.includes("-cong-") && l.id.startsWith("route-layer-")).map(l => l.id) || []),
+          // Road closure layers (if they exist)
+          ...(m.getLayer("road-closure-line") ? ["road-closure-line"] : []),
+          ...(m.getLayer("road-closure-symbol") ? ["road-closure-symbol"] : []),
+        ].filter(id => m.getLayer(id)),
       });
-    }
 
-    // Road Closure Tooltips
-    ["road-closure-line", "road-closure-symbol"].forEach((layerId) => {
-      const onEnter = (e: mapboxgl.MapMouseEvent) => {
-        m.getCanvas().style.cursor = "pointer";
-        if (e.features && e.features[0]) {
-          const props = e.features[0].properties;
-          if (props) {
-            const road = props.road || "Road Closure";
-            const desc = props.description || props.reason || "No details available";
-            const endDate = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
+      if (features.length > 0) {
+        const feature = features[0];
+        const props = feature.properties || {};
+        const layerId = feature.layer?.id || "";
 
-            popup.setLngLat(e.lngLat).setHTML(
-              `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${endDate}`
-            ).addTo(m!);
-          }
+        let html = "";
+
+        if (layerId.includes("-cong-")) {
+          // Congestion tooltip
+          const congestion = props.congestion as string;
+          html = congestionDescriptions[congestion] || congestion;
+        } else if (layerId.startsWith("road-closure")) {
+          // Road closure tooltip
+          const road = props.road || "Road Closure";
+          const desc = props.description || props.reason || "No details available";
+          const endDate = props.planned_end_date ? `<br><span class="text-[9px] text-slate-400">Ends: ${new Date(props.planned_end_date).toLocaleDateString()}</span>` : "";
+          html = `<div class="font-bold">${road}</div><div class="text-xs">${desc}</div>${endDate}`;
         }
-      };
-      const onLeave = () => {
+
+        if (html) {
+          m.getCanvas().style.cursor = "pointer";
+          popup.setLngLat(e.lngLat).setHTML(html).addTo(m);
+          tooltipVisible = true;
+        }
+      } else if (tooltipVisible) {
         m.getCanvas().style.cursor = "";
         popup.remove();
-      };
-      m.on("mouseenter", layerId, onEnter);
-      m.on("mouseleave", layerId, onLeave);
-      registeredListeners.push({ layerId, event: "mouseenter", handler: onEnter });
-      registeredListeners.push({ layerId, event: "mouseleave", handler: onLeave });
-    });
+        tooltipVisible = false;
+      }
+    };
+
+    m.on("mousemove", onMouseMove);
 
     return () => {
       popup.remove();
-      // Clean up all registered listeners to prevent memory leaks
-      for (const { layerId, event, handler } of registeredListeners) {
-        m.off(event, layerId, handler);
-      }
+      m.off("mousemove", onMouseMove);
     };
   }, [routes, selectedRoute, showUnselectedRoutes, mapLoaded]);
 
