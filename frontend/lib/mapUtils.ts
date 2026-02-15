@@ -289,6 +289,11 @@ export function updateVehicles(
   }
 }
 
+export function clearVehicles(map: mapboxgl.Map) {
+  if (map.getLayer("vehicles-layer")) map.removeLayer("vehicles-layer");
+  if (map.getSource(VEHICLES_SOURCE)) map.removeSource(VEHICLES_SOURCE);
+}
+
 export function drawTransitOverlay(
   map: mapboxgl.Map,
   transitData: TransitLinesData
