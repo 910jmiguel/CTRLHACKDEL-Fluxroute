@@ -112,11 +112,11 @@ body {
   border-radius: 8px !important;
 }
 
-.mapboxgl-ctrl-geocoder .suggestions > li > a {
+.mapboxgl-ctrl-geocoder .suggestions>li>a {
   color: #f0f0f0 !important;
 }
 
-.mapboxgl-ctrl-geocoder .suggestions > .active > a {
+.mapboxgl-ctrl-geocoder .suggestions>.active>a {
   background: rgba(59, 130, 246, 0.2) !important;
 }
 
@@ -150,18 +150,25 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.1) !important;
 }
 
-[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions > li > a {
+[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions>li>a {
   color: #1e293b !important;
 }
 
-[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions > .active > a {
+[data-theme="light"] .mapboxgl-ctrl-geocoder .suggestions>.active>a {
   background: rgba(37, 99, 235, 0.1) !important;
 }
 
 /* Loading pulse animation */
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 .pulse-glow {
@@ -170,8 +177,15 @@ body {
 
 /* Slide-in animation */
 @keyframes slide-up {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .slide-up {
@@ -183,41 +197,46 @@ body {
 /* GO Train: left → right */
 @keyframes trainMoveRight {
   0% {
-    transform: translateX(-600px);
+    transform: translateX(-1200px);
   }
+
   100% {
-    transform: translateX(calc(100vw + 600px));
+    transform: translateX(calc(100vw + 1200px));
   }
 }
 
 .train-go {
   left: 0;
-  transform: translateX(-600px);
+  transform: translateX(-1200px);
   animation: trainMoveRight 18s linear infinite;
 }
 
 /* Subway: right → left */
 @keyframes trainMoveLeft {
   0% {
-    transform: translateX(calc(100vw + 600px));
+    transform: translateX(calc(100vw + 1200px));
   }
+
   100% {
-    transform: translateX(-600px);
+    transform: translateX(-1200px);
   }
 }
 
 .train-subway {
   left: 0;
-  transform: translateX(calc(100vw + 600px));
+  transform: translateX(calc(100vw + 1200px));
   animation: trainMoveLeft 22s linear infinite;
   animation-delay: 4s;
 }
 
 /* Star twinkle */
 @keyframes starTwinkle {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.2;
   }
+
   50% {
     opacity: 0.8;
   }
@@ -229,9 +248,12 @@ body {
 
 /* Window lights twinkle */
 @keyframes windowTwinkle {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.2;
   }
+
   50% {
     opacity: 0.7;
   }
@@ -243,10 +265,13 @@ body {
 
 /* CN Tower beacon pulse */
 @keyframes beaconPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.3;
     r: 3;
   }
+
   50% {
     opacity: 1;
     r: 5;
@@ -259,9 +284,12 @@ body {
 
 /* CTA button glow */
 @keyframes ctaGlow {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 60px rgba(59, 130, 246, 0.1);
   }
+
   50% {
     box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 0 80px rgba(59, 130, 246, 0.15);
   }

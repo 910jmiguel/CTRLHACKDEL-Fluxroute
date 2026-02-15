@@ -145,26 +145,26 @@ export default function LandingPage() {
       <Tracks />
 
       {/* GO Train — moves left to right */}
-      <div className="train-go absolute bottom-[68px] z-10">
+      <div className="train-go absolute bottom-[80px] z-10">
         <Image
           src="/images/go-train.svg"
           alt="GO Train"
-          width={500}
-          height={64}
-          className="h-16 w-auto"
+          width={1000}
+          height={128}
+          className="h-28 w-auto"
           draggable={false}
           priority
         />
       </div>
 
       {/* Subway — moves right to left */}
-      <div className="train-subway absolute bottom-[18px] z-10">
+      <div className="train-subway absolute bottom-[32px] z-10">
         <Image
           src="/images/subway.png"
           alt="TTC Subway"
-          width={600}
-          height={64}
-          className="h-16 w-auto"
+          width={1200}
+          height={192}
+          className="h-48 w-auto"
           draggable={false}
           priority
         />
