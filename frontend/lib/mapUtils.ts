@@ -209,6 +209,27 @@ export function fitToRoute(
   }
 }
 
+const BUS_MARKER_IMAGE = "bus-marker-icon";
+
+function _ensureBusMarkerImage(map: mapboxgl.Map, callback: () => void) {
+  if (map.hasImage(BUS_MARKER_IMAGE)) {
+    callback();
+    return;
+  }
+  map.loadImage("/images/bus-marker.svg", (error, image) => {
+    if (error || !image) {
+      // Fallback: add a simple colored square so the symbol layer doesn't break
+      // This shouldn't normally happen since the SVG is a local static asset
+      callback();
+      return;
+    }
+    if (!map.hasImage(BUS_MARKER_IMAGE)) {
+      map.addImage(BUS_MARKER_IMAGE, image, { sdf: false });
+    }
+    callback();
+  });
+}
+
 export function updateVehicles(
   map: mapboxgl.Map,
   vehicles: VehiclePosition[]
@@ -233,17 +254,37 @@ export function updateVehicles(
     (map.getSource(VEHICLES_SOURCE) as mapboxgl.GeoJSONSource).setData(geojson);
   } else {
     map.addSource(VEHICLES_SOURCE, { type: "geojson", data: geojson });
-    map.addLayer({
-      id: "vehicles-layer",
-      type: "circle",
-      source: VEHICLES_SOURCE,
-      paint: {
-        "circle-radius": 4,
-        "circle-color": "#F0CC49",
-        "circle-opacity": 0.8,
-        "circle-stroke-width": 1,
-        "circle-stroke-color": "#000",
-      },
+
+    _ensureBusMarkerImage(map, () => {
+      if (map.hasImage(BUS_MARKER_IMAGE)) {
+        map.addLayer({
+          id: "vehicles-layer",
+          type: "symbol",
+          source: VEHICLES_SOURCE,
+          layout: {
+            "icon-image": BUS_MARKER_IMAGE,
+            "icon-size": 0.55,
+            "icon-rotate": ["get", "bearing"],
+            "icon-rotation-alignment": "map",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+          },
+        });
+      } else {
+        // Fallback to circle layer if image failed to load
+        map.addLayer({
+          id: "vehicles-layer",
+          type: "circle",
+          source: VEHICLES_SOURCE,
+          paint: {
+            "circle-radius": 5,
+            "circle-color": "#E53935",
+            "circle-opacity": 0.9,
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#fff",
+          },
+        });
+      }
     });
   }
 }

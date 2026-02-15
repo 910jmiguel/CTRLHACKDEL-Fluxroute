@@ -17,6 +17,7 @@ METROLINX_API_KEY = os.getenv("METROLINX_API_KEY", "")
 # TTC GTFS-RT endpoints (protobuf)
 TTC_VEHICLE_URL = "https://opendata.toronto.ca/toronto-transit-commission/ttc-routes-and-schedules/opendata_ttc_vehicle_positions"
 TTC_ALERTS_URL = "https://opendata.toronto.ca/toronto-transit-commission/ttc-routes-and-schedules/opendata_ttc_alerts"
+TTC_TRIP_UPDATES_URL = "https://opendata.toronto.ca/toronto-transit-commission/ttc-routes-and-schedules/opendata_ttc_trip_updates"
 
 # TTC JSON-based API (more reliable fallback)
 TTC_LIVE_VEHICLES_URL = "https://alerts.ttc.ca/api/alerts/live-map/getVehicles"
@@ -306,6 +307,41 @@ async def _try_fetch_alerts_json(client: httpx.AsyncClient) -> list[ServiceAlert
     return alerts
 
 
+async def _try_fetch_trip_updates_protobuf(client: httpx.AsyncClient) -> dict:
+    """Fetch TTC GTFS-RT trip updates protobuf feed.
+
+    Returns dict: {(trip_id, stop_id): {"arrival": epoch_seconds, "departure": epoch_seconds}}
+    """
+    resp = await client.get(TTC_TRIP_UPDATES_URL)
+    if resp.status_code != 200:
+        return {}
+
+    from google.transit import gtfs_realtime_pb2
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(resp.content)
+
+    updates = {}
+    for entity in feed.entity:
+        if entity.HasField("trip_update"):
+            tu = entity.trip_update
+            trip_id = str(tu.trip.trip_id) if tu.trip.trip_id else None
+            if not trip_id:
+                continue
+            for stu in tu.stop_time_update:
+                stop_id = str(stu.stop_id) if stu.stop_id else None
+                if not stop_id:
+                    continue
+                entry = {}
+                if stu.HasField("arrival") and stu.arrival.time:
+                    entry["arrival"] = stu.arrival.time
+                if stu.HasField("departure") and stu.departure.time:
+                    entry["departure"] = stu.departure.time
+                if entry:
+                    updates[(trip_id, stop_id)] = entry
+
+    return updates
+
+
 async def _try_fetch_realtime(app_state: dict) -> None:
     """Try to fetch real GTFS-RT data, fall back to mock."""
     vehicles_fetched = False
@@ -353,6 +389,18 @@ async def _try_fetch_realtime(app_state: dict) -> None:
                 except Exception as e:
                     logger.debug(f"TTC JSON alerts feed unavailable: {e}")
 
+            # Try trip updates (protobuf only — no JSON fallback)
+            try:
+                trip_updates = await _try_fetch_trip_updates_protobuf(client)
+                if trip_updates:
+                    app_state["trip_updates"] = trip_updates
+                    logger.info(f"Fetched {len(trip_updates)} trip updates")
+                else:
+                    app_state["trip_updates"] = {}
+            except Exception as e:
+                logger.debug(f"TTC trip updates feed unavailable: {e}")
+                app_state["trip_updates"] = {}
+
     except Exception as e:
         logger.debug(f"Real-time fetch failed: {e}")
 
@@ -382,6 +430,7 @@ async def start_realtime_poller(app_state: dict) -> Optional[asyncio.Task]:
     # Initialize with mock data immediately
     app_state["vehicles"] = _generate_mock_vehicles()
     app_state["alerts"] = _get_mock_alerts()
+    app_state["trip_updates"] = {}
 
     task = asyncio.create_task(_poller_loop(app_state))
     logger.info("Real-time poller started")
