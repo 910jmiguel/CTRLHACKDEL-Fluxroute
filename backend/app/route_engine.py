@@ -300,7 +300,8 @@ async def generate_routes(
     results = await asyncio.gather(*tasks, return_exceptions=True)
     for result in results:
         if isinstance(result, Exception):
-            logger.error(f"Route generation failed: {result}")
+            import traceback
+            logger.error(f"Route generation failed: {result}\n{''.join(traceback.format_exception(type(result), result, result.__traceback__))}")
         elif isinstance(result, list):
             # Hybrid routes return a list
             routes.extend(result)
@@ -601,6 +602,7 @@ def _check_line_disruption(alerts: list, line_name: str) -> tuple[bool, str]:
     """Check if a transit line has active disruptions.
 
     Returns (is_disrupted, reason).
+    Alerts can be ServiceAlert Pydantic models or plain dicts.
     """
     if not alerts or not line_name:
         return False, ""
@@ -608,18 +610,28 @@ def _check_line_disruption(alerts: list, line_name: str) -> tuple[bool, str]:
     line_lower = line_name.lower()
     # Build search terms from line name
     search_terms = [line_lower]
-    # Extract line number if present (e.g. "Line 1 Yonge-University" -> "line 1", "yonge")
     parts = line_lower.split()
     for p in parts:
         if len(p) > 2:
             search_terms.append(p)
 
     for alert in alerts:
-        if not alert.get("active", True):
+        # Support both Pydantic models and dicts
+        if hasattr(alert, "active"):
+            active = alert.active
+            title = (alert.title or "").lower()
+            desc = (alert.description or "").lower()
+            severity = alert.severity or "info"
+            title_raw = alert.title or "Service disruption"
+        else:
+            active = alert.get("active", True)
+            title = (alert.get("title", "") or "").lower()
+            desc = (alert.get("description", "") or "").lower()
+            severity = alert.get("severity", "info")
+            title_raw = alert.get("title", "Service disruption")
+
+        if not active:
             continue
-        title = (alert.get("title", "") or "").lower()
-        desc = (alert.get("description", "") or "").lower()
-        severity = alert.get("severity", "info")
 
         # Only consider warnings and errors as disruptions
         if severity not in ("warning", "error"):
@@ -628,7 +640,7 @@ def _check_line_disruption(alerts: list, line_name: str) -> tuple[bool, str]:
         text = f"{title} {desc}"
         for term in search_terms:
             if term in text:
-                return True, alert.get("title", "Service disruption")
+                return True, title_raw
 
     return False, ""
 
@@ -642,6 +654,8 @@ def _score_park_and_ride_candidate(
     has_parking: bool = False,
     is_disrupted: bool = False,
     next_departure_min: int | None = None,
+    is_go: bool = False,
+    now: Optional[datetime] = None,
 ) -> float:
     """Score a park-and-ride station candidate by strategic value.
 
@@ -651,6 +665,8 @@ def _score_park_and_ride_candidate(
     - Parking availability bonus
     - Service disruption penalty
     - Frequent service bonus
+    - TTC priority over GO (subway runs all day, GO is limited)
+    - Weekend/off-hours GO penalty (many GO lines don't run)
     """
     drive_dist = haversine(origin.lat, origin.lng, station_lat, station_lng)
     transit_dist = haversine(station_lat, station_lng, destination.lat, destination.lng)
@@ -682,6 +698,23 @@ def _score_park_and_ride_candidate(
     # Parking bonus
     if has_parking:
         base_score += 0.3
+
+    # TTC subway priority: runs frequently all day, every day
+    if not is_go:
+        base_score += 0.15  # TTC bonus
+
+    # GO Transit: check weekend/off-hours — most GO lines have limited service
+    if is_go and now:
+        is_weekend = now.weekday() >= 5  # Saturday=5, Sunday=6
+        hour = now.hour
+        # GO trains typically run: weekday peak 6-10am, 3-8pm
+        # Weekend service is very limited (some lines don't run at all)
+        if is_weekend:
+            base_score -= 0.4  # Strong weekend penalty
+        elif hour < 6 or hour > 22:
+            base_score -= 0.3  # Late night — no GO service
+        elif 10 <= hour <= 15:
+            base_score -= 0.1  # Midday — reduced GO frequency
 
     # Service disruption penalty
     if is_disrupted:
@@ -720,8 +753,9 @@ async def _generate_hybrid_routes(
 
     # --- 1. Gather station candidates (rapid transit only) ---
     # TTC subway/LRT stations from GTFS (filtered to route_type 0/1/2)
+    # Use 25km radius to cover suburban origins (e.g. Richmond Hill → Finch is 11km)
     gtfs_stops = find_nearest_rapid_transit_stations(
-        gtfs, origin.lat, origin.lng, radius_km=10.0, limit=15
+        gtfs, origin.lat, origin.lng, radius_km=25.0, limit=15
     )
     gtfs_stops = [s for s in gtfs_stops if s["distance_km"] > 0.5]
 
@@ -827,6 +861,8 @@ async def _generate_hybrid_routes(
             has_parking=has_parking,
             is_disrupted=is_disrupted,
             next_departure_min=next_dep_min,
+            is_go=c.get("is_go", False),
+            now=now,
         )
         if score > 0:
             scored.append((score, c))
@@ -837,10 +873,11 @@ async def _generate_hybrid_routes(
     ttc_picks = [c for _, c in scored if not c["is_go"]]
     go_picks = [c for _, c in scored if c["is_go"]]
 
+    max_candidates = min(5, len(scored))
     top_candidates = []
     # Take best overall
     for _, c in scored:
-        if len(top_candidates) >= 3:
+        if len(top_candidates) >= max_candidates:
             break
         top_candidates.append(c)
 

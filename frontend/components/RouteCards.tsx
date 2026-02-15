@@ -81,7 +81,10 @@ function SegmentTimeline({
   segments: RouteSegment[];
   parkingInfo?: RouteOption["parking_info"];
 }) {
-  const [expandedSeg, setExpandedSeg] = useState<number | null>(null);
+  // Auto-expand directions for single-segment routes (pure driving/walking)
+  const [expandedSeg, setExpandedSeg] = useState<number | null>(
+    segments.length === 1 ? 0 : null
+  );
 
   // Find where to insert parking info (after driving segment in hybrid)
   let parkingInsertAfter = -1;
@@ -295,23 +298,13 @@ export default function RouteCards({
                 </div>
               )}
 
-              {/* Segment timeline (shows per-segment breakdown) */}
-              {isSelected && route.segments.length > 1 && (
+              {/* Segment timeline — consistent for all route types */}
+              {isSelected && route.segments.length > 0 && (
                 <SegmentTimeline
                   segments={route.segments}
                   parkingInfo={route.parking_info}
                 />
               )}
-
-              {/* For single-segment routes (pure driving/walking), show direction steps */}
-              {isSelected &&
-                route.segments.length === 1 &&
-                route.segments[0].steps &&
-                route.segments[0].steps.length > 0 && (
-                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                    <DirectionSteps steps={route.segments[0].steps} />
-                  </div>
-                )}
 
               {!isSelected && route.summary && (
                 <div className="text-xs text-[var(--text-muted)] mt-1.5 truncate">
