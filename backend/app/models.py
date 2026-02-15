@@ -200,6 +200,9 @@ class TransitRouteSuggestion(BaseModel):
     estimated_duration_min: float = 0.0
     estimated_distance_km: float = 0.0
     intermediate_stops: list[dict] = Field(default_factory=list)  # [{stop_id, stop_name, lat, lng}]
+    transfer_group_id: Optional[str] = None       # Links paired transfer legs
+    transfer_sequence: Optional[int] = None        # 1 = first leg, 2 = second leg
+    transfer_station_name: Optional[str] = None    # e.g. "Eglinton" for display
 
 
 class TransitSuggestionsRequest(BaseModel):

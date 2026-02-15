@@ -84,6 +84,28 @@ export function useCustomRoute() {
     setCalculatedRoute(null);
   }, []);
 
+  const selectTransferPair = useCallback(
+    (segId: string, leg1: TransitRouteSuggestion, leg2: TransitRouteSuggestion) => {
+      setSegments((prev) => {
+        const idx = prev.findIndex((s) => s.id === segId);
+        if (idx < 0) return prev;
+        const updated = [...prev];
+        // Replace current segment with leg 1
+        updated[idx] = { ...updated[idx], mode: "transit", selectedSuggestion: leg1 };
+        // Insert leg 2 as a new segment right after
+        const newSeg: CustomSegmentV2 = {
+          id: `seg_${++segIdCounter}`,
+          mode: "transit",
+          selectedSuggestion: leg2,
+        };
+        updated.splice(idx + 1, 0, newSeg);
+        return updated;
+      });
+      setCalculatedRoute(null);
+    },
+    []
+  );
+
   const moveSegment = useCallback((id: string, direction: "up" | "down") => {
     setSegments((prev) => {
       const idx = prev.findIndex((s) => s.id === id);
@@ -156,6 +178,10 @@ export function useCustomRoute() {
     [segments]
   );
 
+  const clearCalculatedRoute = useCallback(() => {
+    setCalculatedRoute(null);
+  }, []);
+
   const reset = useCallback(() => {
     setSegments([]);
     setCalculatedRoute(null);
@@ -174,7 +200,9 @@ export function useCustomRoute() {
     removeSegment,
     updateSegmentMode,
     selectSuggestion,
+    selectTransferPair,
     clearSuggestion,
+    clearCalculatedRoute,
     moveSegment,
     fetchSuggestions,
     calculate,

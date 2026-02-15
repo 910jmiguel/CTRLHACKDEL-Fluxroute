@@ -32,6 +32,18 @@ _MODE_COLORS = {
     "RAIL": "#3D8B37",
 }
 
+# TTC interchange stations where passengers can transfer between lines
+TTC_TRANSFER_STATIONS = [
+    {"name": "Bloor-Yonge",    "lines": ["1", "2"], "stop_ids": {"1": "YU_BLRY", "2": "BD_BLRY"}, "lat": 43.6709, "lng": -79.3857},
+    {"name": "St George",      "lines": ["1", "2"], "stop_ids": {"1": "YU_STGR", "2": "BD_STGR"}, "lat": 43.6683, "lng": -79.3997},
+    {"name": "Spadina",        "lines": ["1", "2"], "stop_ids": {"1": "YU_SPAD", "2": "BD_SPAD"}, "lat": 43.6672, "lng": -79.4037},
+    {"name": "Sheppard-Yonge", "lines": ["1", "4"], "stop_ids": {"1": "YU_SHEPY", "4": "SH_SHPY"}, "lat": 43.7615, "lng": -79.4111},
+    {"name": "Cedarvale",      "lines": ["1", "5"], "stop_ids": {"1": "YU_CDRV", "5": "EC_CDVL"}, "lat": 43.6998, "lng": -79.4362},
+    {"name": "Eglinton",       "lines": ["1", "5"], "stop_ids": {"1": "YU_EGLN", "5": "EC_EGLN"}, "lat": 43.7057, "lng": -79.3984},
+    {"name": "Kennedy",        "lines": ["2", "5"], "stop_ids": {"2": "BD_KNDY", "5": "EC_KNDY"}, "lat": 43.7326, "lng": -79.2637},
+    {"name": "Finch West",     "lines": ["1", "6"], "stop_ids": {"1": "YU_FNWT", "6": "FW_FNCH"}, "lat": 43.7649, "lng": -79.4912},
+]
+
 # Directional suffixes to strip from stop names
 _DIRECTION_SUFFIXES = [
     " Eastbound Platform",
@@ -136,21 +148,33 @@ async def get_transit_suggestions(
                 if gs.route_id not in existing_routes:
                     suggestions.append(gs)
 
-    # Deduplicate by route_id (keep first occurrence)
+    # Add transfer-based suggestions (multi-line with interchange)
+    transfer_sug = _transfer_suggestions(origin, destination)
+    if transfer_sug:
+        suggestions.extend(transfer_sug)
+
+    # Deduplicate by route_id (keep first occurrence), but skip transfer group suggestions
     seen = set()
     deduped = []
     for s in suggestions:
-        if s.route_id not in seen:
+        if s.transfer_group_id:
+            # Always keep transfer pair suggestions (dedup handled by group_id)
+            deduped.append(s)
+        elif s.route_id not in seen:
             seen.add(s.route_id)
             deduped.append(s)
     suggestions = deduped
 
-    # Sort: subway first, then by estimated duration
+    # Sort: subway first, then by estimated duration; keep transfer pairs together
     mode_order = {"SUBWAY": 0, "TRAM": 1, "BUS": 2, "RAIL": 0}
-    suggestions.sort(key=lambda s: (mode_order.get(s.transit_mode, 3), s.estimated_duration_min))
+    suggestions.sort(key=lambda s: (
+        mode_order.get(s.transit_mode, 3),
+        s.transfer_sequence or 0,
+        s.estimated_duration_min,
+    ))
 
-    # Limit to 10 suggestions
-    suggestions = suggestions[:10]
+    # Limit to 20 suggestions
+    suggestions = suggestions[:20]
 
     logger.info(f"Returning {len(suggestions)} transit suggestions (source={source})")
     return suggestions, source
@@ -611,5 +635,206 @@ def _subway_line_fallback(
             estimated_distance_km=round(est_dist, 2),
             intermediate_stops=intermediate,
         ))
+
+    return suggestions
+
+
+def _transfer_suggestions(
+    origin: Coordinate,
+    destination: Coordinate,
+) -> list[TransitRouteSuggestion]:
+    """Generate transfer-based suggestions across TTC interchange stations.
+
+    For each transfer station that connects two lines, checks if it makes sense
+    to ride Line A to the transfer station and then Line B to the destination
+    (or vice versa). Returns paired suggestions linked by transfer_group_id.
+    """
+    from app.gtfs_parser import TTC_SUBWAY_STATIONS
+
+    suggestions = []
+
+    line_info = {
+        "1": {"name": "Line 1 Yonge-University", "color": "#FFCC00", "mode": "SUBWAY"},
+        "2": {"name": "Line 2 Bloor-Danforth", "color": "#00A651", "mode": "SUBWAY"},
+        "4": {"name": "Line 4 Sheppard", "color": "#A8518A", "mode": "SUBWAY"},
+        "5": {"name": "Line 5 Eglinton", "color": "#FF6600", "mode": "TRAM"},
+        "6": {"name": "Line 6 Finch West", "color": "#8B4513", "mode": "TRAM"},
+    }
+
+    trip_bearing = _bearing(origin.lat, origin.lng, destination.lat, destination.lng)
+
+    # Pre-index stations by line
+    stations_by_line: dict[str, list[dict]] = {}
+    for s in TTC_SUBWAY_STATIONS:
+        lid = str(s.get("route_id", ""))
+        stations_by_line.setdefault(lid, []).append(s)
+
+    for xfer in TTC_TRANSFER_STATIONS:
+        line_a, line_b = xfer["lines"][0], xfer["lines"][1]
+
+        for first_line, second_line in [(line_a, line_b), (line_b, line_a)]:
+            first_stations = stations_by_line.get(first_line, [])
+            second_stations = stations_by_line.get(second_line, [])
+            if not first_stations or not second_stations:
+                continue
+
+            # Find nearest station on first_line to origin
+            board_station = min(
+                first_stations,
+                key=lambda s: _haversine(origin.lat, origin.lng, s["stop_lat"], s["stop_lon"]),
+            )
+            # Find nearest station on second_line to destination
+            alight_station = min(
+                second_stations,
+                key=lambda s: _haversine(destination.lat, destination.lng, s["stop_lat"], s["stop_lon"]),
+            )
+
+            # Transfer station stop IDs on each line
+            xfer_stop_first = xfer["stop_ids"].get(first_line)
+            xfer_stop_second = xfer["stop_ids"].get(second_line)
+            if not xfer_stop_first or not xfer_stop_second:
+                continue
+
+            # Viability checks
+            board_sid = board_station["stop_id"]
+            alight_sid = alight_station["stop_id"]
+
+            # Don't suggest if boarding/alighting at the transfer station itself
+            if board_sid == xfer_stop_first or alight_sid == xfer_stop_second:
+                continue
+
+            # Walking distance checks (origin to board, destination to alight)
+            walk_to_board = _haversine(origin.lat, origin.lng, board_station["stop_lat"], board_station["stop_lon"])
+            walk_from_alight = _haversine(destination.lat, destination.lng, alight_station["stop_lat"], alight_station["stop_lon"])
+            if walk_to_board > 5.0 or walk_from_alight > 5.0:
+                continue
+
+            # Direction check: overall trip from board to alight via transfer should roughly match trip bearing
+            overall_bearing = _bearing(board_station["stop_lat"], board_station["stop_lon"],
+                                       alight_station["stop_lat"], alight_station["stop_lon"])
+            if _bearing_diff(overall_bearing, trip_bearing) > 135:
+                continue
+
+            # Build intermediate stops for leg 1 (board → transfer)
+            board_idx = next((i for i, s in enumerate(first_stations) if s["stop_id"] == board_sid), None)
+            xfer_first_idx = next((i for i, s in enumerate(first_stations) if s["stop_id"] == xfer_stop_first), None)
+
+            intermediate_1: list[dict] = []
+            est_dist_1 = 0.0
+            if board_idx is not None and xfer_first_idx is not None:
+                lo, hi = min(board_idx, xfer_first_idx), max(board_idx, xfer_first_idx)
+                subset = first_stations[lo:hi + 1]
+                if board_idx > xfer_first_idx:
+                    subset = list(reversed(subset))
+                intermediate_1 = [
+                    {"stop_id": s["stop_id"], "stop_name": s["stop_name"],
+                     "lat": s["stop_lat"], "lng": s["stop_lon"]}
+                    for s in subset
+                ]
+                for k in range(len(intermediate_1) - 1):
+                    est_dist_1 += _haversine(
+                        intermediate_1[k]["lat"], intermediate_1[k]["lng"],
+                        intermediate_1[k + 1]["lat"], intermediate_1[k + 1]["lng"],
+                    )
+            if est_dist_1 == 0:
+                est_dist_1 = _haversine(board_station["stop_lat"], board_station["stop_lon"], xfer["lat"], xfer["lng"])
+
+            # Build intermediate stops for leg 2 (transfer → alight)
+            xfer_second_idx = next((i for i, s in enumerate(second_stations) if s["stop_id"] == xfer_stop_second), None)
+            alight_idx = next((i for i, s in enumerate(second_stations) if s["stop_id"] == alight_sid), None)
+
+            intermediate_2: list[dict] = []
+            est_dist_2 = 0.0
+            if xfer_second_idx is not None and alight_idx is not None:
+                lo, hi = min(xfer_second_idx, alight_idx), max(xfer_second_idx, alight_idx)
+                subset = second_stations[lo:hi + 1]
+                if xfer_second_idx > alight_idx:
+                    subset = list(reversed(subset))
+                intermediate_2 = [
+                    {"stop_id": s["stop_id"], "stop_name": s["stop_name"],
+                     "lat": s["stop_lat"], "lng": s["stop_lon"]}
+                    for s in subset
+                ]
+                for k in range(len(intermediate_2) - 1):
+                    est_dist_2 += _haversine(
+                        intermediate_2[k]["lat"], intermediate_2[k]["lng"],
+                        intermediate_2[k + 1]["lat"], intermediate_2[k + 1]["lng"],
+                    )
+            if est_dist_2 == 0:
+                est_dist_2 = _haversine(xfer["lat"], xfer["lng"], alight_station["stop_lat"], alight_station["stop_lon"])
+
+            # Compute durations
+            first_info_d = line_info.get(first_line, {"name": first_line, "color": "#999", "mode": "SUBWAY"})
+            second_info_d = line_info.get(second_line, {"name": second_line, "color": "#999", "mode": "SUBWAY"})
+            speed_1 = {"SUBWAY": 35, "TRAM": 18}.get(first_info_d["mode"], 35)
+            speed_2 = {"SUBWAY": 35, "TRAM": 18}.get(second_info_d["mode"], 35)
+            est_dur_1 = (est_dist_1 / speed_1) * 60
+            est_dur_2 = (est_dist_2 / speed_2) * 60
+
+            # Direction hints per leg
+            dir_1 = _bearing_to_direction(_bearing(
+                board_station["stop_lat"], board_station["stop_lon"], xfer["lat"], xfer["lng"]
+            ))
+            dir_2 = _bearing_to_direction(_bearing(
+                xfer["lat"], xfer["lng"], alight_station["stop_lat"], alight_station["stop_lon"]
+            ))
+
+            # Get the transfer station objects on each line
+            xfer_station_first = next(
+                (s for s in first_stations if s["stop_id"] == xfer_stop_first), None
+            )
+            xfer_station_second = next(
+                (s for s in second_stations if s["stop_id"] == xfer_stop_second), None
+            )
+            if not xfer_station_first or not xfer_station_second:
+                continue
+
+            group_id = str(uuid.uuid4())[:8]
+
+            # Leg 1: origin line → transfer station
+            suggestions.append(TransitRouteSuggestion(
+                suggestion_id=str(uuid.uuid4())[:8],
+                route_id=first_line,
+                display_name=first_info_d["name"],
+                transit_mode=first_info_d["mode"],
+                color=first_info_d["color"],
+                board_stop_name=board_station["stop_name"],
+                board_coord=Coordinate(lat=board_station["stop_lat"], lng=board_station["stop_lon"]),
+                board_stop_id=board_sid,
+                alight_stop_name=xfer_station_first["stop_name"],
+                alight_coord=Coordinate(lat=xfer_station_first["stop_lat"], lng=xfer_station_first["stop_lon"]),
+                alight_stop_id=xfer_stop_first,
+                direction_hint=dir_1,
+                relevance_reason=f"Transfer at {xfer['name']} to {second_info_d['name']}",
+                estimated_duration_min=round(est_dur_1, 1),
+                estimated_distance_km=round(est_dist_1, 2),
+                intermediate_stops=intermediate_1,
+                transfer_group_id=group_id,
+                transfer_sequence=1,
+                transfer_station_name=xfer["name"],
+            ))
+
+            # Leg 2: transfer station → destination line
+            suggestions.append(TransitRouteSuggestion(
+                suggestion_id=str(uuid.uuid4())[:8],
+                route_id=second_line,
+                display_name=second_info_d["name"],
+                transit_mode=second_info_d["mode"],
+                color=second_info_d["color"],
+                board_stop_name=xfer_station_second["stop_name"],
+                board_coord=Coordinate(lat=xfer_station_second["stop_lat"], lng=xfer_station_second["stop_lon"]),
+                board_stop_id=xfer_stop_second,
+                alight_stop_name=alight_station["stop_name"],
+                alight_coord=Coordinate(lat=alight_station["stop_lat"], lng=alight_station["stop_lon"]),
+                alight_stop_id=alight_sid,
+                direction_hint=dir_2,
+                relevance_reason=f"Transfer from {first_info_d['name']} at {xfer['name']}",
+                estimated_duration_min=round(est_dur_2, 1),
+                estimated_distance_km=round(est_dist_2, 2),
+                intermediate_stops=intermediate_2,
+                transfer_group_id=group_id,
+                transfer_sequence=2,
+                transfer_station_name=xfer["name"],
+            ))
 
     return suggestions

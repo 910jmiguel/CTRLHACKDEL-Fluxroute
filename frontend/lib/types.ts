@@ -171,6 +171,9 @@ export interface TransitRouteSuggestion {
   estimated_duration_min: number;
   estimated_distance_km: number;
   intermediate_stops?: Array<{stop_id: string; stop_name: string; lat: number; lng: number}>;
+  transfer_group_id?: string;
+  transfer_sequence?: number;
+  transfer_station_name?: string;
 }
 
 export interface TransitSuggestionsResponse {
