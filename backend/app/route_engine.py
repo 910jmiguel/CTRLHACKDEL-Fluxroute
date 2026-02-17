@@ -20,7 +20,8 @@ from app.cost_calculator import calculate_cost, calculate_hybrid_cost
 from app.gtfs_parser import (
     find_nearest_stops, find_nearest_rapid_transit_stations, haversine,
     find_transit_route, get_active_service_ids, get_next_departures,
-    get_trip_arrival_at_stop,
+    get_trip_arrival_at_stop, find_transfer_stations, resolve_transfer_stop_id,
+    TTC_LINE_INFO,
 )
 from app.ml_predictor import DelayPredictor
 from app.models import ParkingInfo
@@ -567,6 +568,241 @@ def _enrich_transit_segment(
             seg.arrival_time = f"{(arr_minutes // 60) % 24:02d}:{arr_minutes % 60:02d}"
 
 
+async def _build_transfer_route(
+    origin: Coordinate,
+    destination: Coordinate,
+    origin_stop: dict,
+    dest_stop: dict,
+    transfer_station: dict,
+    gtfs: dict,
+    predictor: DelayPredictor,
+    is_adverse: bool,
+    now: datetime,
+    http_client=None,
+    weather: Optional[dict] = None,
+    app_state: Optional[dict] = None,
+) -> Optional[RouteOption]:
+    """Build a transit route with one transfer between two lines.
+
+    Produces segments: walk/drive to origin station → transit leg 1 → transfer walk →
+    transit leg 2 → walk/drive to destination.
+    """
+    origin_line = str(origin_stop.get("route_id") or "")
+    dest_line = str(dest_stop.get("route_id") or "")
+    if not origin_line or not dest_line:
+        return None
+
+    # Resolve stop IDs at the transfer station for each line
+    transfer_stop_id_leg1 = resolve_transfer_stop_id(gtfs, transfer_station, origin_line)
+    transfer_stop_id_leg2 = resolve_transfer_stop_id(gtfs, transfer_station, dest_line)
+    if not transfer_stop_id_leg1 or not transfer_stop_id_leg2:
+        return None
+
+    segments: list[RouteSegment] = []
+    total_duration = 0.0
+    total_dist = 0.0
+    extra_gas_cost = 0.0
+
+    origin_station_coord = Coordinate(lat=origin_stop["lat"], lng=origin_stop["lng"])
+    dest_station_coord = Coordinate(lat=dest_stop["lat"], lng=dest_stop["lng"])
+    transfer_coord = Coordinate(lat=transfer_station["lat"], lng=transfer_station["lng"])
+
+    # --- Access TO origin station ---
+    origin_access_dist = origin_stop["distance_km"]
+    drive_to_origin = origin_access_dist > 2.5
+    origin_profile = "driving-traffic" if drive_to_origin else "walking"
+
+    dest_access_dist = dest_stop["distance_km"]
+    drive_from_dest = dest_access_dist > 2.5
+    dest_profile = "driving-traffic" if drive_from_dest else "walking"
+
+    access_to_geo, access_from_geo = await asyncio.gather(
+        _mapbox_directions(origin, origin_station_coord, origin_profile, http_client=http_client),
+        _mapbox_directions(dest_station_coord, destination, dest_profile, http_client=http_client),
+    )
+
+    if drive_to_origin:
+        to_dist = access_to_geo["distance_km"] if access_to_geo else origin_access_dist * 1.3
+        to_dur = access_to_geo["duration_min"] if access_to_geo else _estimate_duration(to_dist, RouteMode.DRIVING)
+        extra_gas_cost += to_dist * 0.12
+        segments.append(RouteSegment(
+            mode=RouteMode.DRIVING,
+            geometry=access_to_geo["geometry"] if access_to_geo else _straight_line_geometry(origin, origin_station_coord),
+            distance_km=round(to_dist, 2),
+            duration_min=round(to_dur, 1),
+            instructions=f"Drive to {origin_stop['stop_name']} station",
+            color="#3B82F6",
+            steps=_make_direction_steps(access_to_geo.get("steps", [])) if access_to_geo else [],
+        ))
+    else:
+        to_dist = access_to_geo["distance_km"] if access_to_geo else origin_access_dist
+        to_dur = access_to_geo["duration_min"] if access_to_geo else _estimate_duration(to_dist, RouteMode.WALKING)
+        segments.append(RouteSegment(
+            mode=RouteMode.WALKING,
+            geometry=access_to_geo["geometry"] if access_to_geo else _straight_line_geometry(origin, origin_station_coord),
+            distance_km=round(to_dist, 2),
+            duration_min=round(to_dur, 1),
+            instructions=f"Walk to {origin_stop['stop_name']} station",
+            color="#10B981",
+            steps=_make_direction_steps(access_to_geo.get("steps", [])) if access_to_geo else [],
+        ))
+    total_duration += to_dur
+    total_dist += to_dist
+
+    # --- Transit Leg 1: origin station → transfer station (origin's line) ---
+    leg1_route = find_transit_route(gtfs, origin_stop["stop_id"], transfer_stop_id_leg1, route_id=origin_line)
+    leg1_dist = leg1_route["distance_km"] if leg1_route else haversine(
+        origin_stop["lat"], origin_stop["lng"], transfer_station["lat"], transfer_station["lng"]
+    )
+    leg1_dur = leg1_route["estimated_duration_min"] if leg1_route else _estimate_duration(leg1_dist, RouteMode.TRANSIT)
+    leg1_geom = (
+        leg1_route.get("geometry") if leg1_route
+        else _straight_line_geometry(origin_station_coord, transfer_coord)
+    )
+
+    line1_info = TTC_LINE_INFO.get(origin_line, {})
+    line1_name = line1_info.get("name", f"Line {origin_line}")
+    line1_color = line1_info.get("color", "#F0CC49")
+
+    leg1_seg = RouteSegment(
+        mode=RouteMode.TRANSIT,
+        geometry=leg1_geom,
+        distance_km=round(leg1_dist, 2),
+        duration_min=round(leg1_dur, 1),
+        instructions=f"Take {line1_name} from {origin_stop['stop_name']} to {transfer_station['name']}",
+        transit_line=line1_name,
+        transit_route_id=origin_line,
+        color=line1_color,
+        board_stop_id=origin_stop["stop_id"],
+        alight_stop_id=transfer_stop_id_leg1,
+    )
+    _enrich_transit_segment(leg1_seg, gtfs, origin_line, origin_stop,
+                            {"stop_id": transfer_stop_id_leg1}, now, app_state)
+    segments.append(leg1_seg)
+    total_duration += leg1_dur
+    total_dist += leg1_dist
+
+    # --- Transfer walk at interchange ---
+    transfer_time = transfer_station.get("time_min", 3)
+    segments.append(RouteSegment(
+        mode=RouteMode.WALKING,
+        geometry={"type": "LineString", "coordinates": [
+            [transfer_station["lng"], transfer_station["lat"]],
+            [transfer_station["lng"], transfer_station["lat"]],
+        ]},
+        distance_km=0.1,
+        duration_min=float(transfer_time),
+        instructions=f"Transfer to {TTC_LINE_INFO.get(dest_line, {}).get('name', f'Line {dest_line}')} at {transfer_station['name']} ({transfer_time} min)",
+        color="#10B981",
+    ))
+    total_duration += transfer_time
+    total_dist += 0.1
+
+    # --- Transit Leg 2: transfer station → dest station (destination's line) ---
+    leg2_route = find_transit_route(gtfs, transfer_stop_id_leg2, dest_stop["stop_id"], route_id=dest_line)
+    leg2_dist = leg2_route["distance_km"] if leg2_route else haversine(
+        transfer_station["lat"], transfer_station["lng"], dest_stop["lat"], dest_stop["lng"]
+    )
+    leg2_dur = leg2_route["estimated_duration_min"] if leg2_route else _estimate_duration(leg2_dist, RouteMode.TRANSIT)
+    leg2_geom = (
+        leg2_route.get("geometry") if leg2_route
+        else _straight_line_geometry(transfer_coord, dest_station_coord)
+    )
+
+    line2_info = TTC_LINE_INFO.get(dest_line, {})
+    line2_name = line2_info.get("name", f"Line {dest_line}")
+    line2_color = line2_info.get("color", "#549F4D")
+
+    leg2_seg = RouteSegment(
+        mode=RouteMode.TRANSIT,
+        geometry=leg2_geom,
+        distance_km=round(leg2_dist, 2),
+        duration_min=round(leg2_dur, 1),
+        instructions=f"Take {line2_name} from {transfer_station['name']} to {dest_stop['stop_name']}",
+        transit_line=line2_name,
+        transit_route_id=dest_line,
+        color=line2_color,
+        board_stop_id=transfer_stop_id_leg2,
+        alight_stop_id=dest_stop["stop_id"],
+    )
+    _enrich_transit_segment(leg2_seg, gtfs, dest_line,
+                            {"stop_id": transfer_stop_id_leg2}, dest_stop, now, app_state)
+    segments.append(leg2_seg)
+    total_duration += leg2_dur
+    total_dist += leg2_dist
+
+    # --- Access FROM destination station ---
+    if drive_from_dest:
+        from_dist = access_from_geo["distance_km"] if access_from_geo else dest_access_dist * 1.3
+        from_dur = access_from_geo["duration_min"] if access_from_geo else _estimate_duration(from_dist, RouteMode.DRIVING)
+        extra_gas_cost += from_dist * 0.12
+        segments.append(RouteSegment(
+            mode=RouteMode.DRIVING,
+            geometry=access_from_geo["geometry"] if access_from_geo else _straight_line_geometry(dest_station_coord, destination),
+            distance_km=round(from_dist, 2),
+            duration_min=round(from_dur, 1),
+            instructions=f"Drive from {dest_stop['stop_name']} station to destination",
+            color="#3B82F6",
+            steps=_make_direction_steps(access_from_geo.get("steps", [])) if access_from_geo else [],
+        ))
+    else:
+        from_dist = access_from_geo["distance_km"] if access_from_geo else dest_access_dist
+        from_dur = access_from_geo["duration_min"] if access_from_geo else _estimate_duration(from_dist, RouteMode.WALKING)
+        segments.append(RouteSegment(
+            mode=RouteMode.WALKING,
+            geometry=access_from_geo["geometry"] if access_from_geo else _straight_line_geometry(dest_station_coord, destination),
+            distance_km=round(from_dist, 2),
+            duration_min=round(from_dur, 1),
+            instructions=f"Walk from {dest_stop['stop_name']} station to destination",
+            color="#10B981",
+            steps=_make_direction_steps(access_from_geo.get("steps", [])) if access_from_geo else [],
+        ))
+    total_duration += from_dur
+    total_dist += from_dist
+
+    # --- Delay prediction (use worst of both lines) ---
+    _w = weather or {}
+    delay_info = DelayInfo()
+    for line_id in [origin_line, dest_line]:
+        pred_mode = "subway" if line_id in ("1", "2", "4") else "streetcar"
+        prediction = predictor.predict(
+            line=line_id, hour=now.hour, day_of_week=now.weekday(), month=now.month,
+            temperature=_w.get("temperature"), precipitation=_w.get("precipitation"),
+            snowfall=_w.get("snowfall"), wind_speed=_w.get("wind_speed"), mode=pred_mode,
+        )
+        if prediction["delay_probability"] > delay_info.probability:
+            delay_info = DelayInfo(
+                probability=prediction["delay_probability"],
+                expected_minutes=prediction["expected_delay_minutes"],
+                confidence=prediction["confidence"],
+                factors=prediction["contributing_factors"],
+            )
+
+    # Stress: base + transfer penalty + delay
+    stress_score = 0.2 + 0.1 + delay_info.probability * 0.3
+    if is_adverse:
+        stress_score += 0.1
+
+    cost = calculate_cost(RouteMode.TRANSIT, leg1_dist + leg2_dist)
+    if extra_gas_cost > 0:
+        cost.gas = round(extra_gas_cost, 2)
+        cost.total = round(cost.fare + cost.gas + cost.parking, 2)
+
+    return RouteOption(
+        id=str(uuid.uuid4())[:8],
+        label="",
+        mode=RouteMode.TRANSIT,
+        segments=segments,
+        total_distance_km=round(total_dist, 2),
+        total_duration_min=round(total_duration, 1),
+        cost=cost,
+        delay_info=delay_info,
+        stress_score=round(min(1.0, stress_score), 2),
+        departure_time=now.strftime("%H:%M"),
+        summary=f"{line1_name} to {transfer_station['name']}, transfer to {line2_name}",
+    )
+
+
 async def _generate_transit_route(
     origin: Coordinate,
     destination: Coordinate,
@@ -616,8 +852,40 @@ async def _generate_transit_route(
                 best_score = score
                 best_pair = (o_stop, d_stop)
 
-    # Fallback: if no same-line pair, pick closest pair (will be a straight segment)
+    # Fallback: if no same-line pair, try building a transfer route
     if best_pair is None:
+        logger.info("No same-line pair found — attempting transfer route")
+        transfer_candidates = []
+        for o_stop in origin_stops:
+            for d_stop in dest_stops:
+                o_rid = str(o_stop.get("route_id") or "")
+                d_rid = str(d_stop.get("route_id") or "")
+                if not o_rid or not d_rid or o_rid == d_rid:
+                    continue
+                transfers = find_transfer_stations(o_rid, d_rid)
+                if not transfers:
+                    continue
+                for ts in transfers:
+                    # Score: access distance + detour through transfer station
+                    access_cost = o_stop["distance_km"] + d_stop["distance_km"]
+                    detour = (
+                        haversine(o_stop["lat"], o_stop["lng"], ts["lat"], ts["lng"])
+                        + haversine(ts["lat"], ts["lng"], d_stop["lat"], d_stop["lng"])
+                    )
+                    transfer_candidates.append((access_cost + detour * 0.5, o_stop, d_stop, ts))
+
+        if transfer_candidates:
+            transfer_candidates.sort(key=lambda x: x[0])
+            _, best_o, best_d, best_ts = transfer_candidates[0]
+            logger.info(f"Transfer route: {best_o['stop_name']} (Line {best_o.get('route_id')}) → "
+                        f"{best_ts['name']} → {best_d['stop_name']} (Line {best_d.get('route_id')})")
+            return await _build_transfer_route(
+                origin, destination, best_o, best_d, best_ts,
+                gtfs, predictor, is_adverse, now,
+                http_client=http_client, weather=weather, app_state=app_state,
+            )
+
+        # Last resort: pick closest cross-line pair (straight segment, no transfer)
         for o_stop in origin_stops:
             for d_stop in dest_stops:
                 score = o_stop["distance_km"] + d_stop["distance_km"]
@@ -1664,9 +1932,21 @@ def _label_routes(routes: list[RouteOption]) -> None:
         elif route.mode == RouteMode.WALKING:
             route.label = "Walk"
         elif route.mode == RouteMode.TRANSIT:
-            # Extract main transit line from segments
+            # Extract transit lines from segments
             transit_segs = [s for s in route.segments if s.transit_line]
-            if transit_segs:
+            if len(transit_segs) >= 2:
+                # Multi-line transfer route
+                line_names = []
+                for ts in transit_segs:
+                    name = ts.transit_line or "Transit"
+                    # Shorten "Line 1 Yonge-University" to "Line 1" for label
+                    if name.startswith("Line ") and len(name) > 6:
+                        short = name.split()[0] + " " + name.split()[1]
+                        line_names.append(short)
+                    else:
+                        line_names.append(name)
+                route.label = f"Transit via {' → '.join(line_names)}"
+            elif transit_segs:
                 main_line = transit_segs[0].transit_line or "Transit"
                 route.label = f"Transit via {main_line}"
             else:

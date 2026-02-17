@@ -955,6 +955,64 @@ TTC_LINE_INFO = {
     "6": {"name": "Line 6 Finch West", "color": "#959595"},
 }
 
+# Transfer connections between TTC rapid transit lines.
+# Each entry maps a (from_line, to_line) pair to a list of interchange stations.
+# gtfs_ids: real GTFS stop IDs per line at that station (checked against _rapid_index)
+# fallback_ids: hardcoded TTC_SUBWAY_STATIONS stop IDs per line
+TRANSFER_CONNECTIONS: dict[tuple[str, str], list[dict]] = {
+    ("1", "2"): [
+        {"name": "Bloor-Yonge", "gtfs_ids": {"1": ["13863", "13864"], "2": ["13755", "13756"]},
+         "fallback_ids": {"1": "YU_BLRY", "2": "BD_BLRY"}, "lat": 43.6709, "lng": -79.3857, "time_min": 3},
+        {"name": "St George", "gtfs_ids": {"1": ["13857", "13858"], "2": ["13855", "13856"]},
+         "fallback_ids": {"1": "YU_STGR", "2": "BD_STGR"}, "lat": 43.6683, "lng": -79.3997, "time_min": 3},
+        {"name": "Spadina", "gtfs_ids": {"1": ["13853", "13854"], "2": ["13851", "13852"]},
+         "fallback_ids": {"1": "YU_SPAD", "2": "BD_SPAD"}, "lat": 43.6672, "lng": -79.4037, "time_min": 3},
+    ],
+    ("1", "4"): [
+        {"name": "Sheppard-Yonge", "gtfs_ids": {"1": ["13859", "13860"], "4": ["13861", "13862"]},
+         "fallback_ids": {"1": "YU_SHEPY", "4": "SH_SHPY"}, "lat": 43.7615, "lng": -79.4111, "time_min": 4},
+    ],
+    ("1", "5"): [
+        {"name": "Eglinton", "gtfs_ids": {"1": ["13795", "13796"], "5": ["16073", "16074"]},
+         "fallback_ids": {"1": "YU_EGLN", "5": "EC_EGLN"}, "lat": 43.7064, "lng": -79.3988, "time_min": 5},
+    ],
+    ("2", "5"): [
+        {"name": "Kennedy", "gtfs_ids": {"2": ["13865", "14947"], "5": ["16081", "16082"]},
+         "fallback_ids": {"2": "BD_KNDY", "5": "EC_KNDY"}, "lat": 43.7326, "lng": -79.2637, "time_min": 5},
+    ],
+    ("1", "6"): [
+        {"name": "Finch West", "gtfs_ids": {"1": [], "6": []},
+         "fallback_ids": {"1": "YU_FNWT", "6": "FW_FNCH"}, "lat": 43.7649, "lng": -79.4912, "time_min": 5},
+    ],
+}
+# Add reverse direction mappings
+for (_a, _b), _stations in list(TRANSFER_CONNECTIONS.items()):
+    TRANSFER_CONNECTIONS[(_b, _a)] = _stations
+
+
+def find_transfer_stations(from_line: str, to_line: str) -> list[dict]:
+    """Return list of transfer station dicts connecting two lines, or empty list."""
+    return TRANSFER_CONNECTIONS.get((str(from_line), str(to_line)), [])
+
+
+def resolve_transfer_stop_id(gtfs: dict, transfer_station: dict, line_id: str) -> str:
+    """Pick a valid GTFS stop_id for a given line at a transfer station.
+
+    Checks real GTFS IDs against _rapid_index first, falls back to hardcoded IDs.
+    """
+    rapid_index = gtfs.get("_rapid_index", {})
+    line_id = str(line_id)
+
+    # Try real GTFS IDs first
+    gtfs_ids = transfer_station.get("gtfs_ids", {}).get(line_id, [])
+    for sid in gtfs_ids:
+        if sid in rapid_index:
+            return sid
+
+    # Fallback to hardcoded TTC_SUBWAY_STATIONS IDs
+    fallback_id = transfer_station.get("fallback_ids", {}).get(line_id, "")
+    return fallback_id
+
 
 def get_line_stations(gtfs: dict, line_id: str) -> list[dict]:
     """Get ordered list of stations for a TTC rapid transit line.
