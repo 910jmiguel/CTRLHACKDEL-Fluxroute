@@ -324,16 +324,25 @@ export default function FluxMap({
 
     let tooltipVisible = false;
 
+    // Pre-compute interactive layer list once (instead of scanning getStyle() every mousemove)
+    const tooltipLayers: string[] = [
+      ...(m.getStyle()?.layers?.filter(l => l.id.includes("-cong-") && l.id.startsWith("route-layer-")).map(l => l.id) || []),
+      ...(m.getLayer("road-closure-line") ? ["road-closure-line"] : []),
+      ...(m.getLayer("road-closure-symbol") ? ["road-closure-symbol"] : []),
+    ].filter(id => m.getLayer(id));
+
     const onMouseMove = (e: mapboxgl.MapMouseEvent) => {
-      // Query all interactive layers at once (congestion + road closures)
+      if (tooltipLayers.length === 0) {
+        if (tooltipVisible) {
+          m.getCanvas().style.cursor = "";
+          popup.remove();
+          tooltipVisible = false;
+        }
+        return;
+      }
+
       const features = m.queryRenderedFeatures(e.point, {
-        layers: [
-          // Collect congestion layers dynamically from active style
-          ...(m.getStyle()?.layers?.filter(l => l.id.includes("-cong-") && l.id.startsWith("route-layer-")).map(l => l.id) || []),
-          // Road closure layers (if they exist)
-          ...(m.getLayer("road-closure-line") ? ["road-closure-line"] : []),
-          ...(m.getLayer("road-closure-symbol") ? ["road-closure-symbol"] : []),
-        ].filter(id => m.getLayer(id)),
+        layers: tooltipLayers,
       });
 
       if (features.length > 0) {

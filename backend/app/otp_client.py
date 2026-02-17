@@ -89,9 +89,9 @@ async def find_park_and_ride_stations(
     try:
         url = f"{base}/otp/routers/default/index/stops"
         if http_client:
-            resp = await http_client.get(url, params=params, timeout=5.0)
+            resp = await http_client.get(url, params=params, timeout=3.0)
         else:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(url, params=params)
         resp.raise_for_status()
         stops = resp.json()
@@ -188,11 +188,11 @@ async def query_otp_routes(
 
     try:
         if http_client:
-            resp = await http_client.get(url, params=params, timeout=5.0)
+            resp = await http_client.get(url, params=params, timeout=3.0)
             resp.raise_for_status()
             data = resp.json()
         else:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
@@ -206,7 +206,7 @@ async def query_otp_routes(
         return plan.get("itineraries", [])
 
     except httpx.TimeoutException:
-        logger.warning("OTP request timed out")
+        logger.warning("OTP request timed out (3s)")
         return []
     except Exception as e:
         logger.warning(f"OTP query failed: {e}")

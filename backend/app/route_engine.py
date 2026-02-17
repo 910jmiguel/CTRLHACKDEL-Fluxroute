@@ -35,6 +35,11 @@ logger = logging.getLogger("fluxroute.engine")
 _weather_cache: dict = {}  # key: rounded (lat,lng) → {"data": dict, "ts": float}
 WEATHER_CACHE_TTL = 300  # 5 minutes
 
+# Cross-request Mapbox directions cache (avoids redundant API calls for same legs)
+_mapbox_cache: dict = {}  # key: "lat,lng|lat,lng|profile" → {"data": dict|None, "ts": float}
+MAPBOX_CACHE_TTL = 300  # 5 minutes
+MAPBOX_CACHE_MAX_SIZE = 200  # Evict oldest entries when exceeded
+
 def _get_mapbox_token() -> str:
     return os.getenv("MAPBOX_TOKEN", "")
 MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
@@ -52,16 +57,39 @@ async def _cached_mapbox_directions(
     http_client: Optional[httpx.AsyncClient] = None,
     cache: Optional[dict] = None,
 ) -> Optional[dict]:
-    """Mapbox directions with per-request caching."""
-    if cache is not None:
-        key = _cache_key(origin, destination, profile)
-        if key in cache:
-            logger.debug(f"Mapbox cache hit: {profile} ({key[:40]}...)")
-            return cache[key]
-        result = await _mapbox_directions(origin, destination, profile, http_client)
-        cache[key] = result
+    """Mapbox directions with two-tier caching: per-request + cross-request (5-min TTL)."""
+    key = _cache_key(origin, destination, profile)
+
+    # Tier 1: per-request cache (fastest, avoids duplicate calls within same request)
+    if cache is not None and key in cache:
+        logger.debug(f"Mapbox per-request cache hit: {profile}")
+        return cache[key]
+
+    # Tier 2: cross-request cache (avoids redundant API calls across requests)
+    now = _time_mod.time()
+    cached = _mapbox_cache.get(key)
+    if cached and now - cached["ts"] < MAPBOX_CACHE_TTL:
+        logger.debug(f"Mapbox cross-request cache hit: {profile}")
+        result = cached["data"]
+        if cache is not None:
+            cache[key] = result
         return result
-    return await _mapbox_directions(origin, destination, profile, http_client)
+
+    # Cache miss — call Mapbox API
+    result = await _mapbox_directions(origin, destination, profile, http_client)
+
+    # Store in both caches
+    if cache is not None:
+        cache[key] = result
+    _mapbox_cache[key] = {"data": result, "ts": now}
+
+    # Evict oldest entries if cross-request cache is too large
+    if len(_mapbox_cache) > MAPBOX_CACHE_MAX_SIZE:
+        oldest_keys = sorted(_mapbox_cache, key=lambda k: _mapbox_cache[k]["ts"])
+        for old_key in oldest_keys[:len(_mapbox_cache) - MAPBOX_CACHE_MAX_SIZE]:
+            del _mapbox_cache[old_key]
+
+    return result
 
 
 async def _mapbox_directions(
@@ -1008,6 +1036,7 @@ async def _generate_hybrid_routes(
     Uses rapid transit stations only (no bus stops), with parking verification
     and service alert awareness.
     """
+    t_hybrid_start = _time_mod.perf_counter()
     alerts = (app_state or {}).get("alerts", [])
 
     # --- 1. Gather station candidates (rapid transit only) ---
@@ -1103,6 +1132,9 @@ async def _generate_hybrid_routes(
         logger.info("No hybrid station candidates found")
         return []
 
+    t_candidates = _time_mod.perf_counter()
+    logger.info(f"[PERF] Hybrid: {len(candidates)} candidates gathered in {(t_candidates-t_hybrid_start)*1000:.0f}ms")
+
     # --- 2. Score and rank candidates ---
     from app.gtfs_parser import get_next_departures
 
@@ -1175,7 +1207,11 @@ async def _generate_hybrid_routes(
         logger.info("No viable hybrid station candidates after scoring")
         return []
 
-    logger.info(f"Hybrid routing: {len(top_candidates)} candidates — {[c['stop_name'] for c in top_candidates]}")
+    t_scored = _time_mod.perf_counter()
+    logger.info(
+        f"[PERF] Hybrid: scored+ranked in {(t_scored-t_candidates)*1000:.0f}ms, "
+        f"{len(top_candidates)} candidates — {[c['stop_name'] for c in top_candidates]}"
+    )
 
     # --- 3. Generate routes for top candidates in parallel ---
     route_tasks = [
@@ -1196,6 +1232,12 @@ async def _generate_hybrid_routes(
             logger.warning(f"Hybrid route generation failed: {result}")
         elif result:
             hybrid_routes.append(result)
+
+    t_hybrid_end = _time_mod.perf_counter()
+    logger.info(
+        f"[PERF] Hybrid: {len(hybrid_routes)} routes built in {(t_hybrid_end-t_scored)*1000:.0f}ms | "
+        f"Total hybrid: {(t_hybrid_end-t_hybrid_start)*1000:.0f}ms"
+    )
 
     return hybrid_routes
 

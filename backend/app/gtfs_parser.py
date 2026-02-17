@@ -200,6 +200,35 @@ def load_gtfs_data() -> dict:
         data["stops"] = pd.DataFrame(TTC_SUBWAY_STATIONS)
         data["using_fallback"] = True
 
+    # Pre-build stop_times index for O(1) departure lookups (instead of DataFrame scans)
+    data["stop_times_index"] = {}  # stop_id → list of {trip_id, dep_minutes, departure_time}
+    if not data["stop_times"].empty and "departure_time" in data["stop_times"].columns:
+        import time as _time_mod
+        _t0 = _time_mod.perf_counter()
+        st_df = data["stop_times"]
+        # Pre-parse departure times to minutes
+        dep_minutes = st_df["departure_time"].apply(_parse_gtfs_time).values
+        stop_ids = st_df["stop_id"].astype(str).values
+        trip_ids = st_df["trip_id"].values
+        dep_times = st_df["departure_time"].values
+
+        idx: dict[str, list] = {}
+        for i in range(len(stop_ids)):
+            sid = stop_ids[i]
+            if sid not in idx:
+                idx[sid] = []
+            idx[sid].append({
+                "trip_id": trip_ids[i],
+                "dep_minutes": int(dep_minutes[i]),
+                "departure_time": str(dep_times[i]),
+            })
+        # Sort each stop's departures by time for efficient next-departure lookup
+        for sid in idx:
+            idx[sid].sort(key=lambda x: x["dep_minutes"])
+        data["stop_times_index"] = idx
+        _t1 = _time_mod.perf_counter()
+        logger.info(f"Pre-built stop_times index: {len(idx)} stops in {(_t1-_t0)*1000:.0f}ms")
+
     # Pre-build stop→route lookup for O(1) lookups in find_nearest_rapid_transit_stations
     data["stop_route_lookup"] = {}
     data["rapid_stops_df"] = pd.DataFrame()
@@ -550,14 +579,25 @@ def _format_gtfs_time(minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
+_active_service_cache: dict = {}  # {"ids": set, "date_key": str, "ts": float}
+_ACTIVE_SERVICE_CACHE_TTL = 60  # 60 seconds
+
 def get_active_service_ids(gtfs: dict, date: Optional[datetime] = None) -> set:
     """Get service IDs active on the given date (or today).
 
     Uses calendar.txt (day-of-week + date range) and calendar_dates.txt (exceptions).
     Falls back to returning all service_ids from trips if no calendar data.
+    Cached for 60 seconds to avoid recomputation on every route segment.
     """
     if date is None:
         date = datetime.now()
+
+    import time as _t
+    now_ts = _t.time()
+    date_key = date.strftime("%Y%m%d")
+    cached = _active_service_cache
+    if cached.get("date_key") == date_key and now_ts - cached.get("ts", 0) < _ACTIVE_SERVICE_CACHE_TTL:
+        return cached["ids"]
 
     calendar = gtfs.get("calendar", pd.DataFrame())
     calendar_dates = gtfs.get("calendar_dates", pd.DataFrame())
@@ -602,8 +642,10 @@ def get_active_service_ids(gtfs: dict, date: Optional[datetime] = None) -> set:
 
     # If calendar data exists but nothing matched, fall back to all service_ids
     if not active and not trips.empty and "service_id" in trips.columns:
-        return set(trips["service_id"].unique())
+        active = set(trips["service_id"].unique())
 
+    # Cache the result
+    _active_service_cache.update({"ids": active, "date_key": date_key, "ts": now_ts})
     return active
 
 
@@ -611,22 +653,64 @@ def get_next_departures(
     gtfs: dict, stop_id: str, limit: int = 5,
     route_id: Optional[str] = None, service_ids: Optional[set] = None,
 ) -> list[dict]:
-    """Get next departures from a stop, handling GTFS 25:00:00 time format.
+    """Get next departures from a stop using pre-built index for O(1) lookup.
 
+    Falls back to DataFrame scan if index not available.
     Optionally filter by route_id and active service_ids for more accurate results.
     """
+    now = datetime.now()
+    current_minutes = now.hour * 60 + now.minute
+
+    # Fast path: use pre-built stop_times_index
+    stop_times_index = gtfs.get("stop_times_index", {})
+    if stop_times_index:
+        departures = stop_times_index.get(str(stop_id), [])
+        if not departures:
+            return _generate_mock_departures(stop_id, limit)
+
+        # Build trip filter sets if needed
+        allowed_trips = None
+        trips_df = gtfs.get("trips", pd.DataFrame())
+        if service_ids and not trips_df.empty and "service_id" in trips_df.columns:
+            active_trips = trips_df[trips_df["service_id"].isin(service_ids)]
+            if route_id is not None:
+                active_trips = active_trips[active_trips["route_id"].astype(str) == str(route_id)]
+            allowed_trips = set(active_trips["trip_id"])
+        elif route_id is not None and not trips_df.empty:
+            route_trips = trips_df[trips_df["route_id"].astype(str) == str(route_id)]
+            allowed_trips = set(route_trips["trip_id"])
+
+        # Binary search for first departure >= current_minutes (list is pre-sorted)
+        import bisect
+        start_idx = bisect.bisect_left(
+            [d["dep_minutes"] for d in departures], current_minutes
+        )
+
+        results = []
+        for i in range(start_idx, len(departures)):
+            if len(results) >= limit:
+                break
+            d = departures[i]
+            if allowed_trips is not None and d["trip_id"] not in allowed_trips:
+                continue
+            results.append({
+                "stop_id": str(stop_id),
+                "trip_id": str(d["trip_id"]),
+                "departure_time": _format_gtfs_time(d["dep_minutes"]),
+                "minutes_until": d["dep_minutes"] - current_minutes,
+            })
+
+        return results if results else _generate_mock_departures(stop_id, limit)
+
+    # Slow path: DataFrame scan (fallback if index not built)
     stop_times = gtfs.get("stop_times", pd.DataFrame())
     if stop_times.empty:
         return _generate_mock_departures(stop_id, limit)
-
-    now = datetime.now()
-    current_minutes = now.hour * 60 + now.minute
 
     stop_deps = stop_times[stop_times["stop_id"].astype(str) == str(stop_id)].copy()
     if stop_deps.empty:
         return _generate_mock_departures(stop_id, limit)
 
-    # Filter by service_ids (active services for today)
     trips_df = gtfs.get("trips", pd.DataFrame())
     if service_ids and not trips_df.empty and "service_id" in trips_df.columns:
         active_trips = trips_df[trips_df["service_id"].isin(service_ids)]
