@@ -292,7 +292,7 @@ export default function TopBar({
       className={`fixed z-30 ${
         isMobile
           ? "inset-0 bg-[var(--background)]/95 backdrop-blur-md flex flex-col p-4"
-          : "top-3 left-1/2 -translate-x-1/2 w-full max-w-[920px] px-3"
+          : "top-3 left-1/2 -translate-x-1/2 w-full max-w-[960px] px-3"
       }`}
     >
       {/* Mobile: close expanded view */}

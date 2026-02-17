@@ -13,8 +13,8 @@ export default function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
     <button
       onClick={onToggle}
       className="p-2 rounded-md hover:bg-[var(--surface-hover)] transition-colors text-[var(--text-primary)] opacity-80 hover:opacity-100"
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      aria-label={`Switch to ${theme === "dark" ? "Midday" : "Night"} mode`}
+      title={`Switch to ${theme === "dark" ? "Midday" : "Night"} mode`}
     >
       {theme === "dark" ? (
         <Sun className="w-4 h-4" />

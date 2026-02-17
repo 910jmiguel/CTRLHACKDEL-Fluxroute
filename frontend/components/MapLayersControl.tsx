@@ -12,6 +12,7 @@ export interface TransitLineVisibility {
   line5: boolean;
   line6: boolean;
   streetcars: boolean;
+  upExpress: boolean;
 }
 
 interface MapLayersControlProps {
@@ -33,6 +34,7 @@ const TTC_LINES: { key: keyof TransitLineVisibility; label: string; color: strin
   { key: "line5", label: "Line 5 Eglinton", color: "#FF8C00", lineId: "5" },
   { key: "line6", label: "Line 6 Finch West", color: "#6EC4E8", lineId: "6" },
   { key: "streetcars", label: "Streetcars", color: "#DD3333" },
+  { key: "upExpress", label: "UP Express", color: "#1E3A8A" },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
