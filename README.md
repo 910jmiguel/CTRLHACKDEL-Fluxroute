@@ -56,248 +56,161 @@ Built for **CTRL+HACK+DEL Hackathon 2025**.
 fluxroute/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app, CORS, lifespan startup (OTP init)
-│   │   ├── models.py            # Pydantic v2 models (API contract)
-│   │   ├── routes.py            # API endpoints (+ /api/otp/status)
-│   │   ├── route_engine.py      # Core routing: OTP-first with GTFS fallback
-│   │   ├── otp_client.py        # Async OTP API client (plan_trip, health check)
-│   │   ├── gtfs_parser.py       # TTC GTFS data loading and querying
-│   │   ├── ml_predictor.py      # ML delay prediction (XGBoost + heuristic fallback)
-│   │   ├── cost_calculator.py   # Multi-agency fares, gas, parking, PRESTO discounts
-│   │   ├── weather.py           # Open-Meteo weather API integration
-│   │   ├── road_closures.py     # City of Toronto road closure data
-│   │   ├── gtfs_realtime.py     # Real-time vehicle positions and alerts
-│   │   └── gemini_agent.py      # Gemini AI chat assistant with tool use
+│   │   ├── main.py                    # FastAPI app, CORS, lifespan startup
+│   │   ├── models.py                  # Pydantic v2 models (API contract)
+│   │   ├── routes.py                  # API endpoints
+│   │   ├── route_engine.py            # Core routing: OTP-first with GTFS fallback
+│   │   ├── otp_client.py              # Async OTP API client (plan_trip, health check)
+│   │   ├── gtfs_parser.py             # TTC GTFS data loading and querying
+│   │   ├── gtfs_realtime.py           # Real-time vehicle positions and alerts
+│   │   ├── transit_lines.py           # Transit line GeoJSON overlay data
+│   │   ├── ml_predictor.py            # ML delay prediction (XGBoost + heuristic fallback)
+│   │   ├── cost_calculator.py         # Multi-agency fares, gas, parking, PRESTO discounts
+│   │   ├── weather.py                 # Open-Meteo weather API integration
+│   │   ├── road_closures.py           # City of Toronto road closure data
+│   │   ├── parking_data.py            # Parking location and cost data
+│   │   ├── mapbox_navigation.py       # Mapbox Navigation API (turn-by-turn directions)
+│   │   ├── navigation_service.py      # Navigation session management (WebSocket)
+│   │   ├── route_builder_suggestions.py # Transit route suggestions for custom builder
+│   │   └── gemini_agent.py            # Gemini AI chat assistant with tool use
 │   ├── ml/
-│   │   ├── feature_engineering.py  # Feature extraction from delay CSV
-│   │   ├── train_model.py          # XGBoost model training pipeline
-│   │   └── delay_model.joblib      # Trained model (generated, gitignored)
+│   │   ├── train_model.py             # XGBoost model training pipeline
+│   │   ├── feature_engineering.py     # Feature extraction from delay CSV
+│   │   ├── evaluate_model.py          # Model evaluation metrics
+│   │   ├── combine_all_data.py        # Multi-source data combiner
+│   │   ├── enrich_weather_data.py     # Weather data enrichment for ML
+│   │   └── delay_model.joblib         # Trained model (generated, gitignored)
 │   ├── data/
-│   │   ├── gtfs/                   # TTC GTFS static feed (auto-downloaded)
-│   │   ├── otp/                    # OTP multi-agency data (see OTP Setup below)
-│   │   │   ├── build-config.json   # OTP build configuration (CRITICAL)
-│   │   │   ├── otp-config.json     # OTP routing parameters
-│   │   │   ├── ttc.zip             # TTC GTFS (79 MB, Git LFS)
-│   │   │   ├── gotransit.zip       # GO Transit GTFS (21 MB, Git LFS)
-│   │   │   ├── yrt.zip             # York Region Transit GTFS (5 MB, Git LFS)
-│   │   │   ├── miway.zip           # MiWay GTFS (7.6 MB, Git LFS)
-│   │   │   ├── upexpress.zip       # UP Express GTFS (888 KB, Git LFS)
-│   │   │   └── ontario.osm.pbf     # Ontario street network (890 MB, Git LFS)
+│   │   ├── gtfs/                      # TTC GTFS static feed (see setup step 3)
+│   │   ├── otp/                       # OTP multi-agency data (see docs/OTP_SETUP.md)
+│   │   │   ├── build-config.json      # OTP build configuration
+│   │   │   ├── otp-config.json        # OTP routing parameters
+│   │   │   ├── ttc.zip                # TTC GTFS (79 MB, Git LFS)
+│   │   │   ├── gotransit.zip          # GO Transit GTFS (21 MB, Git LFS)
+│   │   │   ├── yrt.zip               # York Region Transit GTFS (5 MB, Git LFS)
+│   │   │   ├── miway.zip             # MiWay GTFS (7.6 MB, Git LFS)
+│   │   │   ├── upexpress.zip         # UP Express GTFS (888 KB, Git LFS)
+│   │   │   └── ontario.osm.pbf       # Ontario street network (890 MB, Git LFS)
 │   │   └── ttc-subway-delay-data.csv
 │   ├── scripts/
-│   │   └── download_gtfs.sh        # GTFS download helper script
+│   │   └── download_gtfs.sh           # GTFS download helper script
 │   └── requirements.txt
 ├── frontend/
 │   ├── app/
-│   │   ├── layout.tsx           # Root layout with fonts and metadata
-│   │   ├── globals.css          # Tailwind + glassmorphism + Mapbox overrides
-│   │   └── page.tsx             # Main page composing all components
+│   │   ├── layout.tsx                 # Root layout with fonts and metadata
+│   │   ├── page.tsx                   # Landing page
+│   │   ├── map/page.tsx               # Map application (main app)
+│   │   └── globals.css                # Tailwind + glassmorphism + Mapbox overrides
 │   ├── components/
-│   │   ├── FluxMap.tsx          # Mapbox map with congestion-colored routes
-│   │   ├── Sidebar.tsx          # Collapsible left panel
-│   │   ├── RouteInput.tsx       # Origin/destination with geocoder autocomplete
-│   │   ├── RouteCards.tsx       # Scrollable route option cards
-│   │   ├── DecisionMatrix.tsx   # Fastest / Thrifty / Zen comparison
-│   │   ├── DirectionSteps.tsx   # Turn-by-turn navigation instructions
-│   │   ├── ChatAssistant.tsx    # Floating AI chat panel
-│   │   ├── LiveAlerts.tsx       # Rotating alert banner
-│   │   ├── DelayIndicator.tsx   # Green/yellow/red delay badge
-│   │   ├── CostBreakdown.tsx    # Expandable cost details
-│   │   └── LoadingOverlay.tsx   # Route calculation spinner
+│   │   ├── FluxMap.tsx                # Mapbox map with congestion-colored routes
+│   │   ├── TopBar.tsx                 # Top navigation bar with search inputs
+│   │   ├── RoutePanel.tsx             # Route results panel
+│   │   ├── RoutePills.tsx             # Mode filter pills (transit/driving/walking)
+│   │   ├── RouteInput.tsx             # Origin/destination with geocoder autocomplete
+│   │   ├── RouteCards.tsx             # Scrollable route option cards
+│   │   ├── RouteComparisonTable.tsx   # Side-by-side route comparison
+│   │   ├── DecisionMatrix.tsx         # Fastest / Thrifty / Zen comparison
+│   │   ├── JourneyTimeline.tsx        # Visual timeline with depart/arrive times
+│   │   ├── LineStripDiagram.tsx       # Transit line strip map visualization
+│   │   ├── DirectionSteps.tsx         # Turn-by-turn navigation instructions
+│   │   ├── NavigationView.tsx         # Active navigation UI
+│   │   ├── ChatAssistant.tsx          # Floating AI chat panel
+│   │   ├── AlertsPanel.tsx            # Service alerts detail panel
+│   │   ├── AlertsBell.tsx             # Alert notification bell icon
+│   │   ├── DashboardView.tsx          # Dashboard overview
+│   │   ├── BottomSheet.tsx            # Mobile-friendly bottom sheet
+│   │   ├── RouteBuilderModal.tsx      # Custom route builder modal
+│   │   ├── SegmentEditor.tsx          # Route segment editor
+│   │   ├── IsochronePanel.tsx         # Isochrone analysis panel
+│   │   ├── MapLayersControl.tsx       # Map layer toggle controls
+│   │   ├── ThemeToggle.tsx            # Light/dark theme toggle
+│   │   ├── DelayIndicator.tsx         # Green/yellow/red delay badge
+│   │   ├── CostBreakdown.tsx          # Expandable cost details
+│   │   ├── LoadingOverlay.tsx         # Route calculation spinner
+│   │   ├── Sidebar.tsx                # Legacy collapsible left panel
+│   │   └── LiveAlerts.tsx             # Legacy rotating alert banner
 │   ├── lib/
-│   │   ├── types.ts             # TypeScript interfaces (mirrors Pydantic models)
-│   │   ├── constants.ts         # Config: tokens, colors, Toronto bounds
-│   │   ├── api.ts               # Typed API client
-│   │   └── mapUtils.ts          # Map drawing utilities (congestion coloring)
+│   │   ├── types.ts                   # TypeScript interfaces (mirrors Pydantic models)
+│   │   ├── constants.ts               # Config: tokens, colors, Toronto bounds
+│   │   ├── api.ts                     # Typed API client
+│   │   └── mapUtils.ts               # Map drawing utilities (congestion coloring)
 │   ├── hooks/
-│   │   ├── useRoutes.ts         # Route fetching and selection state
-│   │   ├── useChat.ts           # Chat message state management
-│   │   └── useTimeBasedTheme.ts # Automatic map theme switching
+│   │   ├── useRoutes.ts               # Route fetching and selection state
+│   │   ├── useChat.ts                 # Chat message state management
+│   │   ├── useNavigation.ts           # Turn-by-turn navigation state
+│   │   ├── useCustomRoute.ts          # Custom route builder state
+│   │   ├── useMediaQuery.ts           # Responsive breakpoint detection
+│   │   └── useTimeBasedTheme.ts       # Automatic map theme switching
 │   └── package.json
 ├── docs/
-│   ├── ROADMAP.md               # Project roadmap & status
-│   ├── API_KEYS_SETUP.md        # API key setup instructions
-│   ├── OTP_INTEGRATION.md       # OTP integration technical details
-│   └── OTP_SETUP.md             # OTP setup guide (native + Docker)
-├── docker-compose.yml           # OTP Docker service
-├── .gitattributes               # Git LFS tracking for large files
+│   ├── FULL_SETUP.md              # Complete setup guide (start here)
+│   ├── API_KEYS_SETUP.md          # API key setup instructions
+│   ├── OTP_SETUP.md               # OTP setup guide (native + Docker)
+│   ├── OTP_INTEGRATION.md         # OTP integration technical details
+│   └── ROADMAP.md                 # Project roadmap & status
+├── docker-compose.yml             # OTP Docker service
+├── .gitattributes                 # Git LFS tracking for large files
 ├── .gitignore
 ├── README.md
-└── CLAUDE.md                    # Project guide for Claude Code
+└── CLAUDE.md                      # Project guide for Claude Code
 ```
 
 ---
 
-## Prerequisites
+## Quick Start
 
-- **Python 3.10+** (tested with 3.12)
-- **Node.js 18+** (tested with 22.9.0)
-- **npm** or **yarn**
-- **Homebrew** (macOS only, for XGBoost dependency)
-- **Java 17+** (for running OTP natively — not needed if using Docker)
-- **Docker** (for running OTP via Docker — not needed if using Java)
-- **Git LFS** (for pulling large data files)
+> For step-by-step instructions with explanations, see **[docs/FULL_SETUP.md](docs/FULL_SETUP.md)**.
 
-### API Keys
+### Prerequisites
 
-| Key | Purpose | Required? |
-|-----|---------|-----------|
-| `MAPBOX_TOKEN` | Map display, route directions, geocoding | Yes |
-| `GEMINI_API_KEY` | AI chat assistant (Google Gemini) | No (chat shows fallback) |
-| `METROLINX_API_KEY` | GO Transit real-time data | No (mock data used) |
+- Python 3.10+, Node.js 18+, Git LFS
+- [Mapbox token](https://account.mapbox.com/access-tokens/) (free)
+- [Gemini API key](https://aistudio.google.com/apikey) (free, optional — for AI chat)
+- Java 17+ or Docker (optional — for multi-agency OTP routing)
 
-Get a free Mapbox token at [mapbox.com](https://account.mapbox.com/access-tokens/).
-Get a free Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey).
-
----
-
-## Setup & Installation
-
-### 1. Clone the repository
+### Setup
 
 ```bash
+# 1. Clone & pull data
 git clone https://github.com/910jmiguel/CTRLHACKDEL-Fluxroute.git
 cd CTRLHACKDEL-Fluxroute
+git lfs install && git lfs pull
 
-# Pull large data files tracked by Git LFS
-git lfs install
-git lfs pull
-```
-
-### 2. Backend setup
-
-```bash
-# Install Python dependencies
+# 2. Backend
 pip install -r backend/requirements.txt
+brew install libomp   # macOS only
 
-# macOS only: XGBoost requires OpenMP
-brew install libomp
-
-# Download TTC GTFS data for the local parser (if not already present)
+# 3. Download TTC GTFS data (CRITICAL — without this, transit lines render as straight lines)
 cd backend/data/gtfs
 curl -L -o gtfs.zip "https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/7795b45e-e65a-4465-81fc-c36b9dfff169/resource/cfb6b2b8-6191-41e3-bda1-b175c51148cb/download/opendata_ttc_schedules.zip"
 unzip gtfs.zip && rm gtfs.zip
 cd ../../..
+
+# 4. Configure environment variables
+#    backend/.env     → MAPBOX_TOKEN, GEMINI_API_KEY
+#    frontend/.env.local → NEXT_PUBLIC_MAPBOX_TOKEN, NEXT_PUBLIC_API_URL
+#    See docs/API_KEYS_SETUP.md for details
+
+# 5. Frontend
+cd frontend && npm install && cd ..
 ```
 
-### 3. Configure environment variables
-
-Create `backend/.env`:
-```env
-GEMINI_API_KEY=your-gemini-api-key-here
-MAPBOX_TOKEN=your-mapbox-token-here
-METROLINX_API_KEY=your-metrolinx-api-key-here
-
-# OTP Configuration
-OTP_BASE_URL=http://localhost:8080/otp/routers/default
-OTP_TIMEOUT=15.0
-OTP_ENABLED=true
-```
-
-Create `frontend/.env.local`:
-```env
-NEXT_PUBLIC_MAPBOX_TOKEN=your-mapbox-token-here
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-See `docs/API_KEYS_SETUP.md` for detailed instructions.
-
-### 4. Train the ML model (optional)
+### Run
 
 ```bash
-cd backend
-python3 -m ml.train_model
+# Terminal 1 — Backend
+cd backend && python3 -m uvicorn app.main:app --reload
+# API at http://localhost:8000
+
+# Terminal 2 — Frontend
+cd frontend && npm run dev
+# Landing page at http://localhost:3000
+# Map app at http://localhost:3000/map
 ```
 
-This trains an XGBoost delay prediction model on TTC subway delay data. If you skip this step, the app automatically uses a heuristic fallback based on real TTC delay patterns.
+### Optional: OTP multi-agency routing
 
-### 5. Frontend setup
-
-```bash
-cd frontend
-npm install
-```
-
-### 6. OpenTripPlanner setup (multi-agency routing)
-
-OTP provides real multi-agency transit routing across TTC, GO Transit, YRT, MiWay, and UP Express. The GTFS data files and OSM street network are already included in the repo (pulled via Git LFS in step 1). You just need to download the OTP JAR and run it.
-
-#### Option A: Native (recommended for development)
-
-```bash
-# Download OTP JAR from Maven Central (~174 MB, one-time download)
-curl -L -o backend/data/otp/otp-2.5.0-shaded.jar \
-  "https://repo1.maven.org/maven2/org/opentripplanner/otp/2.5.0/otp-2.5.0-shaded.jar"
-
-# Verify the download
-ls -lh backend/data/otp/otp-2.5.0-shaded.jar
-# Should be ~174 MB
-
-# Build the graph and start the server (takes ~15-20 minutes on first run)
-cd backend/data/otp
-java -Xmx8G -jar otp-2.5.0-shaded.jar --build --serve .
-```
-
-You'll know it's ready when you see `Grizzly server running`. OTP will be available at `http://localhost:8080`.
-
-**Java not installed?**
-```bash
-# macOS
-brew install openjdk@17
-echo 'export PATH="/opt/homebrew/opt/openjdk@17/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-
-# Ubuntu/Debian
-sudo apt install openjdk-17-jre
-```
-
-#### Option B: Docker
-
-```bash
-# From project root
-docker-compose up -d otp
-
-# Monitor build progress (~15-20 minutes)
-docker logs -f fluxroute-otp
-
-# Wait for "Grizzly server running"
-```
-
-#### Verify OTP is working
-
-```bash
-# Check server responds
-curl http://localhost:8080/otp/routers/default
-
-# Test a multi-agency route (Finch Station to Union Station)
-curl "http://localhost:8080/otp/routers/default/plan?fromPlace=43.7804,-79.4153&toPlace=43.6453,-79.3806&mode=TRANSIT,WALK"
-```
-
-> **Note:** The OTP JAR is not stored in git (too large). It's downloaded from Maven Central. The `.gitignore` excludes `*.jar` files. See `docs/OTP_SETUP.md` for troubleshooting.
-
-### 7. Start the application
-
-Open two (or three) terminals:
-
-**Terminal 1 — OTP (if not already running):**
-```bash
-cd backend/data/otp
-java -Xmx8G -jar otp-2.5.0-shaded.jar --build --serve .
-```
-
-**Terminal 2 — Backend:**
-```bash
-cd backend
-python3 -m uvicorn app.main:app --reload
-```
-The API will be available at `http://localhost:8000`.
-
-**Terminal 3 — Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-The app will be available at `http://localhost:3000`.
+OTP enables routing across TTC, GO Transit, YRT, MiWay, and UP Express. Without it, only TTC routing is available. See **[docs/OTP_SETUP.md](docs/OTP_SETUP.md)** for setup instructions.
 
 ---
 
@@ -310,9 +223,21 @@ The app will be available at `http://localhost:3000`.
 | POST | `/api/chat` | Gemini AI chat assistant |
 | GET | `/api/alerts` | Current service alerts |
 | GET | `/api/vehicles` | Live vehicle positions |
+| GET | `/api/transit-lines` | Transit line overlay GeoJSON |
 | GET | `/api/transit-shape/{id}` | GeoJSON shape for a transit route |
 | GET | `/api/nearby-stops` | Find stops near coordinates |
+| GET | `/api/stops/search` | Search stops by name |
+| GET | `/api/line-stops/{line_id}` | Ordered stops for a specific line |
 | GET | `/api/weather` | Current weather conditions |
+| GET | `/api/road-closures` | Active road closures from Toronto Open Data |
+| POST | `/api/custom-route` | Calculate a user-defined custom route |
+| POST | `/api/custom-route-v2` | Custom route (v2, suggestion-based segments) |
+| POST | `/api/suggest-transit-routes` | AI-suggested transit routes for origin/destination |
+| POST | `/api/navigation-route` | Turn-by-turn navigation with voice/banner instructions |
+| POST | `/api/navigation-session` | Create navigation session (returns WebSocket URL) |
+| WS | `/api/ws/navigation/{id}` | Real-time navigation updates via WebSocket |
+| POST | `/api/optimize-route` | Optimize multi-stop route ordering |
+| POST | `/api/isochrone` | Isochrone reachability analysis |
 | GET | `/api/otp/status` | OTP server availability check |
 | GET | `/api/health` | Health check |
 
@@ -386,6 +311,22 @@ FluxRoute is designed to work even when external services are unavailable:
 | Gemini API unavailable | Chat shows friendly error; all other features work |
 | Weather API down | Default Toronto winter conditions |
 | Road closure API down | Routes generated without closure data |
+| GTFS `shapes.txt` missing | Transit lines render as straight lines (see [setup step 3](docs/FULL_SETUP.md#step-3-download-ttc-gtfs-data)) |
+
+---
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Transit lines look straight, not curved | Missing GTFS data (`shapes.txt`) | Download GTFS data — see [setup step 3](docs/FULL_SETUP.md#step-3-download-ttc-gtfs-data) |
+| Map is blank / doesn't load | Missing Mapbox token in frontend | Set `NEXT_PUBLIC_MAPBOX_TOKEN` in `frontend/.env.local` |
+| Driving routes are straight lines | Missing Mapbox token in backend | Set `MAPBOX_TOKEN` in `backend/.env` |
+| AI chat doesn't respond | Missing Gemini API key | Set `GEMINI_API_KEY` in `backend/.env` |
+| `xgboost` install fails on macOS | Missing OpenMP library | Run `brew install libomp` |
+| OTP not detected by backend | OTP not running when backend started | Start OTP first, then restart backend |
+
+For a full troubleshooting guide, see **[docs/FULL_SETUP.md](docs/FULL_SETUP.md#troubleshooting)**.
 
 ---
 
