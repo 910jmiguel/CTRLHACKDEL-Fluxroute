@@ -347,18 +347,47 @@ def find_nearest_stops(gtfs: dict, lat: float, lng: float, radius_km: float = 2.
 
     nearby = stops_with_dist[stops_with_dist["distance_km"] <= radius_km].nsmallest(limit, "distance_km")
 
+    # Pre-fetch lookup DataFrames for route enrichment
+    stop_times_df = gtfs.get("stop_times", pd.DataFrame())
+    trips_df = gtfs.get("trips", pd.DataFrame())
+    routes_df = gtfs.get("routes", pd.DataFrame())
+
     results = []
     for _, row in nearby.iterrows():
         stop_id = row.get("stop_id", "")
         stop_name = row.get("stop_name", "Unknown")
+        route_id = row.get("route_id", None)
+        line = row.get("line", None)
+
+        # Enrich with route info from stop_times → trips → routes if missing
+        if (route_id is None or line is None) and not stop_times_df.empty and not trips_df.empty:
+            st = stop_times_df[stop_times_df["stop_id"].astype(str) == str(stop_id)]
+            if not st.empty:
+                trip_id = st.iloc[0]["trip_id"]
+                trip = trips_df[trips_df["trip_id"] == trip_id]
+                if not trip.empty:
+                    if route_id is None:
+                        route_id = trip.iloc[0]["route_id"]
+                    if line is None and not routes_df.empty:
+                        r = routes_df[routes_df["route_id"].astype(str) == str(route_id)]
+                        if not r.empty:
+                            sn = str(r.iloc[0].get("route_short_name", ""))
+                            ln = str(r.iloc[0].get("route_long_name", ""))
+                            if ln.lower().startswith("line"):
+                                line = ln
+                            elif sn:
+                                line = f"{sn} {ln}".strip()
+                            else:
+                                line = ln or None
+
         results.append({
             "stop_id": str(stop_id),
             "stop_name": stop_name,
             "lat": row[lat_col],
             "lng": row[lng_col],
             "distance_km": round(row["distance_km"], 3),
-            "route_id": row.get("route_id", None),
-            "line": row.get("line", None),
+            "route_id": str(route_id) if route_id is not None else None,
+            "line": line,
         })
 
     return results
@@ -795,6 +824,46 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
     # Estimate duration: ~30 km/h average subway speed
     estimated_duration = round(distance / 0.5, 1)  # distance / (30 km/h / 60 min)
 
+    # Resolve route name from routes DataFrame if not already on the stop
+    line_name = origin_row.get("line") or None
+    if not line_name and route_id_str:
+        routes_df = gtfs.get("routes", pd.DataFrame())
+        if not routes_df.empty:
+            r = routes_df[routes_df["route_id"].astype(str) == route_id_str]
+            if not r.empty:
+                sn = str(r.iloc[0].get("route_short_name", ""))
+                ln = str(r.iloc[0].get("route_long_name", ""))
+                if ln.lower().startswith("line"):
+                    line_name = ln
+                elif sn:
+                    line_name = f"{sn} {ln}".strip()
+                else:
+                    line_name = ln or None
+    # Also resolve route_id from stop_times/trips if missing
+    resolved_route_id = route_id_str
+    if not resolved_route_id and not stop_times.empty:
+        trips_df = gtfs.get("trips", pd.DataFrame())
+        st = stop_times[stop_times["stop_id"].astype(str) == str(origin_stop_id)]
+        if not st.empty and not trips_df.empty:
+            trip_id = st.iloc[0]["trip_id"]
+            trip = trips_df[trips_df["trip_id"] == trip_id]
+            if not trip.empty:
+                resolved_route_id = str(trip.iloc[0]["route_id"])
+                # Also look up route name if still missing
+                if not line_name:
+                    routes_df = gtfs.get("routes", pd.DataFrame())
+                    if not routes_df.empty:
+                        r = routes_df[routes_df["route_id"].astype(str) == resolved_route_id]
+                        if not r.empty:
+                            sn = str(r.iloc[0].get("route_short_name", ""))
+                            ln = str(r.iloc[0].get("route_long_name", ""))
+                            if ln.lower().startswith("line"):
+                                line_name = ln
+                            elif sn:
+                                line_name = f"{sn} {ln}".strip()
+                            else:
+                                line_name = ln or None
+
     route_info = {
         "origin_stop": origin_stop_id,
         "dest_stop": dest_stop_id,
@@ -802,8 +871,8 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
         "dest_name": dest_row.get("stop_name", "Unknown"),
         "distance_km": round(distance, 2),
         "estimated_duration_min": estimated_duration,
-        "line": origin_row.get("line", "Unknown"),
-        "route_id": route_id_str,
+        "line": line_name or "TTC",
+        "route_id": resolved_route_id or route_id_str,
         "transfers": 0 if same_line else 1,
         "geometry": geometry,
     }
