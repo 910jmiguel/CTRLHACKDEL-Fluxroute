@@ -137,7 +137,7 @@ export default function MapPage() {
   useEffect(() => {
     getTransitLines()
       .then(setTransitLines)
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Fetch alerts
@@ -146,7 +146,7 @@ export default function MapPage() {
       try {
         const data = await getAlerts();
         setAlerts(data.alerts || []);
-      } catch {}
+      } catch { }
     };
     fetchAlertsData();
     const interval = setInterval(fetchAlertsData, 30000);
@@ -214,15 +214,24 @@ export default function MapPage() {
     }
   }, [fetchRoutes]);
 
+  const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleMarkerDrag = useCallback((type: "origin" | "destination", coord: { lat: number; lng: number }) => {
+    // Debounce: cancel any pending search from a rapid drag sequence
+    if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+
     if (type === "origin") {
       setOriginLabel(null);
       setOrigin(coord);
-      if (destination) fetchRoutes(coord, destination);
+      dragTimerRef.current = setTimeout(() => {
+        if (destination) fetchRoutes(coord, destination);
+      }, 300);
     } else {
       setDestinationLabel(null);
       setDestination(coord);
-      if (origin) fetchRoutes(origin, coord);
+      dragTimerRef.current = setTimeout(() => {
+        if (origin) fetchRoutes(origin, coord);
+      }, 300);
     }
   }, [origin, destination, fetchRoutes]);
 
@@ -251,7 +260,7 @@ export default function MapPage() {
       try {
         const data = await getVehicles();
         setVehicles(data.vehicles || []);
-      } catch {}
+      } catch { }
     };
     fetchVehiclesData();
     const interval = setInterval(fetchVehiclesData, 15000);

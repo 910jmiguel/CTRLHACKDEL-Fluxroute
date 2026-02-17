@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time as _time_mod
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -29,6 +30,10 @@ from app.parking_data import get_parking_info, find_stations_with_parking, is_st
 from app.weather import get_current_weather
 
 logger = logging.getLogger("fluxroute.engine")
+
+# Cross-request weather cache (weather changes ~hourly, no need to re-fetch every request)
+_weather_cache: dict = {}  # key: rounded (lat,lng) → {"data": dict, "ts": float}
+WEATHER_CACHE_TTL = 300  # 5 minutes
 
 def _get_mapbox_token() -> str:
     return os.getenv("MAPBOX_TOKEN", "")
@@ -147,7 +152,7 @@ async def _mapbox_directions(
                 f"{type(e).__name__}: {e}"
             )
             if attempt == 0:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)  # Reduced from 0.5s — no need to wait long
                 continue
             return None
 
@@ -246,9 +251,21 @@ def _make_direction_steps(raw_steps: list[dict]) -> list[DirectionStep]:
 
 
 async def _fetch_weather_full(lat: float, lng: float, http_client=None) -> dict:
-    """Fetch full weather data. Returns defaults on failure."""
+    """Fetch full weather data with cross-request caching (5-min TTL).
+    
+    Weather changes slowly (~hourly), so caching avoids redundant API calls.
+    Returns defaults on failure.
+    """
+    key = f"{round(lat, 2)},{round(lng, 2)}"
+    now = _time_mod.time()
+    cached = _weather_cache.get(key)
+    if cached and now - cached["ts"] < WEATHER_CACHE_TTL:
+        logger.debug(f"Weather cache hit for {key}")
+        return cached["data"]
+
     try:
         weather = await get_current_weather(lat, lng, http_client=http_client)
+        _weather_cache[key] = {"data": weather, "ts": now}
         return weather
     except Exception:
         return {
@@ -286,6 +303,8 @@ async def generate_routes(
     app_state: Optional[dict] = None,
 ) -> list[RouteOption]:
     """Generate 3-4 route options for the given origin/destination."""
+    t_start = _time_mod.perf_counter()
+
     if modes is None:
         modes = [RouteMode.TRANSIT, RouteMode.DRIVING, RouteMode.WALKING, RouteMode.HYBRID]
 
@@ -304,6 +323,8 @@ async def generate_routes(
     weather_task = _fetch_weather_full(origin.lat, origin.lng, http_client=http_client)
     otp_task = _fetch_otp(origin, destination, now, modes, otp_available, http_client=http_client)
     weather, (otp_used, otp_itineraries) = await asyncio.gather(weather_task, otp_task)
+    t_phase1 = _time_mod.perf_counter()
+    logger.info(f"[PERF] Phase 1 (weather+OTP): {(t_phase1-t_start)*1000:.0f}ms")
     is_adverse = weather.get("is_adverse", False)
 
     # Process OTP results
@@ -357,6 +378,13 @@ async def generate_routes(
 
     # Label routes
     _label_routes(routes)
+
+    t_end = _time_mod.perf_counter()
+    logger.info(
+        f"[PERF] Phase 2 (routes): {(t_end-t_phase1)*1000:.0f}ms | "
+        f"Total generate_routes: {(t_end-t_start)*1000:.0f}ms | "
+        f"{len(routes)} routes generated"
+    )
 
     return routes
 
@@ -1078,23 +1106,22 @@ async def _generate_hybrid_routes(
     # --- 2. Score and rank candidates ---
     from app.gtfs_parser import get_next_departures
 
+    # Pre-filter: skip stations too far away (>15km from origin — pointless to drive)
+    candidates = [c for c in candidates
+                  if haversine(origin.lat, origin.lng, c["lat"], c["lng"]) < 15.0]
+
+    # Phase A: Fast scoring WITHOUT departure lookups (expensive GTFS scan)
     scored = []
     for c in candidates:
         has_parking = c.get("parking") is not None
         line_name = c.get("line", "")
         is_disrupted, _ = _check_line_disruption(alerts, line_name)
 
-        # Check next departure for service frequency
-        next_dep_min = None
-        departures = get_next_departures(gtfs, c["stop_id"], limit=1)
-        if departures:
-            next_dep_min = departures[0].get("minutes_until")
-
         score = _score_park_and_ride_candidate(
             origin, destination, c["lat"], c["lng"], total_distance,
             has_parking=has_parking,
             is_disrupted=is_disrupted,
-            next_departure_min=next_dep_min,
+            next_departure_min=None,  # Deferred — only fetch for top candidates
             is_go=c.get("is_go", False),
             now=now,
         )
@@ -1103,11 +1130,29 @@ async def _generate_hybrid_routes(
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
+    # Phase B: Only fetch departures for top candidates and refine scores
+    for i, (base_score, c) in enumerate(scored[:5]):
+        departures = get_next_departures(gtfs, c["stop_id"], limit=1)
+        next_dep_min = departures[0].get("minutes_until") if departures else None
+        if next_dep_min is not None:
+            # Re-score with departure info for better ranking
+            refined_score = _score_park_and_ride_candidate(
+                origin, destination, c["lat"], c["lng"], total_distance,
+                has_parking=c.get("parking") is not None,
+                is_disrupted=False,  # Already accounted for in base score
+                next_departure_min=next_dep_min,
+                is_go=c.get("is_go", False),
+                now=now,
+            )
+            scored[i] = (refined_score, c)
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
     # Ensure diversity: at least 1 TTC and 1 GO (if available)
     ttc_picks = [c for _, c in scored if not c["is_go"]]
     go_picks = [c for _, c in scored if c["is_go"]]
 
-    max_candidates = min(5, len(scored))
+    max_candidates = min(3, len(scored))  # Reduced from 5 — fewer Mapbox calls
     top_candidates = []
     # Take best overall
     for _, c in scored:
