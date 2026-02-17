@@ -22,7 +22,10 @@
       "Bash(npm run dev:*)",
       "Bash(git clean:*)",
       "Bash(python3:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(java -version:*)",
+      "Bash(java:*)"
     ]
   }
 }
