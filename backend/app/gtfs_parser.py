@@ -44,8 +44,8 @@ TTC_SUBWAY_STATIONS = [
     {"stop_id": "YU_LWST", "stop_name": "Lawrence West", "stop_lat": 43.7158, "stop_lon": -79.4440, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_YKDL", "stop_name": "Yorkdale", "stop_lat": 43.7245, "stop_lon": -79.4479, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_WLSN", "stop_name": "Wilson", "stop_lat": 43.7339, "stop_lon": -79.4502, "route_id": "1", "line": "Line 1 Yonge-University"},
-    {"stop_id": "YU_DWPK", "stop_name": "Downsview Park", "stop_lat": 43.7452, "stop_lon": -79.4784, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_SHPW", "stop_name": "Sheppard West", "stop_lat": 43.7494, "stop_lon": -79.4618, "route_id": "1", "line": "Line 1 Yonge-University"},
+    {"stop_id": "YU_DWPK", "stop_name": "Downsview Park", "stop_lat": 43.7535, "stop_lon": -79.4784, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_FNWT", "stop_name": "Finch West", "stop_lat": 43.7653, "stop_lon": -79.4910, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_YKUN", "stop_name": "York University", "stop_lat": 43.7735, "stop_lon": -79.5009, "route_id": "1", "line": "Line 1 Yonge-University"},
     {"stop_id": "YU_PNVL", "stop_name": "Pioneer Village", "stop_lat": 43.7778, "stop_lon": -79.5105, "route_id": "1", "line": "Line 1 Yonge-University"},
@@ -54,7 +54,7 @@ TTC_SUBWAY_STATIONS = [
     # Line 2 Bloor-Danforth (BD)
     {"stop_id": "BD_KPLG", "stop_name": "Kipling", "stop_lat": 43.6372, "stop_lon": -79.5361, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
     {"stop_id": "BD_ISLN", "stop_name": "Islington", "stop_lat": 43.6386, "stop_lon": -79.5246, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
-    {"stop_id": "BD_RYLK", "stop_name": "Royal York", "stop_lat": 43.6384, "stop_lon": -79.5113, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
+    {"stop_id": "BD_RYLK", "stop_name": "Royal York", "stop_lat": 43.6482, "stop_lon": -79.5113, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
     {"stop_id": "BD_OLDM", "stop_name": "Old Mill", "stop_lat": 43.6502, "stop_lon": -79.4952, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
     {"stop_id": "BD_JANE", "stop_name": "Jane", "stop_lat": 43.6502, "stop_lon": -79.4838, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
     {"stop_id": "BD_RUNM", "stop_name": "Runnymede", "stop_lat": 43.6512, "stop_lon": -79.4754, "route_id": "2", "line": "Line 2 Bloor-Danforth"},
@@ -199,6 +199,46 @@ def load_gtfs_data() -> dict:
         data["stops"] = pd.DataFrame(TTC_SUBWAY_STATIONS)
         data["using_fallback"] = True
 
+    # Pre-convert stop_id to string for fast lookups (avoids .astype(str) on 4M rows)
+    if not data["stop_times"].empty and "stop_id" in data["stop_times"].columns:
+        data["stop_times"]["stop_id"] = data["stop_times"]["stop_id"].astype(str)
+    if not data["stops"].empty and "stop_id" in data["stops"].columns:
+        data["stops"]["stop_id"] = data["stops"]["stop_id"].astype(str)
+
+    # Build rapid transit index: stop_id → {route_id, route_short_name, route_long_name, route_type}
+    # This avoids scanning 4.2M stop_times rows per stop during route lookups
+    rapid_index: dict[str, dict] = {}
+    routes_df = data.get("routes", pd.DataFrame())
+    trips_df = data.get("trips", pd.DataFrame())
+    stop_times_df = data.get("stop_times", pd.DataFrame())
+    if not routes_df.empty and "route_type" in routes_df.columns and not trips_df.empty and not stop_times_df.empty:
+        rapid_types = {0, 1, 2}
+        rapid_routes = routes_df[routes_df["route_type"].isin(rapid_types)]
+        if not rapid_routes.empty:
+            rapid_route_ids = set(rapid_routes["route_id"].unique())
+            rapid_trips = trips_df[trips_df["route_id"].isin(rapid_route_ids)]
+            # Build trip_id → route_id map
+            trip_to_route = dict(zip(rapid_trips["trip_id"], rapid_trips["route_id"]))
+            # Build route_id → route info map
+            route_info_map = {}
+            for _, r in rapid_routes.iterrows():
+                rid = r["route_id"]
+                route_info_map[rid] = {
+                    "route_id": rid,
+                    "route_short_name": str(r.get("route_short_name", "")) if pd.notna(r.get("route_short_name")) else "",
+                    "route_long_name": str(r.get("route_long_name", "")) if pd.notna(r.get("route_long_name")) else "",
+                }
+            # Scan stop_times once to map stop_id → route info
+            rapid_trip_ids = set(trip_to_route.keys())
+            rapid_st = stop_times_df[stop_times_df["trip_id"].isin(rapid_trip_ids)]
+            for stop_id, trip_id in zip(rapid_st["stop_id"].values, rapid_st["trip_id"].values):
+                if stop_id not in rapid_index:
+                    route_id = trip_to_route.get(trip_id)
+                    if route_id and route_id in route_info_map:
+                        rapid_index[stop_id] = route_info_map[route_id]
+            logger.info(f"Built rapid transit index: {len(rapid_index)} stops")
+    data["_rapid_index"] = rapid_index
+
     return data
 
 
@@ -233,24 +273,13 @@ def find_nearest_rapid_transit_stations(
         results.sort(key=lambda x: x["distance_km"])
         return results[:limit]
 
-    # GTFS data available: filter to rapid transit stops
-    rapid_route_types = {0, 1, 2}
-    rapid_routes = routes_df[routes_df["route_type"].isin(rapid_route_types)]
-    if rapid_routes.empty:
+    # Use prebuilt rapid transit index for O(1) lookups
+    rapid_index = gtfs.get("_rapid_index", {})
+    if not rapid_index:
         return []
 
-    rapid_route_ids = set(rapid_routes["route_id"].unique())
-
-    # Join through trips -> stop_times to find stops served by rapid transit
-    if not trips_df.empty and not stop_times_df.empty:
-        rapid_trips = trips_df[trips_df["route_id"].isin(rapid_route_ids)]
-        rapid_trip_ids = set(rapid_trips["trip_id"].unique())
-        rapid_stop_times = stop_times_df[stop_times_df["trip_id"].isin(rapid_trip_ids)]
-        rapid_stop_ids = set(rapid_stop_times["stop_id"].unique())
-        rapid_stops = stops[stops["stop_id"].isin(rapid_stop_ids)]
-    else:
-        # Can't join — return empty
-        return []
+    rapid_stop_ids = set(rapid_index.keys())
+    rapid_stops = stops[stops["stop_id"].isin(rapid_stop_ids)]
 
     if rapid_stops.empty:
         return []
@@ -265,29 +294,17 @@ def find_nearest_rapid_transit_stations(
         s_lng = float(row[lng_col])
         dist = haversine(lat, lng, s_lat, s_lng)
         if dist <= radius_km:
-            # Find which route this stop is on
-            stop_id = row["stop_id"]
-            route_id = None
-            line = None
-            if not stop_times_df.empty and not trips_df.empty:
-                st = stop_times_df[stop_times_df["stop_id"] == stop_id]
-                if not st.empty:
-                    trip_id = st.iloc[0]["trip_id"]
-                    trip = trips_df[trips_df["trip_id"] == trip_id]
-                    if not trip.empty:
-                        route_id = trip.iloc[0]["route_id"]
-                        if route_id in rapid_route_ids:
-                            r = rapid_routes[rapid_routes["route_id"] == route_id]
-                            if not r.empty:
-                                sn = str(r.iloc[0].get("route_short_name", ""))
-                                ln = str(r.iloc[0].get("route_long_name", ""))
-                                # Avoid "Line 1 Line 1 (...)" duplication
-                                if ln.lower().startswith("line"):
-                                    line = ln
-                                elif sn:
-                                    line = f"Line {sn} {ln}".strip()
-                                else:
-                                    line = ln
+            stop_id = str(row["stop_id"])
+            info = rapid_index.get(stop_id, {})
+            route_id = info.get("route_id")
+            sn = info.get("route_short_name", "")
+            ln = info.get("route_long_name", "")
+            if ln.lower().startswith("line"):
+                line = ln
+            elif sn:
+                line = f"Line {sn} {ln}".strip()
+            else:
+                line = ln or None
 
             results.append({
                 "stop_id": str(stop_id),
@@ -347,38 +364,30 @@ def find_nearest_stops(gtfs: dict, lat: float, lng: float, radius_km: float = 2.
 
     nearby = stops_with_dist[stops_with_dist["distance_km"] <= radius_km].nsmallest(limit, "distance_km")
 
-    # Pre-fetch lookup DataFrames for route enrichment
-    stop_times_df = gtfs.get("stop_times", pd.DataFrame())
-    trips_df = gtfs.get("trips", pd.DataFrame())
-    routes_df = gtfs.get("routes", pd.DataFrame())
+    # Use rapid transit index for fast route enrichment
+    rapid_index = gtfs.get("_rapid_index", {})
 
     results = []
     for _, row in nearby.iterrows():
-        stop_id = row.get("stop_id", "")
+        stop_id = str(row.get("stop_id", ""))
         stop_name = row.get("stop_name", "Unknown")
         route_id = row.get("route_id", None)
         line = row.get("line", None)
 
-        # Enrich with route info from stop_times → trips → routes if missing
-        if (route_id is None or line is None) and not stop_times_df.empty and not trips_df.empty:
-            st = stop_times_df[stop_times_df["stop_id"].astype(str) == str(stop_id)]
-            if not st.empty:
-                trip_id = st.iloc[0]["trip_id"]
-                trip = trips_df[trips_df["trip_id"] == trip_id]
-                if not trip.empty:
-                    if route_id is None:
-                        route_id = trip.iloc[0]["route_id"]
-                    if line is None and not routes_df.empty:
-                        r = routes_df[routes_df["route_id"].astype(str) == str(route_id)]
-                        if not r.empty:
-                            sn = str(r.iloc[0].get("route_short_name", ""))
-                            ln = str(r.iloc[0].get("route_long_name", ""))
-                            if ln.lower().startswith("line"):
-                                line = ln
-                            elif sn:
-                                line = f"{sn} {ln}".strip()
-                            else:
-                                line = ln or None
+        # Enrich with route info from prebuilt index
+        if (route_id is None or line is None) and stop_id in rapid_index:
+            info = rapid_index[stop_id]
+            if route_id is None:
+                route_id = info.get("route_id")
+            if line is None:
+                sn = info.get("route_short_name", "")
+                ln = info.get("route_long_name", "")
+                if ln.lower().startswith("line"):
+                    line = ln
+                elif sn:
+                    line = f"{sn} {ln}".strip()
+                else:
+                    line = ln or None
 
         results.append({
             "stop_id": str(stop_id),
@@ -463,6 +472,65 @@ def search_stops(gtfs: dict, query: str, limit: int = 5) -> list[dict]:
             deduped.append(item)
 
     return deduped[:limit]
+
+
+def get_route_shape_segment(
+    gtfs: dict, route_id: str,
+    board_lat: float, board_lng: float,
+    alight_lat: float, alight_lng: float,
+) -> Optional[dict]:
+    """Get the GTFS shape clipped between board and alight stop coordinates.
+
+    Returns a GeoJSON LineString following the actual track between two stops,
+    or None if shapes data is unavailable.
+    """
+    shapes = gtfs.get("shapes", pd.DataFrame())
+    trips = gtfs.get("trips", pd.DataFrame())
+
+    if shapes.empty or trips.empty:
+        return None
+
+    route_trips = trips[trips["route_id"].astype(str) == str(route_id)]
+    if route_trips.empty:
+        return None
+
+    shape_id = route_trips.iloc[0].get("shape_id")
+    if pd.isna(shape_id):
+        return None
+
+    shape_points = shapes[shapes["shape_id"] == shape_id].sort_values("shape_pt_sequence")
+    if shape_points.empty:
+        return None
+
+    coords = list(zip(shape_points["shape_pt_lon"].values, shape_points["shape_pt_lat"].values))
+
+    # Find nearest shape point to board and alight stops
+    def nearest_idx(lat: float, lng: float) -> int:
+        best_i, best_d = 0, float("inf")
+        for i, (lon, la) in enumerate(coords):
+            d = (la - lat) ** 2 + (lon - lng) ** 2
+            if d < best_d:
+                best_d = d
+                best_i = i
+        return best_i
+
+    board_idx = nearest_idx(board_lat, board_lng)
+    alight_idx = nearest_idx(alight_lat, alight_lng)
+
+    if board_idx == alight_idx:
+        return None
+
+    lo, hi = min(board_idx, alight_idx), max(board_idx, alight_idx)
+    segment = coords[lo:hi + 1]
+
+    # If board comes after alight in the shape, reverse
+    if board_idx > alight_idx:
+        segment = list(reversed(segment))
+
+    if len(segment) < 2:
+        return None
+
+    return {"type": "LineString", "coordinates": [[lon, lat] for lon, lat in segment]}
 
 
 def get_route_shape(gtfs: dict, route_id: str) -> Optional[dict]:
@@ -595,7 +663,7 @@ def get_next_departures(
     now = datetime.now()
     current_minutes = now.hour * 60 + now.minute
 
-    stop_deps = stop_times[stop_times["stop_id"].astype(str) == str(stop_id)].copy()
+    stop_deps = stop_times[stop_times["stop_id"] == str(stop_id)].copy()
     if stop_deps.empty:
         return _generate_mock_departures(stop_id, limit)
 
@@ -644,7 +712,7 @@ def get_trip_arrival_at_stop(gtfs: dict, trip_id: str, stop_id: str) -> Optional
 
     match = stop_times[
         (stop_times["trip_id"].astype(str) == str(trip_id)) &
-        (stop_times["stop_id"].astype(str) == str(stop_id))
+        (stop_times["stop_id"] == str(stop_id))
     ]
     if match.empty:
         return None
@@ -673,6 +741,211 @@ def _generate_mock_departures(stop_id: str, limit: int) -> list[dict]:
         })
     return results
 
+
+# Major TTC streetcar routes — coordinates follow actual street grid (straight roads).
+# Each route includes key station stops for map labels/dots.
+TTC_STREETCAR_ROUTES = [
+    {
+        "route_id": "501", "short_name": "501", "long_name": "Queen",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.5354, 43.6261],  # Long Branch loop
+            [-79.5200, 43.6270],  # Lake Shore Blvd
+            [-79.4940, 43.6350],  # Humber loop
+            [-79.4780, 43.6395],  # Roncesvalles turn onto Queen
+            [-79.4526, 43.6434],  # Dufferin & Queen
+            [-79.4356, 43.6461],  # Ossington & Queen
+            [-79.4110, 43.6488],  # Bathurst & Queen
+            [-79.4037, 43.6497],  # Spadina & Queen
+            [-79.3885, 43.6510],  # University & Queen
+            [-79.3793, 43.6519],  # Yonge & Queen
+            [-79.3720, 43.6525],  # Church & Queen
+            [-79.3584, 43.6537],  # Parliament & Queen
+            [-79.3451, 43.6558],  # Broadview turn onto Queen E
+            [-79.3228, 43.6650],  # Coxwell & Queen
+            [-79.3060, 43.6690],  # Woodbine & Queen
+            [-79.2935, 43.6730],  # Neville Park loop
+        ],
+        "stations": [
+            {"stop_id": "SC_501_HUM", "stop_name": "Humber Loop", "stop_lat": 43.6350, "stop_lon": -79.4940},
+            {"stop_id": "SC_501_DUF", "stop_name": "Dufferin", "stop_lat": 43.6434, "stop_lon": -79.4526},
+            {"stop_id": "SC_501_BTH", "stop_name": "Bathurst", "stop_lat": 43.6488, "stop_lon": -79.4110},
+            {"stop_id": "SC_501_SPA", "stop_name": "Spadina", "stop_lat": 43.6497, "stop_lon": -79.4037},
+            {"stop_id": "SC_501_YNG", "stop_name": "Queen & Yonge", "stop_lat": 43.6519, "stop_lon": -79.3793},
+            {"stop_id": "SC_501_BRD", "stop_name": "Broadview", "stop_lat": 43.6558, "stop_lon": -79.3451},
+            {"stop_id": "SC_501_NEV", "stop_name": "Neville Park", "stop_lat": 43.6730, "stop_lon": -79.2935},
+        ],
+    },
+    {
+        "route_id": "504", "short_name": "504", "long_name": "King",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.4526, 43.6399],  # Dundas West station
+            [-79.4356, 43.6399],  # Dufferin & King
+            [-79.4110, 43.6400],  # Bathurst & King
+            [-79.4037, 43.6400],  # Spadina & King
+            [-79.3885, 43.6427],  # University & King
+            [-79.3782, 43.6449],  # Yonge & King
+            [-79.3720, 43.6449],  # Church & King
+            [-79.3620, 43.6449],  # Jarvis & King
+            [-79.3520, 43.6470],  # Parliament & King
+            [-79.3451, 43.6520],  # Broadview turn
+            [-79.3380, 43.6570],  # Broadview station
+        ],
+        "stations": [
+            {"stop_id": "SC_504_DDW", "stop_name": "Dundas West", "stop_lat": 43.6399, "stop_lon": -79.4526},
+            {"stop_id": "SC_504_BTH", "stop_name": "Bathurst", "stop_lat": 43.6400, "stop_lon": -79.4110},
+            {"stop_id": "SC_504_SPA", "stop_name": "Spadina", "stop_lat": 43.6400, "stop_lon": -79.4037},
+            {"stop_id": "SC_504_YNG", "stop_name": "King & Yonge", "stop_lat": 43.6449, "stop_lon": -79.3782},
+            {"stop_id": "SC_504_BRD", "stop_name": "Broadview", "stop_lat": 43.6570, "stop_lon": -79.3380},
+        ],
+    },
+    {
+        "route_id": "505", "short_name": "505", "long_name": "Dundas",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.4526, 43.6567],  # Dundas West station
+            [-79.4356, 43.6560],  # Ossington & Dundas
+            [-79.4110, 43.6555],  # Bathurst & Dundas
+            [-79.4037, 43.6553],  # Spadina & Dundas
+            [-79.3885, 43.6550],  # University & Dundas
+            [-79.3808, 43.6555],  # Yonge & Dundas
+            [-79.3720, 43.6560],  # Church & Dundas
+            [-79.3584, 43.6570],  # Parliament & Dundas
+            [-79.3451, 43.6580],  # Broadview & Dundas
+        ],
+        "stations": [
+            {"stop_id": "SC_505_DDW", "stop_name": "Dundas West", "stop_lat": 43.6567, "stop_lon": -79.4526},
+            {"stop_id": "SC_505_YNG", "stop_name": "Dundas & Yonge", "stop_lat": 43.6555, "stop_lon": -79.3808},
+            {"stop_id": "SC_505_BRD", "stop_name": "Broadview", "stop_lat": 43.6580, "stop_lon": -79.3451},
+        ],
+    },
+    {
+        "route_id": "506", "short_name": "506", "long_name": "Carlton",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.4200, 43.6565],  # Lansdowne & College
+            [-79.4110, 43.6575],  # Ossington & College
+            [-79.4037, 43.6585],  # Bathurst & College
+            [-79.3921, 43.6598],  # Spadina & College
+            [-79.3827, 43.6610],  # College station (University)
+            [-79.3760, 43.6618],  # Yonge & Carlton
+            [-79.3686, 43.6625],  # Sherbourne & Carlton
+            [-79.3584, 43.6635],  # Parliament & Carlton
+            [-79.3451, 43.6665],  # Gerrard & Broadview turn
+            [-79.3302, 43.6785],  # Coxwell & Gerrard
+            [-79.3012, 43.6840],  # Main Street area
+        ],
+        "stations": [
+            {"stop_id": "SC_506_BTH", "stop_name": "Bathurst", "stop_lat": 43.6585, "stop_lon": -79.4037},
+            {"stop_id": "SC_506_COL", "stop_name": "College", "stop_lat": 43.6610, "stop_lon": -79.3827},
+            {"stop_id": "SC_506_YNG", "stop_name": "Carlton & Yonge", "stop_lat": 43.6618, "stop_lon": -79.3760},
+            {"stop_id": "SC_506_BRD", "stop_name": "Broadview", "stop_lat": 43.6665, "stop_lon": -79.3451},
+            {"stop_id": "SC_506_MN", "stop_name": "Main Street", "stop_lat": 43.6840, "stop_lon": -79.3012},
+        ],
+    },
+    {
+        "route_id": "509", "short_name": "509", "long_name": "Harbourfront",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.3806, 43.6453],  # Union Station
+            [-79.3840, 43.6390],  # Queens Quay & Bay
+            [-79.3900, 43.6380],  # Queens Quay & Rees
+            [-79.3960, 43.6375],  # Queens Quay & Spadina
+            [-79.4030, 43.6370],  # Queens Quay & Bathurst
+            [-79.4130, 43.6360],  # Exhibition loop
+        ],
+        "stations": [
+            {"stop_id": "SC_509_UNI", "stop_name": "Union", "stop_lat": 43.6453, "stop_lon": -79.3806},
+            {"stop_id": "SC_509_QQS", "stop_name": "Queens Quay & Spadina", "stop_lat": 43.6375, "stop_lon": -79.3960},
+            {"stop_id": "SC_509_EXH", "stop_name": "Exhibition", "stop_lat": 43.6360, "stop_lon": -79.4130},
+        ],
+    },
+    {
+        "route_id": "510", "short_name": "510", "long_name": "Spadina",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.4037, 43.6672],  # Spadina station (subway)
+            [-79.4010, 43.6598],  # Spadina & College
+            [-79.3990, 43.6530],  # Spadina & Dundas
+            [-79.3970, 43.6497],  # Spadina & Queen
+            [-79.3955, 43.6449],  # Spadina & King
+            [-79.3940, 43.6400],  # Spadina & Front
+            [-79.3920, 43.6375],  # Spadina & Queens Quay
+        ],
+        "stations": [
+            {"stop_id": "SC_510_SPA", "stop_name": "Spadina Stn", "stop_lat": 43.6672, "stop_lon": -79.4037},
+            {"stop_id": "SC_510_COL", "stop_name": "College", "stop_lat": 43.6598, "stop_lon": -79.4010},
+            {"stop_id": "SC_510_QUE", "stop_name": "Queen", "stop_lat": 43.6497, "stop_lon": -79.3990},
+            {"stop_id": "SC_510_KNG", "stop_name": "King", "stop_lat": 43.6449, "stop_lon": -79.3955},
+            {"stop_id": "SC_510_QQY", "stop_name": "Queens Quay", "stop_lat": 43.6375, "stop_lon": -79.3920},
+        ],
+    },
+    {
+        "route_id": "512", "short_name": "512", "long_name": "St Clair",
+        "color": "#DD3333",
+        "coordinates": [
+            [-79.4650, 43.6780],  # Gunn's Loop (west)
+            [-79.4500, 43.6790],  # Keele & St Clair
+            [-79.4356, 43.6800],  # Lansdowne & St Clair
+            [-79.4200, 43.6815],  # Dufferin & St Clair
+            [-79.4150, 43.6825],  # St Clair West station
+            [-79.4037, 43.6840],  # Bathurst & St Clair
+            [-79.3934, 43.6860],  # Yonge & St Clair
+            [-79.3800, 43.6870],  # Mt Pleasant & St Clair
+        ],
+        "stations": [
+            {"stop_id": "SC_512_GUN", "stop_name": "Gunn's Loop", "stop_lat": 43.6780, "stop_lon": -79.4650},
+            {"stop_id": "SC_512_DUF", "stop_name": "Dufferin", "stop_lat": 43.6815, "stop_lon": -79.4200},
+            {"stop_id": "SC_512_SCW", "stop_name": "St Clair West Stn", "stop_lat": 43.6825, "stop_lon": -79.4150},
+            {"stop_id": "SC_512_YNG", "stop_name": "Yonge & St Clair", "stop_lat": 43.6860, "stop_lon": -79.3934},
+        ],
+    },
+]
+
+# UP Express route (Union → Pearson Airport)
+UP_EXPRESS_ROUTE = {
+    "route_id": "UP", "short_name": "UP", "long_name": "UP Express",
+    "color": "#1E3A8A",
+    "coordinates": [
+        [-79.3806, 43.6453],  # Union Station
+        [-79.3870, 43.6460],  # west along rail corridor
+        [-79.3950, 43.6470],
+        [-79.4050, 43.6485],
+        [-79.4150, 43.6510],
+        [-79.4250, 43.6540],  # curving northwest
+        [-79.4350, 43.6565],
+        [-79.4450, 43.6590],
+        [-79.4550, 43.6615],
+        [-79.4620, 43.6635],  # Bloor GO area
+        [-79.4700, 43.6660],
+        [-79.4800, 43.6700],
+        [-79.4870, 43.6740],
+        [-79.4900, 43.6780],
+        [-79.4920, 43.6810],  # curving north
+        [-79.4940, 43.6850],
+        [-79.4945, 43.6880],  # Weston GO area
+        [-79.4960, 43.6920],
+        [-79.4980, 43.6970],
+        [-79.5020, 43.7020],
+        [-79.5070, 43.7070],
+        [-79.5130, 43.7120],  # northwest toward Pearson
+        [-79.5200, 43.7160],
+        [-79.5300, 43.7200],
+        [-79.5420, 43.7250],
+        [-79.5550, 43.7300],
+        [-79.5700, 43.7350],
+        [-79.5850, 43.7380],
+        [-79.6000, 43.7400],
+        [-79.6110, 43.7410],  # Pearson Terminal 1
+    ],
+    "stations": [
+        {"stop_id": "UP_UNION", "stop_name": "Union", "stop_lat": 43.6453, "stop_lon": -79.3806},
+        {"stop_id": "UP_BLOOR", "stop_name": "Bloor", "stop_lat": 43.6635, "stop_lon": -79.4620},
+        {"stop_id": "UP_WESTON", "stop_name": "Weston", "stop_lat": 43.6880, "stop_lon": -79.4945},
+        {"stop_id": "UP_PEARSON", "stop_name": "Pearson Airport", "stop_lat": 43.7410, "stop_lon": -79.6110},
+    ],
+}
 
 TTC_LINE_INFO = {
     "1": {"name": "Line 1 Yonge-University", "color": "#F0CC49"},
@@ -738,7 +1011,7 @@ def get_intermediate_stops(gtfs: dict, route_id: str, board_stop_id: str, alight
     for _, trip_row in route_trips.head(20).iterrows():
         trip_id = trip_row["trip_id"]
         trip_st = stop_times_df[stop_times_df["trip_id"] == trip_id].sort_values("stop_sequence")
-        stop_ids_in_trip = list(trip_st["stop_id"].astype(str))
+        stop_ids_in_trip = list(trip_st["stop_id"])
 
         board_pos = next((i for i, sid in enumerate(stop_ids_in_trip) if sid == str(board_stop_id)), None)
         alight_pos = next((i for i, sid in enumerate(stop_ids_in_trip) if sid == str(alight_stop_id)), None)
@@ -750,7 +1023,7 @@ def get_intermediate_stops(gtfs: dict, route_id: str, board_stop_id: str, alight
 
             result = []
             for sid in subset_ids:
-                row = stops_df[stops_df["stop_id"].astype(str) == sid]
+                row = stops_df[stops_df["stop_id"] == sid]
                 if not row.empty:
                     r = row.iloc[0]
                     result.append({
@@ -765,8 +1038,12 @@ def get_intermediate_stops(gtfs: dict, route_id: str, board_stop_id: str, alight
     return []
 
 
-def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Optional[dict]:
-    """Find a transit route connecting two stops."""
+def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str, route_id: Optional[str] = None) -> Optional[dict]:
+    """Find a transit route connecting two stops.
+
+    route_id: if provided, used directly for shape/trip lookup (required for real GTFS
+    since stops.txt has no route_id column).
+    """
     stops = gtfs["stops"]
     stop_times = gtfs.get("stop_times", pd.DataFrame())
 
@@ -774,8 +1051,8 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
     lat_col = "stop_lat" if "stop_lat" in stops.columns else "latitude"
     lng_col = "stop_lon" if "stop_lon" in stops.columns else "longitude"
 
-    origin_stop = stops[stops["stop_id"].astype(str) == str(origin_stop_id)]
-    dest_stop = stops[stops["stop_id"].astype(str) == str(dest_stop_id)]
+    origin_stop = stops[stops["stop_id"] == str(origin_stop_id)]
+    dest_stop = stops[stops["stop_id"] == str(dest_stop_id)]
 
     if origin_stop.empty or dest_stop.empty:
         return None
@@ -783,14 +1060,24 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
     origin_row = origin_stop.iloc[0]
     dest_row = dest_stop.iloc[0]
 
-    # Check if same line (for fallback data)
-    same_line = (origin_row.get("route_id") is not None and
-                 origin_row.get("route_id") == dest_row.get("route_id"))
+    # Use provided route_id, or try to get from stop data (fallback mode)
+    route_id_str = str(route_id) if route_id else str(origin_row.get("route_id", ""))
 
-    route_id_str = str(origin_row.get("route_id", ""))
+    # If still empty, resolve from stop_times → trips
+    if not route_id_str and not stop_times.empty:
+        trips_df = gtfs.get("trips", pd.DataFrame())
+        st = stop_times[stop_times["stop_id"] == str(origin_stop_id)]
+        if not st.empty and not trips_df.empty:
+            trip_id = st.iloc[0]["trip_id"]
+            trip = trips_df[trips_df["trip_id"] == trip_id]
+            if not trip.empty:
+                route_id_str = str(trip.iloc[0]["route_id"])
+
+    same_line = bool(route_id_str)
 
     # Get intermediate stops for accurate distance and geometry
     intermediate = get_intermediate_stops(gtfs, route_id_str, origin_stop_id, dest_stop_id)
+    logger.info(f"find_transit_route: route_id={route_id_str}, intermediate={len(intermediate)} stops")
 
     if len(intermediate) >= 2:
         # Sum haversine between consecutive intermediate stops for real track distance
@@ -800,11 +1087,22 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
                 intermediate[k]["lat"], intermediate[k]["lng"],
                 intermediate[k + 1]["lat"], intermediate[k + 1]["lng"],
             )
-        # Build geometry as polyline through all intermediate stops
-        geometry = {
-            "type": "LineString",
-            "coordinates": [[s["lng"], s["lat"]] for s in intermediate],
-        }
+        # Use GTFS shapes for detailed track geometry (curves between stations)
+        shape_geom = get_route_shape_segment(
+            gtfs, route_id_str,
+            intermediate[0]["lat"], intermediate[0]["lng"],
+            intermediate[-1]["lat"], intermediate[-1]["lng"],
+        )
+        if shape_geom and len(shape_geom["coordinates"]) >= 2:
+            logger.info(f"find_transit_route: using GTFS shape with {len(shape_geom['coordinates'])} points")
+            geometry = shape_geom
+        else:
+            logger.info(f"find_transit_route: GTFS shape not found, using {len(intermediate)} station points")
+            # Fallback: connect intermediate stops with straight lines
+            geometry = {
+                "type": "LineString",
+                "coordinates": [[s["lng"], s["lat"]] for s in intermediate],
+            }
     else:
         # Fallback to straight-line haversine
         distance = haversine(origin_row[lat_col], origin_row[lng_col], dest_row[lat_col], dest_row[lng_col])
@@ -843,7 +1141,7 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str) -> Op
     resolved_route_id = route_id_str
     if not resolved_route_id and not stop_times.empty:
         trips_df = gtfs.get("trips", pd.DataFrame())
-        st = stop_times[stop_times["stop_id"].astype(str) == str(origin_stop_id)]
+        st = stop_times[stop_times["stop_id"] == str(origin_stop_id)]
         if not st.empty and not trips_df.empty:
             trip_id = st.iloc[0]["trip_id"]
             trip = trips_df[trips_df["trip_id"] == trip_id]

@@ -34,6 +34,12 @@ def _get_mapbox_token() -> str:
     return os.getenv("MAPBOX_TOKEN", "")
 MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox"
 
+# Simple per-request cache for Mapbox directions (avoids duplicate calls within one route calculation)
+_directions_cache: dict[str, Optional[dict]] = {}
+
+def _directions_cache_key(origin: "Coordinate", destination: "Coordinate", profile: str) -> str:
+    return f"{origin.lat:.5f},{origin.lng:.5f}|{destination.lat:.5f},{destination.lng:.5f}|{profile}"
+
 
 async def _mapbox_directions(
     origin: Coordinate,
@@ -42,6 +48,11 @@ async def _mapbox_directions(
     http_client: Optional[httpx.AsyncClient] = None,
 ) -> Optional[dict]:
     """Call Mapbox Directions API. Returns route data or None on failure."""
+    # Check cache first (avoids duplicate API calls within one route calculation)
+    cache_key = _directions_cache_key(origin, destination, profile)
+    if cache_key in _directions_cache:
+        return _directions_cache[cache_key]
+
     token = _get_mapbox_token()
     if not token or token == "your-mapbox-token-here":
         logger.info(
@@ -109,7 +120,7 @@ async def _mapbox_directions(
                         "maneuver_modifier": maneuver.get("modifier", ""),
                     })
 
-            return {
+            result = {
                 "geometry": route["geometry"],
                 "distance_km": route["distance"] / 1000,
                 "duration_min": route["duration"] / 60,
@@ -117,6 +128,8 @@ async def _mapbox_directions(
                 "congestion_level": congestion_level,
                 "steps": steps,
             }
+            _directions_cache[cache_key] = result
+            return result
         except Exception as e:
             logger.warning(
                 f"Mapbox API call failed ({profile}, attempt {attempt + 1}/2): "
@@ -125,6 +138,7 @@ async def _mapbox_directions(
             if attempt == 0:
                 await asyncio.sleep(0.5)
                 continue
+            _directions_cache[cache_key] = None
             return None
 
 
@@ -262,6 +276,8 @@ async def generate_routes(
     app_state: Optional[dict] = None,
 ) -> list[RouteOption]:
     """Generate 3-4 route options for the given origin/destination."""
+    _directions_cache.clear()  # Fresh cache per request
+
     if modes is None:
         modes = [RouteMode.TRANSIT, RouteMode.DRIVING, RouteMode.WALKING, RouteMode.HYBRID]
 
@@ -564,22 +580,55 @@ async def _generate_transit_route(
     app_state: Optional[dict] = None,
 ) -> Optional[RouteOption]:
     """Generate a transit route with walking segments to/from stations."""
-    # Find nearest stops — progressive radius expansion for suburban origins
-    TRANSIT_RADII = [3.0, 5.0, 8.0]
+    # Find nearest rapid transit stations (subway/LRT/rail only — no bus stops)
+    # Progressive radius expansion for suburban origins
+    TRANSIT_RADII = [3.0, 5.0, 8.0, 15.0]
     origin_stops, dest_stops = [], []
     for radius in TRANSIT_RADII:
         if not origin_stops:
-            origin_stops = find_nearest_stops(gtfs, origin.lat, origin.lng, radius_km=radius, limit=3)
+            origin_stops = find_nearest_rapid_transit_stations(gtfs, origin.lat, origin.lng, radius_km=radius, limit=5)
         if not dest_stops:
-            dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=radius, limit=3)
+            dest_stops = find_nearest_rapid_transit_stations(gtfs, destination.lat, destination.lng, radius_km=radius, limit=5)
         if origin_stops and dest_stops:
             break
 
     if not origin_stops or not dest_stops:
         return None
 
-    origin_stop = origin_stops[0]
-    dest_stop = dest_stops[0]
+    # Score all origin/dest stop combinations to find the best pair.
+    # ONLY consider same-line pairs (direct route) — cross-line trips need transfers
+    # which we don't build yet, so they'd "teleport" between lines.
+    _RAPID_LINES = {"1", "2", "4"}
+    best_pair = None
+    best_score = float('inf')
+
+    # First pass: same-line pairs only
+    for o_stop in origin_stops:
+        for d_stop in dest_stops:
+            o_rid = str(o_stop.get("route_id") or "")
+            d_rid = str(d_stop.get("route_id") or "")
+            if not o_rid or o_rid != d_rid:
+                continue  # Skip cross-line pairs
+            score = o_stop["distance_km"] + d_stop["distance_km"]
+            if o_rid in _RAPID_LINES:
+                score -= 2  # Prefer subway over LRT/streetcar
+            if score < best_score:
+                best_score = score
+                best_pair = (o_stop, d_stop)
+
+    # Fallback: if no same-line pair, pick closest pair (will be a straight segment)
+    if best_pair is None:
+        for o_stop in origin_stops:
+            for d_stop in dest_stops:
+                score = o_stop["distance_km"] + d_stop["distance_km"]
+                if score < best_score:
+                    best_score = score
+                    best_pair = (o_stop, d_stop)
+
+    if best_pair is None:
+        return None
+
+    origin_stop, dest_stop = best_pair
 
     segments: list[RouteSegment] = []
     total_duration = 0.0
@@ -636,7 +685,8 @@ async def _generate_transit_route(
     total_dist += to_dist
 
     # Transit segment
-    transit_route = find_transit_route(gtfs, origin_stop["stop_id"], dest_stop["stop_id"])
+    transit_route = find_transit_route(gtfs, origin_stop["stop_id"], dest_stop["stop_id"],
+                                       route_id=origin_stop.get("route_id"))
     transit_dist = transit_route["distance_km"] if transit_route else haversine(
         origin_stop["lat"], origin_stop["lng"], dest_stop["lat"], dest_stop["lng"]
     )
@@ -1051,11 +1101,9 @@ async def _generate_hybrid_routes(
         line_name = c.get("line", "")
         is_disrupted, _ = _check_line_disruption(alerts, line_name)
 
-        # Check next departure for service frequency
+        # Skip departure lookup during scoring (4.2M row scan per stop is too slow).
+        # Frequency bonus is minor — distance and parking matter more.
         next_dep_min = None
-        departures = get_next_departures(gtfs, c["stop_id"], limit=1)
-        if departures:
-            next_dep_min = departures[0].get("minutes_until")
 
         score = _score_park_and_ride_candidate(
             origin, destination, c["lat"], c["lng"], total_distance,
@@ -1074,7 +1122,7 @@ async def _generate_hybrid_routes(
     ttc_picks = [c for _, c in scored if not c["is_go"]]
     go_picks = [c for _, c in scored if c["is_go"]]
 
-    max_candidates = min(5, len(scored))
+    max_candidates = min(3, len(scored))
     top_candidates = []
     # Take best overall
     for _, c in scored:
@@ -1200,9 +1248,32 @@ async def _build_single_hybrid_route(
             logger.warning(f"OTP transit leg failed for hybrid via {park_stop['stop_name']}: {e}")
 
     if not transit_segments:
-        # Heuristic fallback
-        dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=3)
-        dest_stop = dest_stops[0] if dest_stops else None
+        # Heuristic fallback — find dest stops and prefer same-line connectivity
+        dest_stops = find_nearest_stops(gtfs, destination.lat, destination.lng, radius_km=3.0, limit=5)
+
+        # Score dest stops: strongly prefer stops on the same line as park station
+        park_rid = str(park_stop.get("route_id") or "")
+        dest_stop = None
+        if dest_stops:
+            best_dest = None
+            best_dest_score = float('inf')
+            for ds in dest_stops:
+                ds_rid = str(ds.get("route_id") or "")
+                sc = ds["distance_km"]
+                if park_rid and ds_rid == park_rid:
+                    sc -= 10  # Same line — strongly prefer
+                if best_dest is None or sc < best_dest_score:
+                    best_dest_score = sc
+                    best_dest = ds
+            dest_stop = best_dest
+
+            # If no same-line connection and park station is LRT (5/6),
+            # skip this hybrid — LRT lines have limited coverage
+            if park_rid in ("5", "6"):
+                ds_rid = str(dest_stop.get("route_id") or "")
+                if ds_rid != park_rid:
+                    logger.info(f"Skipping hybrid via {park_stop['stop_name']}: LRT line {park_rid} doesn't serve destination area")
+                    return None
 
         if not dest_stop:
             # Can't build transit leg — straight-line fallback
@@ -1219,7 +1290,8 @@ async def _build_single_hybrid_route(
             )]
         else:
             # Build heuristic transit + walk segments
-            transit_route = find_transit_route(gtfs, park_stop["stop_id"], dest_stop["stop_id"])
+            transit_route = find_transit_route(gtfs, park_stop["stop_id"], dest_stop["stop_id"],
+                                               route_id=park_stop.get("route_id"))
             transit_dist = transit_route["distance_km"] if transit_route else haversine(
                 park_stop["lat"], park_stop["lng"], dest_stop["lat"], dest_stop["lng"]
             )
@@ -1485,7 +1557,8 @@ async def calculate_custom_route(
                     total_dur += w_dur
 
             # Transit segment itself
-            transit_route = find_transit_route(gtfs, seg_req.start_station_id, seg_req.end_station_id)
+            transit_route = find_transit_route(gtfs, seg_req.start_station_id, seg_req.end_station_id,
+                                               route_id=getattr(seg_req, 'route_id', None))
             t_dist = transit_route["distance_km"] if transit_route else haversine(
                 start_coord.lat, start_coord.lng, end_coord.lat, end_coord.lng
             )
@@ -1735,7 +1808,8 @@ async def calculate_custom_route_v2(
             t_geom = None
 
             if seg_req.board_stop_id and seg_req.alight_stop_id:
-                transit_route = find_transit_route(gtfs, seg_req.board_stop_id, seg_req.alight_stop_id)
+                transit_route = find_transit_route(gtfs, seg_req.board_stop_id, seg_req.alight_stop_id,
+                                                   route_id=getattr(seg_req, 'route_id', None))
                 if transit_route:
                     t_dist = transit_route["distance_km"]
                     t_dur = transit_route["estimated_duration_min"]

@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     from app.transit_lines import fetch_transit_lines
     logger.info("Loading transit line overlay...")
     transit_data = await fetch_transit_lines(
-        gtfs, http_client if otp_available else None
+        gtfs, http_client
     )
     app_state["transit_lines"] = transit_data
     line_count = len(transit_data.get("lines", {}).get("features", []))

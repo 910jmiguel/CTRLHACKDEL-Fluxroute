@@ -245,10 +245,7 @@ export default function FluxMap({
     if (transitLineVisibility.line5) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "5"]]);
     if (transitLineVisibility.line6) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "6"]]);
     if (transitLineVisibility.streetcars) lineConditions.push(["==", ["get", "mode"], "TRAM"]);
-
-    // Also allow RAIL mode through (GO trains etc.) if any line is visible
-    const anyVisible = Object.values(transitLineVisibility).some(Boolean);
-    if (anyVisible) lineConditions.push(["==", ["get", "mode"], "RAIL"]);
+    if (transitLineVisibility.upExpress) lineConditions.push(["==", ["get", "mode"], "RAIL"]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: any = lineConditions.length > 0
