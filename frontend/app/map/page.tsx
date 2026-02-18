@@ -84,15 +84,23 @@ export default function MapPage() {
 
   const handleStartNavigation = useCallback(() => {
     if (destination) {
+      // Map selected route mode to Mapbox profile
+      const mode = selectedRoute?.mode;
+      const profile =
+        mode === "walking" ? "walking" :
+        mode === "cycling" ? "cycling" :
+        "driving-traffic";
+      const passRoute = (mode === "transit" || mode === "hybrid") ? selectedRoute : undefined;
+
       if (origin) {
-        navigation.startNavigation(origin, destination);
+        navigation.startNavigation(origin, destination, undefined, profile, passRoute ?? undefined);
       } else if ("geolocation" in navigator) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const geoOrigin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             setOriginLabel("Current Location");
             setOrigin(geoOrigin);
-            navigation.startNavigation(geoOrigin, destination);
+            navigation.startNavigation(geoOrigin, destination, undefined, profile, passRoute ?? undefined);
           },
           (err) => {
             console.error("Geolocation failed:", err.message);
@@ -101,7 +109,7 @@ export default function MapPage() {
         );
       }
     }
-  }, [origin, destination, navigation.startNavigation]);
+  }, [origin, destination, selectedRoute, navigation.startNavigation]);
 
   const prevOriginRef = useRef<Coordinate | null>(null);
   const prevDestRef = useRef<Coordinate | null>(null);
