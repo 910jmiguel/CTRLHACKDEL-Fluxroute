@@ -8,6 +8,7 @@ import type {
   NavigationRoute,
   NavigationInstruction,
   Coordinate,
+  RouteOption,
 } from "@/lib/types";
 import { createNavigationSession, getNavigationRoute } from "@/lib/api";
 
@@ -141,30 +142,53 @@ export function useNavigation(options: UseNavigationOptions = {}) {
   }, []);
 
   const startNavigation = useCallback(
-    async (origin: Coordinate, destination: Coordinate, waypoints?: Coordinate[]) => {
+    async (origin: Coordinate, destination: Coordinate, waypoints?: Coordinate[], profile: string = "driving-traffic", existingRoute?: RouteOption) => {
       // Prevent double-start
       if (wsRef.current) {
         stopNavigation();
       }
 
       try {
-        // Fetch full navigation route (with voice/banner/lane/alternatives)
-        const navRoute = await getNavigationRoute({
-          origin,
-          destination,
-          waypoints,
-          profile: "driving-traffic",
-          alternatives: true,
-          voice_instructions: true,
-          banner_instructions: true,
-        });
+        let navRoute: NavigationRoute;
+        const isTransitMode = existingRoute && (existingRoute.mode === "transit" || existingRoute.mode === "hybrid");
+
+        if (isTransitMode) {
+          // For transit/hybrid: build navigation from existing route segments
+          const navInstructions: NavigationInstruction[] = existingRoute.segments.map((seg) => ({
+            instruction: seg.instructions || `${seg.mode} segment`,
+            distance_km: seg.distance_km,
+            duration_min: seg.duration_min,
+            maneuver_type: seg.mode === "transit" ? "notification" : "depart",
+            maneuver_modifier: "straight",
+            voice_instruction: seg.instructions || `${seg.mode} segment`,
+            banner_primary: seg.instructions || `${seg.mode} segment`,
+            geometry: seg.geometry as GeoJSON.LineString | undefined,
+          }));
+          navRoute = {
+            route: existingRoute,
+            navigation_instructions: navInstructions,
+            voice_locale: "en-US",
+            alternatives: [],
+          };
+        } else {
+          // For driving/walking/cycling: fetch from Mapbox
+          navRoute = await getNavigationRoute({
+            origin,
+            destination,
+            waypoints,
+            profile,
+            alternatives: true,
+            voice_instructions: true,
+            banner_instructions: true,
+          });
+        }
 
         // Create a server-side session for WebSocket tracking
         const session = await createNavigationSession({
           origin,
           destination,
           waypoints,
-          profile: "driving-traffic",
+          profile: isTransitMode ? "walking" : profile,
           voice_instructions: true,
           banner_instructions: true,
         });

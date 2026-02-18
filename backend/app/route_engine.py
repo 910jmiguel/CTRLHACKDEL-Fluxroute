@@ -885,13 +885,9 @@ async def _generate_transit_route(
                 http_client=http_client, weather=weather, app_state=app_state,
             )
 
-        # Last resort: pick closest cross-line pair (straight segment, no transfer)
-        for o_stop in origin_stops:
-            for d_stop in dest_stops:
-                score = o_stop["distance_km"] + d_stop["distance_km"]
-                if score < best_score:
-                    best_score = score
-                    best_pair = (o_stop, d_stop)
+        # No valid same-line or transfer route found
+        logger.info("No valid transit route found (no same-line pair or transfer)")
+        return None
 
     if best_pair is None:
         return None

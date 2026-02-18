@@ -234,6 +234,7 @@ def build_transit_overlay_from_gtfs(gtfs: dict) -> dict:
                         "color": color,
                         "agencyName": "TTC",
                         "routeName": short_name or long_name,
+                        "shortName": short_name,
                     },
                     "geometry": {
                         "type": "Point",

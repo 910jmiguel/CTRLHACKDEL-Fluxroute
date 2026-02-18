@@ -88,6 +88,7 @@ class NavigationSession:
     reroute_count: int = 0
     started_at: float = field(default_factory=time.time)
     is_active: bool = True
+    profile: str = "driving-traffic"
 
     def __post_init__(self):
         self.remaining_distance_km = self.total_distance_km
@@ -105,6 +106,7 @@ class NavigationSessionManager:
         origin: Coordinate,
         destination: Coordinate,
         route_data: dict,
+        profile: str = "driving-traffic",
     ) -> str:
         """Create a new navigation session from route data.
 
@@ -121,6 +123,7 @@ class NavigationSessionManager:
             navigation_instructions=route_data.get("navigation_instructions", []),
             total_distance_km=route_data.get("distance_km", 0),
             total_duration_min=route_data.get("duration_min", 0),
+            profile=profile,
         )
 
         self.sessions[session_id] = session

@@ -556,7 +556,7 @@ async def navigation_websocket(websocket: WebSocket, session_id: str):
                     new_routes = await get_navigation_directions(
                         origin=Coordinate(lat=msg["lat"], lng=msg["lng"]),
                         destination=session.destination,
-                        profile="driving-traffic",
+                        profile=session.profile,
                         alternatives=False,
                         http_client=http_client,
                     )
@@ -642,6 +642,7 @@ async def create_navigation_session(request: NavigationRouteRequest):
         origin=request.origin,
         destination=request.destination,
         route_data=results[0],
+        profile=request.profile,
     )
 
     return {
