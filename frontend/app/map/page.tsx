@@ -397,8 +397,9 @@ export default function MapPage() {
 
         {/* Dashboard view — fixed overlay covering the full viewport when active */}
         {viewMode === "dashboard" && (
-          <div className="fixed inset-0 z-20 overflow-auto bg-[var(--bg-primary)]">
-            <div className="pt-16">
+          <div className="fixed inset-0 z-20 flex flex-col bg-[var(--background)]">
+            <div className="shrink-0 h-16" /> {/* spacer below the fixed TopBar */}
+            <div className="flex-1 min-h-0 overflow-auto">
               <DashboardView
                 routes={routes}
                 filteredRoutes={filteredRoutes}

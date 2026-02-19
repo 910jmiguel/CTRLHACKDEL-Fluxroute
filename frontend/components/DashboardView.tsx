@@ -46,7 +46,7 @@ export default function DashboardView({
   ];
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--background)]">
+    <div className="min-h-full bg-[var(--background)]">
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
         {/* Decision Matrix — expanded */}
         {filteredRoutes.length > 0 && (
