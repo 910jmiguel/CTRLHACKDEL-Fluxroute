@@ -79,6 +79,7 @@ async def get_routes(request: RouteRequest):
         predictor=predictor,
         modes=request.modes,
         app_state=state,
+        preferences=request.preferences,
     )
 
     return RouteResponse(

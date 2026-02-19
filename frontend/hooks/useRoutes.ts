@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import type { Coordinate, RouteOption, RouteResponse, RouteMode } from "@/lib/types";
+import type { Coordinate, RouteOption, RouteResponse, RouteMode, RoutePreferences } from "@/lib/types";
 import { getRoutes } from "@/lib/api";
 
 export type ModeFilter = "all" | "driving" | "transit" | "hybrid";
@@ -19,12 +19,12 @@ export function useRoutes() {
   }, [routes, activeFilter]);
 
   const fetchRoutes = useCallback(
-    async (origin: Coordinate, destination: Coordinate) => {
+    async (origin: Coordinate, destination: Coordinate, preferences?: RoutePreferences) => {
       setLoading(true);
       setError(null);
       setActiveFilter("all");
       try {
-        const response: RouteResponse = await getRoutes({ origin, destination });
+        const response: RouteResponse = await getRoutes({ origin, destination, preferences });
         setRoutes(response.routes);
         if (response.routes.length > 0) {
           setSelectedRoute(response.routes[0]);

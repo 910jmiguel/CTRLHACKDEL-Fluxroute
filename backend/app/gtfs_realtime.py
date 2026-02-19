@@ -343,9 +343,22 @@ async def _try_fetch_trip_updates_protobuf(client: httpx.AsyncClient) -> dict:
 
 
 async def _try_fetch_realtime(app_state: dict) -> None:
-    """Try to fetch real GTFS-RT data, fall back to mock."""
+    """Try to fetch real GTFS-RT data, fall back to mock. Also re-checks OTP health."""
     vehicles_fetched = False
     alerts_fetched = False
+
+    # Periodic OTP health re-check — update otp_available dynamically
+    try:
+        from app.otp_client import check_otp_health
+        was_available = app_state.get("otp_available", False)
+        is_available = await check_otp_health()
+        app_state["otp_available"] = is_available
+        if is_available and not was_available:
+            logger.info("OTP server came online — switching to OTP routing")
+        elif not is_available and was_available:
+            logger.warning("OTP server went offline — falling back to heuristic routing")
+    except Exception as e:
+        logger.debug(f"OTP health check failed: {e}")
 
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:

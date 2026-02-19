@@ -46,6 +46,7 @@ class RouteSegment(BaseModel):
     alight_stop_id: Optional[str] = None       # GTFS stop_id (alighting)
     next_departures: Optional[list[dict]] = None  # [{departure_time, minutes_until}]
     schedule_source: Optional[str] = None      # "gtfs-rt" | "gtfs-static" | "estimated"
+    intermediate_stops: Optional[list[dict]] = None  # [{stop_id, stop_name, lat, lng}]
 
 
 class CostBreakdown(BaseModel):
@@ -87,6 +88,13 @@ class RouteOption(BaseModel):
     parking_info: Optional[ParkingInfo] = None
 
 
+class RoutePreferences(BaseModel):
+    allowed_agencies: list[str] = Field(
+        default_factory=lambda: ["TTC", "GO Transit", "YRT", "MiWay"]
+    )
+    max_drive_radius_km: float = Field(default=15.0, ge=5.0, le=25.0)
+
+
 class RouteRequest(BaseModel):
     origin: Coordinate
     destination: Coordinate
@@ -99,6 +107,7 @@ class RouteRequest(BaseModel):
         ]
     )
     departure_time: Optional[str] = None
+    preferences: Optional[RoutePreferences] = None
 
 
 class RouteResponse(BaseModel):
