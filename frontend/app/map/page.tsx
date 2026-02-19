@@ -263,17 +263,6 @@ export default function MapPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-enable vehicle display when a route with transit segments is selected
-  useEffect(() => {
-    if (selectedRoute) {
-      const hasTransit = selectedRoute.segments.some(
-        (s) => s.mode === "transit" && s.transit_route_id
-      );
-      if (hasTransit) {
-        setShowVehicles(true);
-      }
-    }
-  }, [selectedRoute]);
 
   // Filter vehicles to only show lines used by the selected route
   const filteredVehicles = useMemo(() => {
@@ -330,45 +319,34 @@ export default function MapPage() {
 
       {/* Main content area */}
       <div className="flex-1 relative">
-        {viewMode === "dashboard" ? (
-          /* Dashboard mode: full-width comparison */
-          <div className="h-full pt-16">
-            <DashboardView
-              routes={routes}
-              filteredRoutes={filteredRoutes}
-              selectedRoute={selectedRoute}
-              onSelectRoute={selectRoute}
-              activeFilter={activeFilter}
-              onFilterChange={setActiveFilter}
-            />
-          </div>
-        ) : (
-          /* Map mode: full-screen map with overlays */
-          <>
-            <FluxMap
-              selectedRoute={navigation.isNavigating && navigation.navigationRoute
-                ? navigation.navigationRoute.route
-                : selectedRoute}
-              routes={navigation.isNavigating && navigation.navigationRoute
-                ? [navigation.navigationRoute.route]
-                : routes}
-              origin={origin}
-              destination={destination}
-              vehicles={filteredVehicles}
-              theme={mapTheme}
-              showTraffic={showTraffic}
-              transitLines={transitLines}
-              transitLineVisibility={transitLineVisibility}
-              showVehicles={showVehicles}
-              showUnselectedRoutes={showUnselectedRoutes}
-              isochroneData={isochroneData}
-              userPosition={navigation.currentPosition}
-              isNavigating={navigation.isNavigating}
-              onMapClick={navigation.isNavigating ? undefined : handleMapClick}
-              onGeolocate={handleGeolocate}
-              onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
-            />
+        {/* FluxMap is ALWAYS mounted — Mapbox instance is never destroyed */}
+        <FluxMap
+          selectedRoute={navigation.isNavigating && navigation.navigationRoute
+            ? navigation.navigationRoute.route
+            : selectedRoute}
+          routes={navigation.isNavigating && navigation.navigationRoute
+            ? [navigation.navigationRoute.route]
+            : routes}
+          origin={origin}
+          destination={destination}
+          vehicles={filteredVehicles}
+          theme={mapTheme}
+          showTraffic={showTraffic}
+          transitLines={transitLines}
+          transitLineVisibility={transitLineVisibility}
+          showVehicles={showVehicles}
+          showUnselectedRoutes={showUnselectedRoutes}
+          isochroneData={isochroneData}
+          userPosition={navigation.currentPosition}
+          isNavigating={navigation.isNavigating}
+          onMapClick={navigation.isNavigating ? undefined : handleMapClick}
+          onGeolocate={handleGeolocate}
+          onMarkerDrag={navigation.isNavigating ? undefined : handleMarkerDrag}
+        />
 
+        {/* Map overlays — hidden while dashboard is active */}
+        {viewMode !== "dashboard" && (
+          <>
             {/* Map Layers + Isochrone — stacked top-left */}
             <div className="absolute top-16 left-4 z-20 flex flex-col gap-2">
               <MapLayersControl
@@ -415,6 +393,22 @@ export default function MapPage() {
             {/* Loading overlay */}
             {loading && <LoadingOverlay />}
           </>
+        )}
+
+        {/* Dashboard view — fixed overlay covering the full viewport when active */}
+        {viewMode === "dashboard" && (
+          <div className="fixed inset-0 z-20 overflow-auto bg-[var(--bg-primary)]">
+            <div className="pt-16">
+              <DashboardView
+                routes={routes}
+                filteredRoutes={filteredRoutes}
+                selectedRoute={selectedRoute}
+                onSelectRoute={selectRoute}
+                activeFilter={activeFilter}
+                onFilterChange={setActiveFilter}
+              />
+            </div>
+          </div>
         )}
 
         {/* Chat assistant — always available */}

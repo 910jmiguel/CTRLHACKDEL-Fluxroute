@@ -467,17 +467,28 @@ async def fetch_transit_lines(
     result = build_transit_overlay_from_gtfs(gtfs)
 
     # Secondary: GO/regional rail from OTP (only RAIL mode, not SUBWAY/TRAM)
+    go_lines: list = []
+    go_stations: list = []
     if http_client:
         try:
             go_data = await _fetch_otp_regional_lines(http_client)
             go_lines = go_data.get("lines", [])
             go_stations = go_data.get("stations", [])
             if go_lines:
-                result["lines"]["features"].extend(go_lines)
-                result["stations"]["features"].extend(go_stations)
                 logger.info(f"Added {len(go_lines)} GO/regional rail lines from OTP")
         except Exception as e:
             logger.warning(f"Failed to fetch GO lines from OTP: {e}")
+
+    if not go_lines:
+        # OTP unavailable or returned no lines — use hardcoded GO transit geometry
+        from app.gtfs_parser import GO_TRANSIT_LINES
+        go_lines = GO_TRANSIT_LINES["lines"]
+        go_stations = GO_TRANSIT_LINES["stations"]
+        logger.info(f"OTP unavailable — using {len(go_lines)} hardcoded GO transit lines")
+
+    if go_lines:
+        result["lines"]["features"].extend(go_lines)
+        result["stations"]["features"].extend(go_stations)
 
     # Snap streetcar routes to actual road geometry (only for fallback data —
     # GTFS shapes.txt already has accurate track geometry)

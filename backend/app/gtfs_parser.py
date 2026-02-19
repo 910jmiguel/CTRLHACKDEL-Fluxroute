@@ -136,6 +136,239 @@ TTC_SUBWAY_STATIONS = [
     {"stop_id": "FW_HMBR", "stop_name": "Humber College", "stop_lat": 43.7299, "stop_lon": -79.6014, "route_id": "6", "line": "Line 6 Finch West"},
 ]
 
+# Hardcoded GO Transit rail lines as fallback when OTP is unavailable.
+# Coordinates are [lng, lat] (GeoJSON convention).
+GO_TRANSIT_LINES: dict = {
+    "lines": [
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:LSW",
+                "shortName": "LSW",
+                "longName": "Lakeshore West",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-79.8711, 43.2557],  # Hamilton GO Centre
+                    [-79.8337, 43.3147],  # Aldershot
+                    [-79.7972, 43.3313],  # Burlington
+                    [-79.7655, 43.3631],  # Appleby
+                    [-79.7249, 43.3997],  # Bronte
+                    [-79.6810, 43.4470],  # Oakville
+                    [-79.6376, 43.5073],  # Clarkson
+                    [-79.5871, 43.5461],  # Port Credit
+                    [-79.5466, 43.5856],  # Long Branch
+                    [-79.5073, 43.6077],  # Mimico
+                    [-79.4214, 43.6354],  # Exhibition
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:LSE",
+                "shortName": "LSE",
+                "longName": "Lakeshore East",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-78.8437, 43.9001],  # Oshawa
+                    [-78.9411, 43.8726],  # Whitby
+                    [-79.0298, 43.8466],  # Ajax
+                    [-79.0863, 43.8321],  # Pickering
+                    [-79.1303, 43.7891],  # Rouge Hill
+                    [-79.1760, 43.7555],  # Guildwood
+                    [-79.2217, 43.7271],  # Scarborough
+                    [-79.3102, 43.6858],  # Danforth
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:KIT",
+                "shortName": "KIT",
+                "longName": "Kitchener",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-80.4985, 43.4525],  # Kitchener
+                    [-80.2494, 43.5455],  # Guelph
+                    [-79.9215, 43.6478],  # Georgetown
+                    [-79.8178, 43.6690],  # Mount Pleasant
+                    [-79.7678, 43.6842],  # Brampton
+                    [-79.7283, 43.7064],  # Bramalea
+                    [-79.6578, 43.7094],  # Malton
+                    [-79.5814, 43.7264],  # Etobicoke North
+                    [-79.5212, 43.7061],  # Weston
+                    [-79.4542, 43.6641],  # Bloor
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:BAR",
+                "shortName": "BAR",
+                "longName": "Barrie",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-79.6892, 44.3785],  # Barrie South
+                    [-79.5640, 44.1135],  # Bradford
+                    [-79.4773, 44.0571],  # Newmarket
+                    [-79.4557, 44.0030],  # Aurora
+                    [-79.5297, 43.9205],  # King City
+                    [-79.5102, 43.8507],  # Maple
+                    [-79.5247, 43.8317],  # Rutherford
+                    [-79.4264, 43.8140],  # Langstaff
+                    [-79.4076, 43.7758],  # Oriole
+                    [-79.4032, 43.7601],  # Old Cummer
+                    [-79.4781, 43.7536],  # Downsview Park
+                    [-79.4542, 43.6641],  # Bloor
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:STO",
+                "shortName": "STO",
+                "longName": "Stouffville",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-79.2575, 44.0327],  # Lincolnville
+                    [-79.2558, 43.9715],  # Stouffville
+                    [-79.2599, 43.8879],  # Mount Joy
+                    [-79.2636, 43.8589],  # Markham
+                    [-79.2890, 43.8361],  # Unionville
+                    [-79.2892, 43.8096],  # Centennial
+                    [-79.2844, 43.7810],  # Agincourt
+                    [-79.2635, 43.7344],  # Kennedy
+                    [-79.3102, 43.6858],  # Danforth
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:RH",
+                "shortName": "RH",
+                "longName": "Richmond Hill",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-79.3660, 44.0421],  # Gormley
+                    [-79.3614, 43.9501],  # Richmond Hill
+                    [-79.4264, 43.8140],  # Langstaff
+                    [-79.4032, 43.7601],  # Old Cummer
+                    [-79.4076, 43.7758],  # Oriole
+                    [-79.4542, 43.6641],  # Bloor
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "id": "go:MIL",
+                "shortName": "MIL",
+                "longName": "Milton",
+                "mode": "RAIL",
+                "color": "#3D8B37",
+                "agencyName": "GO Transit",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-79.8817, 43.5177],  # Milton
+                    [-79.8005, 43.5785],  # Lisgar
+                    [-79.7686, 43.5884],  # Meadowvale
+                    [-79.7202, 43.5917],  # Streetsville
+                    [-79.6760, 43.5903],  # Erindale
+                    [-79.6254, 43.5902],  # Cooksville
+                    [-79.5871, 43.5461],  # Port Credit
+                    [-79.5466, 43.5856],  # Long Branch
+                    [-79.5073, 43.6077],  # Mimico
+                    [-79.3806, 43.6453],  # Union
+                ],
+            },
+        },
+    ],
+    "stations": [
+        # Lakeshore West key stops
+        {"type": "Feature", "properties": {"name": "Hamilton GO Centre", "stopId": "go:HAM", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSW"}, "geometry": {"type": "Point", "coordinates": [-79.8711, 43.2557]}},
+        {"type": "Feature", "properties": {"name": "Aldershot", "stopId": "go:ALD", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSW"}, "geometry": {"type": "Point", "coordinates": [-79.8337, 43.3147]}},
+        {"type": "Feature", "properties": {"name": "Burlington", "stopId": "go:BUR", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSW"}, "geometry": {"type": "Point", "coordinates": [-79.7972, 43.3313]}},
+        {"type": "Feature", "properties": {"name": "Oakville", "stopId": "go:OAK", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSW"}, "geometry": {"type": "Point", "coordinates": [-79.6810, 43.4470]}},
+        {"type": "Feature", "properties": {"name": "Port Credit", "stopId": "go:PTC", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSW"}, "geometry": {"type": "Point", "coordinates": [-79.5871, 43.5461]}},
+        {"type": "Feature", "properties": {"name": "Mimico", "stopId": "go:MIM", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSW"}, "geometry": {"type": "Point", "coordinates": [-79.5073, 43.6077]}},
+        # Lakeshore East key stops
+        {"type": "Feature", "properties": {"name": "Oshawa", "stopId": "go:OSH", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSE"}, "geometry": {"type": "Point", "coordinates": [-78.8437, 43.9001]}},
+        {"type": "Feature", "properties": {"name": "Whitby", "stopId": "go:WHI", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSE"}, "geometry": {"type": "Point", "coordinates": [-78.9411, 43.8726]}},
+        {"type": "Feature", "properties": {"name": "Ajax", "stopId": "go:AJX", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSE"}, "geometry": {"type": "Point", "coordinates": [-79.0298, 43.8466]}},
+        {"type": "Feature", "properties": {"name": "Pickering", "stopId": "go:PIK", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSE"}, "geometry": {"type": "Point", "coordinates": [-79.0863, 43.8321]}},
+        {"type": "Feature", "properties": {"name": "Scarborough GO", "stopId": "go:SCA", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "LSE"}, "geometry": {"type": "Point", "coordinates": [-79.2217, 43.7271]}},
+        # Kitchener key stops
+        {"type": "Feature", "properties": {"name": "Kitchener", "stopId": "go:KIT", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "KIT"}, "geometry": {"type": "Point", "coordinates": [-80.4985, 43.4525]}},
+        {"type": "Feature", "properties": {"name": "Guelph Central", "stopId": "go:GUE", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "KIT"}, "geometry": {"type": "Point", "coordinates": [-80.2494, 43.5455]}},
+        {"type": "Feature", "properties": {"name": "Georgetown", "stopId": "go:GEO", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "KIT"}, "geometry": {"type": "Point", "coordinates": [-79.9215, 43.6478]}},
+        {"type": "Feature", "properties": {"name": "Brampton", "stopId": "go:BRA", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "KIT"}, "geometry": {"type": "Point", "coordinates": [-79.7678, 43.6842]}},
+        {"type": "Feature", "properties": {"name": "Weston", "stopId": "go:WES", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "KIT"}, "geometry": {"type": "Point", "coordinates": [-79.5212, 43.7061]}},
+        # Barrie key stops
+        {"type": "Feature", "properties": {"name": "Barrie South", "stopId": "go:BRS", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "BAR"}, "geometry": {"type": "Point", "coordinates": [-79.6892, 44.3785]}},
+        {"type": "Feature", "properties": {"name": "Newmarket", "stopId": "go:NEW", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "BAR"}, "geometry": {"type": "Point", "coordinates": [-79.4773, 44.0571]}},
+        {"type": "Feature", "properties": {"name": "Aurora", "stopId": "go:AUR", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "BAR"}, "geometry": {"type": "Point", "coordinates": [-79.4557, 44.0030]}},
+        {"type": "Feature", "properties": {"name": "King City", "stopId": "go:KGC", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "BAR"}, "geometry": {"type": "Point", "coordinates": [-79.5297, 43.9205]}},
+        {"type": "Feature", "properties": {"name": "Maple", "stopId": "go:MAP", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "BAR"}, "geometry": {"type": "Point", "coordinates": [-79.5102, 43.8507]}},
+        # Stouffville key stops
+        {"type": "Feature", "properties": {"name": "Lincolnville", "stopId": "go:LIN", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "STO"}, "geometry": {"type": "Point", "coordinates": [-79.2575, 44.0327]}},
+        {"type": "Feature", "properties": {"name": "Stouffville", "stopId": "go:STV", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "STO"}, "geometry": {"type": "Point", "coordinates": [-79.2558, 43.9715]}},
+        {"type": "Feature", "properties": {"name": "Markham", "stopId": "go:MRK", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "STO"}, "geometry": {"type": "Point", "coordinates": [-79.2636, 43.8589]}},
+        {"type": "Feature", "properties": {"name": "Unionville", "stopId": "go:UNV", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "STO"}, "geometry": {"type": "Point", "coordinates": [-79.2890, 43.8361]}},
+        # Richmond Hill key stops
+        {"type": "Feature", "properties": {"name": "Gormley", "stopId": "go:GOR", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "RH"}, "geometry": {"type": "Point", "coordinates": [-79.3660, 44.0421]}},
+        {"type": "Feature", "properties": {"name": "Richmond Hill", "stopId": "go:RHL", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "RH"}, "geometry": {"type": "Point", "coordinates": [-79.3614, 43.9501]}},
+        # Milton key stops
+        {"type": "Feature", "properties": {"name": "Milton", "stopId": "go:MLT", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "MIL"}, "geometry": {"type": "Point", "coordinates": [-79.8817, 43.5177]}},
+        {"type": "Feature", "properties": {"name": "Mississauga", "stopId": "go:MSS", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "MIL"}, "geometry": {"type": "Point", "coordinates": [-79.6254, 43.5902]}},
+        # Shared terminal
+        {"type": "Feature", "properties": {"name": "Union Station", "stopId": "go:UNI", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "GO Transit"}, "geometry": {"type": "Point", "coordinates": [-79.3806, 43.6453]}},
+        {"type": "Feature", "properties": {"name": "Bloor GO", "stopId": "go:BLR", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "GO Transit"}, "geometry": {"type": "Point", "coordinates": [-79.4542, 43.6641]}},
+        {"type": "Feature", "properties": {"name": "Danforth GO", "stopId": "go:DAN", "mode": "RAIL", "color": "#3D8B37", "agencyName": "GO Transit", "routeName": "GO Transit"}, "geometry": {"type": "Point", "coordinates": [-79.3102, 43.6858]}},
+    ],
+}
+
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two points in km."""

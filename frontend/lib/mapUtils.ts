@@ -421,12 +421,23 @@ export function removeTransitOverlay(map: mapboxgl.Map) {
 }
 
 export function setTransitOverlayDimmed(map: mapboxgl.Map, dimmed: boolean) {
-  const vis = dimmed ? "none" : "visible";
   try {
-    for (const layerId of [TRANSIT_LINES_LAYER, TRANSIT_LINES_CASING, TRANSIT_STATIONS_LAYER, TRANSIT_STATION_LABELS]) {
-      if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, "visibility", vis);
-      }
+    if (map.getLayer(TRANSIT_LINES_LAYER)) {
+      map.setPaintProperty(TRANSIT_LINES_LAYER, "line-opacity", dimmed ? 0.15 : 0.85);
+    }
+    if (map.getLayer(TRANSIT_LINES_CASING)) {
+      map.setPaintProperty(TRANSIT_LINES_CASING, "line-opacity", dimmed ? 0.05 : 0.3);
+    }
+    if (map.getLayer(TRANSIT_STATIONS_LAYER)) {
+      map.setPaintProperty(TRANSIT_STATIONS_LAYER, "circle-opacity", dimmed ? 0.2 : 0.85);
+      map.setPaintProperty(TRANSIT_STATIONS_LAYER, "circle-stroke-opacity", dimmed ? 0.1 : 0.7);
+    }
+    if (map.getLayer(TRANSIT_STATION_LABELS)) {
+      map.setPaintProperty(
+        TRANSIT_STATION_LABELS,
+        "text-opacity",
+        dimmed ? 0.15 : ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1]
+      );
     }
   } catch {
     // Layers may not exist yet
