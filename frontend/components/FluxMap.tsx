@@ -245,30 +245,34 @@ export default function FluxMap({
     if (transitLineVisibility.line5) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "5"]]);
     if (transitLineVisibility.line6) lineConditions.push(["all", ["in", ["get", "mode"], ["literal", ["SUBWAY", "LRT"]]], ["==", ["get", "shortName"], "6"]]);
     if (transitLineVisibility.streetcars) lineConditions.push(["==", ["get", "mode"], "TRAM"]);
-    if (transitLineVisibility.upExpress) lineConditions.push(["==", ["get", "mode"], "RAIL"]);
+    if (transitLineVisibility.goTransit) lineConditions.push(["all", ["==", ["get", "mode"], "RAIL"], ["==", ["get", "agencyName"], "GO Transit"]]);
+    if (transitLineVisibility.upExpress) lineConditions.push(["all", ["==", ["get", "mode"], "RAIL"], ["==", ["get", "agencyName"], "Metrolinx"]]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: any = lineConditions.length > 0
       ? ["any", ...lineConditions]
       : ["==", "mode", "__none__"]; // Hide everything
 
+    const visibility = lineConditions.length > 0 ? "visible" : "none";
     try {
       for (const layerId of ["transit-lines-casing", "transit-lines-layer"]) {
-        if (m.getLayer(layerId)) m.setFilter(layerId, filter);
+        if (m.getLayer(layerId)) {
+          m.setFilter(layerId, filter);
+          m.setLayoutProperty(layerId, "visibility", visibility);
+        }
       }
       for (const layerId of ["transit-stations-layer", "transit-station-labels"]) {
-        if (m.getLayer(layerId)) m.setFilter(layerId, filter);
+        if (m.getLayer(layerId)) {
+          m.setFilter(layerId, filter);
+          m.setLayoutProperty(layerId, "visibility", visibility);
+        }
       }
     } catch (err) {
       console.warn("Failed to apply transit filters:", err);
     }
   }, [transitLineVisibility, transitLines, mapLoaded]);
 
-  // Dim transit overlay when a route is selected (focus mode)
-  useEffect(() => {
-    if (!map.current || !mapLoaded || !transitLines) return;
-    setTransitOverlayDimmed(map.current, !!selectedRoute);
-  }, [selectedRoute, mapLoaded, transitLines]);
+  // Keep transit overlay always visible; user controls via MapLayersControl toggles
 
   // Toggle vehicle layer visibility
   useEffect(() => {
