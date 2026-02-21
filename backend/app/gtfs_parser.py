@@ -471,6 +471,41 @@ def load_gtfs_data() -> dict:
                         rapid_index[stop_id] = route_info_map[route_id]
             logger.info(f"Built rapid transit index: {len(rapid_index)} stops")
     data["_rapid_index"] = rapid_index
+clau
+    # Build all-routes index (includes bus route_type 3) for bus routing fallback
+    all_routes_index: dict[str, dict] = {}
+    if not routes_df.empty and "route_type" in routes_df.columns and not trips_df.empty and not stop_times_df.empty:
+        all_route_info_map = {}
+        for _, r in routes_df.iterrows():
+            rid = r["route_id"]
+            all_route_info_map[rid] = {
+                "route_id": rid,
+                "route_short_name": str(r.get("route_short_name", "")) if pd.notna(r.get("route_short_name")) else "",
+                "route_long_name": str(r.get("route_long_name", "")) if pd.notna(r.get("route_long_name")) else "",
+                "route_type": int(r.get("route_type", 3)),
+            }
+        all_trip_to_route = dict(zip(trips_df["trip_id"], trips_df["route_id"]))
+        # Scan stop_times to map stop_id → set of route_ids
+        all_stop_routes: dict[str, set] = {}
+        for stop_id, trip_id in zip(stop_times_df["stop_id"].values, stop_times_df["trip_id"].values):
+            route_id = all_trip_to_route.get(trip_id)
+            if route_id is not None:
+                if stop_id not in all_stop_routes:
+                    all_stop_routes[stop_id] = set()
+                all_stop_routes[stop_id].add(route_id)
+        # Flatten to first route per stop for fast lookups
+        for stop_id, route_ids in all_stop_routes.items():
+            for rid in route_ids:
+                if rid in all_route_info_map:
+                    all_routes_index[stop_id] = all_route_info_map[rid]
+                    break
+        logger.info(f"Built all-routes index: {len(all_routes_index)} stops")
+        data["_all_stop_routes"] = all_stop_routes
+        data["_all_route_info"] = all_route_info_map
+    else:
+        data["_all_stop_routes"] = {}
+        data["_all_route_info"] = {}
+    data["_all_routes_index"] = all_routes_index
 
     return data
 
@@ -1395,20 +1430,12 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str, route
                 "coordinates": [[s["lng"], s["lat"]] for s in intermediate],
             }
     else:
-        # Fallback to straight-line haversine
-        distance = haversine(origin_row[lat_col], origin_row[lng_col], dest_row[lat_col], dest_row[lng_col])
-        # Try full route shape
-        shape = get_route_shape(gtfs, route_id_str)
-        if shape:
-            geometry = shape
-        else:
-            geometry = {
-                "type": "LineString",
-                "coordinates": [
-                    [origin_row[lng_col], origin_row[lat_col]],
-                    [dest_row[lng_col], dest_row[lat_col]],
-                ]
-            }
+        # No intermediate stops found — cannot build an accurate transit route
+        logger.warning(
+            f"find_transit_route: no intermediate stops for route {route_id_str} "
+            f"from {origin_stop_id} to {dest_stop_id} — returning None"
+        )
+        return None
 
     # Estimate duration: ~30 km/h average subway speed
     estimated_duration = round(distance / 0.5, 1)  # distance / (30 km/h / 60 min)
@@ -1467,3 +1494,206 @@ def find_transit_route(gtfs: dict, origin_stop_id: str, dest_stop_id: str, route
     }
 
     return route_info
+
+
+def find_bus_routes_between(
+    gtfs: dict,
+    origin_lat: float,
+    origin_lng: float,
+    dest_lat: float,
+    dest_lng: float,
+    radius_km: float = 1.5,
+    limit: int = 3,
+) -> list[dict]:
+    """Find bus/streetcar routes connecting origin and destination areas.
+
+    Uses the prebuilt all-routes index to find stops near origin/dest,
+    then finds common trip_ids and validates stop_sequence ordering.
+
+    Returns list of dicts with keys:
+        board_stop, alight_stop, route_id, route_name, route_type,
+        distance_km, duration_min, geometry, intermediate_stops
+    """
+    stop_times_df = gtfs.get("stop_times", pd.DataFrame())
+    trips_df = gtfs.get("trips", pd.DataFrame())
+    stops_df = gtfs.get("stops", pd.DataFrame())
+    routes_df = gtfs.get("routes", pd.DataFrame())
+
+    if stop_times_df.empty or trips_df.empty or stops_df.empty or routes_df.empty:
+        return []
+
+    # Find stops near origin and destination
+    origin_stops = find_nearest_stops(gtfs, origin_lat, origin_lng, radius_km=radius_km, limit=20)
+    dest_stops = find_nearest_stops(gtfs, dest_lat, dest_lng, radius_km=radius_km, limit=20)
+
+    if not origin_stops or not dest_stops:
+        return []
+
+    origin_stop_ids = {s["stop_id"] for s in origin_stops}
+    dest_stop_ids = {s["stop_id"] for s in dest_stops}
+
+    # Find trip_ids visiting origin stops
+    origin_trips = stop_times_df[stop_times_df["stop_id"].isin(origin_stop_ids)][
+        ["trip_id", "stop_id", "stop_sequence"]
+    ].copy()
+    if origin_trips.empty:
+        return []
+
+    # Find trip_ids visiting destination stops
+    dest_trips = stop_times_df[stop_times_df["stop_id"].isin(dest_stop_ids)][
+        ["trip_id", "stop_id", "stop_sequence"]
+    ].copy()
+    if dest_trips.empty:
+        return []
+
+    # Find trips that serve BOTH areas
+    common_trip_ids = set(origin_trips["trip_id"]) & set(dest_trips["trip_id"])
+    if not common_trip_ids:
+        return []
+
+    # Filter to correct direction (origin stop_sequence < dest stop_sequence)
+    origin_trips = origin_trips[origin_trips["trip_id"].isin(common_trip_ids)]
+    dest_trips = dest_trips[dest_trips["trip_id"].isin(common_trip_ids)]
+    merged = origin_trips.merge(dest_trips, on="trip_id", suffixes=("_origin", "_dest"))
+    merged = merged[merged["stop_sequence_origin"] < merged["stop_sequence_dest"]]
+
+    if merged.empty:
+        return []
+
+    # Map trip_id → route_id
+    trip_route_map = dict(zip(trips_df["trip_id"], trips_df["route_id"]))
+    merged["route_id"] = merged["trip_id"].map(trip_route_map)
+    merged = merged.dropna(subset=["route_id"])
+
+    # Build route info lookup
+    route_info_map = {}
+    for _, r in routes_df.iterrows():
+        rid = str(r.get("route_id", ""))
+        route_info_map[rid] = {
+            "route_short_name": str(r.get("route_short_name", "")) if pd.notna(r.get("route_short_name")) else "",
+            "route_long_name": str(r.get("route_long_name", "")) if pd.notna(r.get("route_long_name")) else "",
+            "route_type": int(r.get("route_type", 3)),
+        }
+
+    origin_stop_map = {s["stop_id"]: s for s in origin_stops}
+    dest_stop_map = {s["stop_id"]: s for s in dest_stops}
+
+    # Bearing check: overall trip direction
+    trip_bearing = math.degrees(math.atan2(
+        dest_lng - origin_lng, dest_lat - origin_lat
+    )) % 360
+
+    # Group by route_id, pick best origin/dest stop pair per route
+    seen_routes: set[str] = set()
+    results = []
+
+    for route_id_val in merged["route_id"].unique():
+        route_id_str = str(route_id_val)
+        if route_id_str in seen_routes:
+            continue
+        seen_routes.add(route_id_str)
+
+        route_rows = merged[merged["route_id"] == route_id_val]
+
+        # Pick the pair with closest combined access distance
+        best_row = None
+        best_score = float("inf")
+        for _, row in route_rows.iterrows():
+            o_stop = origin_stop_map.get(row["stop_id_origin"])
+            d_stop = dest_stop_map.get(row["stop_id_dest"])
+            if o_stop and d_stop:
+                score = o_stop["distance_km"] + d_stop["distance_km"]
+                if score < best_score:
+                    best_score = score
+                    best_row = row
+
+        if best_row is None:
+            continue
+
+        o_stop = origin_stop_map.get(best_row["stop_id_origin"])
+        d_stop = dest_stop_map.get(best_row["stop_id_dest"])
+        if not o_stop or not d_stop:
+            continue
+
+        # Bearing check: reject if route goes in wrong direction
+        seg_bearing = math.degrees(math.atan2(
+            d_stop["lng"] - o_stop["lng"], d_stop["lat"] - o_stop["lat"]
+        )) % 360
+        diff = abs(seg_bearing - trip_bearing) % 360
+        if diff > 180:
+            diff = 360 - diff
+        if diff > 90:
+            continue
+
+        # Get intermediate stops
+        board_sid = str(o_stop["stop_id"])
+        alight_sid = str(d_stop["stop_id"])
+        intermediate = get_intermediate_stops(gtfs, route_id_str, board_sid, alight_sid)
+
+        # Compute distance
+        if len(intermediate) >= 2:
+            dist = 0.0
+            for k in range(len(intermediate) - 1):
+                dist += haversine(
+                    intermediate[k]["lat"], intermediate[k]["lng"],
+                    intermediate[k + 1]["lat"], intermediate[k + 1]["lng"],
+                )
+        else:
+            dist = haversine(o_stop["lat"], o_stop["lng"], d_stop["lat"], d_stop["lng"])
+
+        # Get geometry
+        shape_geom = get_route_shape_segment(
+            gtfs, route_id_str,
+            o_stop["lat"], o_stop["lng"],
+            d_stop["lat"], d_stop["lng"],
+        )
+        if shape_geom and len(shape_geom.get("coordinates", [])) >= 2:
+            geometry = shape_geom
+        elif len(intermediate) >= 2:
+            geometry = {
+                "type": "LineString",
+                "coordinates": [[s["lng"], s["lat"]] for s in intermediate],
+            }
+        else:
+            geometry = {
+                "type": "LineString",
+                "coordinates": [
+                    [o_stop["lng"], o_stop["lat"]],
+                    [d_stop["lng"], d_stop["lat"]],
+                ],
+            }
+
+        rinfo = route_info_map.get(route_id_str, {})
+        short_name = rinfo.get("route_short_name", "")
+        long_name = rinfo.get("route_long_name", "")
+        route_type = rinfo.get("route_type", 3)
+
+        if short_name and long_name:
+            route_name = f"{short_name} {long_name}"
+        elif short_name:
+            route_name = short_name
+        elif long_name:
+            route_name = long_name
+        else:
+            route_name = f"Route {route_id_str}"
+
+        # Speed estimate: bus ~20 km/h, streetcar ~18 km/h
+        speed = 18 if route_type == 0 else 20
+        dur = (dist / speed) * 60
+
+        results.append({
+            "board_stop": o_stop,
+            "alight_stop": d_stop,
+            "route_id": route_id_str,
+            "route_name": route_name,
+            "route_type": route_type,
+            "distance_km": round(dist, 2),
+            "duration_min": round(dur, 1),
+            "geometry": geometry,
+            "intermediate_stops": intermediate,
+        })
+
+    # Sort by combined access distance + transit distance
+    results.sort(key=lambda r: r["board_stop"]["distance_km"] + r["alight_stop"]["distance_km"] + r["distance_km"])
+    logger.info(f"find_bus_routes_between: found {len(results)} bus/streetcar routes")
+    return results[:limit]

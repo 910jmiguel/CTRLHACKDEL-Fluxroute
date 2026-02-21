@@ -63,6 +63,15 @@ _TRANSIT_MODE_COLORS = {
 
 _RAPID_TRANSIT_MODES = {"SUBWAY", "RAIL"}
 
+# Mapping from display agency name to OTP bannedAgencies ID
+_AGENCY_NAME_TO_OTP_ID = {
+    "TTC": "1:1",
+    "GO Transit": "2:GO",
+    "YRT": "3:YRT",
+    "MiWay": "4:mississauga-on-ca",
+    "UP Express": "5:UPExpress",
+}
+
 
 async def find_park_and_ride_stations(
     lat: float,
@@ -162,10 +171,16 @@ async def query_otp_routes(
     origin: Coordinate,
     destination: Coordinate,
     departure_time: Optional[datetime] = None,
-    num_itineraries: int = 3,
+    num_itineraries: int = 5,
     http_client: Optional[httpx.AsyncClient] = None,
+    timeout: float = 10.0,
+    banned_agencies: Optional[list[str]] = None,
 ) -> list[dict]:
     """Query OTP for transit itineraries.
+
+    Args:
+        banned_agencies: List of agency display names to exclude (e.g. ["GO Transit", "YRT"]).
+            Converted to OTP bannedAgencies IDs internally.
 
     Returns a list of raw OTP itinerary dicts, or empty list on failure.
     """
@@ -184,15 +199,25 @@ async def query_otp_routes(
         "arriveBy": "false",
     }
 
+    # Convert banned agency names to OTP IDs
+    if banned_agencies:
+        otp_ids = [
+            _AGENCY_NAME_TO_OTP_ID[name]
+            for name in banned_agencies
+            if name in _AGENCY_NAME_TO_OTP_ID
+        ]
+        if otp_ids:
+            params["bannedAgencies"] = ",".join(otp_ids)
+
     url = f"{base}/otp/routers/default/plan"
 
     try:
         if http_client:
-            resp = await http_client.get(url, params=params, timeout=5.0)
+            resp = await http_client.get(url, params=params, timeout=timeout)
             resp.raise_for_status()
             data = resp.json()
         else:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 data = resp.json()

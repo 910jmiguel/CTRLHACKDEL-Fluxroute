@@ -12,6 +12,8 @@ import NavigationView from "@/components/NavigationView";
 import RouteBuilderModal from "@/components/RouteBuilderModal";
 import MapLayersControl from "@/components/MapLayersControl";
 import type { TransitLineVisibility } from "@/components/MapLayersControl";
+import RoutePreferencesPanel from "@/components/RoutePreferencesPanel";
+import type { RoutePreferencesState } from "@/components/RoutePreferencesPanel";
 import TopBar from "@/components/TopBar";
 import RoutePanel from "@/components/RoutePanel";
 import AlertsPanel from "@/components/AlertsPanel";
@@ -47,6 +49,10 @@ export default function MapPage() {
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
   const [customizeBaseRoute, setCustomizeBaseRoute] = useState<RouteOption | null>(null);
   const [isochroneData, setIsochroneData] = useState<IsochroneResponse | null>(null);
+  const [routePreferences, setRoutePreferences] = useState<RoutePreferencesState>({
+    allowedAgencies: { TTC: true, "GO Transit": true, YRT: true, MiWay: true },
+    maxDriveRadiusKm: 15,
+  });
 
   // Panel states
   const [routePanelOpen, setRoutePanelOpen] = useState(false);
@@ -162,16 +168,23 @@ export default function MapPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const toApiPreferences = useCallback((prefs: RoutePreferencesState) => ({
+    allowed_agencies: Object.entries(prefs.allowedAgencies)
+      .filter(([, v]) => v)
+      .map(([k]) => k),
+    max_drive_radius_km: prefs.maxDriveRadiusKm,
+  }), []);
+
   const handleSearch = useCallback(
     (orig: Coordinate, dest: Coordinate) => {
       setOrigin(orig);
       setDestination(dest);
       prevOriginRef.current = orig;
       prevDestRef.current = dest;
-      fetchRoutes(orig, dest);
+      fetchRoutes(orig, dest, toApiPreferences(routePreferences));
       setRoutePanelOpen(true);
     },
-    [fetchRoutes]
+    [fetchRoutes, routePreferences, toApiPreferences]
   );
 
   // Auto-open route panel when routes arrive
@@ -219,21 +232,22 @@ export default function MapPage() {
     prevOriginRef.current = newOrigin;
     prevDestRef.current = newDest;
     if (newOrigin && newDest) {
-      fetchRoutes(newOrigin, newDest);
+      fetchRoutes(newOrigin, newDest, toApiPreferences(routePreferences));
     }
-  }, [fetchRoutes]);
+  }, [fetchRoutes, routePreferences, toApiPreferences]);
 
   const handleMarkerDrag = useCallback((type: "origin" | "destination", coord: { lat: number; lng: number }) => {
+    const prefs = toApiPreferences(routePreferences);
     if (type === "origin") {
       setOriginLabel(null);
       setOrigin(coord);
-      if (destination) fetchRoutes(coord, destination);
+      if (destination) fetchRoutes(coord, destination, prefs);
     } else {
       setDestinationLabel(null);
       setDestination(coord);
-      if (origin) fetchRoutes(origin, coord);
+      if (origin) fetchRoutes(origin, coord, prefs);
     }
-  }, [origin, destination, fetchRoutes]);
+  }, [origin, destination, fetchRoutes, routePreferences, toApiPreferences]);
 
   const handleCustomize = useCallback((route: RouteOption) => {
     setCustomizeBaseRoute(route);
@@ -245,6 +259,20 @@ export default function MapPage() {
     setShowRouteBuilder(false);
     setCustomizeBaseRoute(null);
   }, [addCustomRoute]);
+
+  const handlePreferencesChange = useCallback((prefs: RoutePreferencesState) => {
+    setRoutePreferences(prefs);
+    // Auto-refetch if routes are currently displayed
+    if (origin && destination && routes.length > 0) {
+      const apiPrefs = {
+        allowed_agencies: Object.entries(prefs.allowedAgencies)
+          .filter(([, v]) => v)
+          .map(([k]) => k),
+        max_drive_radius_km: prefs.maxDriveRadiusKm,
+      };
+      fetchRoutes(origin, destination, apiPrefs);
+    }
+  }, [origin, destination, routes.length, fetchRoutes]);
 
   // Keep refs in sync
   useEffect(() => { prevOriginRef.current = origin; }, [origin]);
@@ -347,8 +375,12 @@ export default function MapPage() {
         {/* Map overlays — hidden while dashboard is active */}
         {viewMode !== "dashboard" && (
           <>
-            {/* Map Layers + Isochrone — stacked top-left */}
+            {/* Map Layers + Preferences + Isochrone — stacked top-left */}
             <div className="absolute top-16 left-4 z-20 flex flex-col gap-2">
+              <RoutePreferencesPanel
+                preferences={routePreferences}
+                onChange={handlePreferencesChange}
+              />
               <MapLayersControl
                 transitLineVisibility={transitLineVisibility}
                 onToggleTransitLine={handleToggleTransitLine}

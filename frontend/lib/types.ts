@@ -38,6 +38,7 @@ export interface RouteSegment {
   alight_stop_id?: string;
   next_departures?: Array<{ departure_time: string; minutes_until: number }>;
   schedule_source?: string;  // "gtfs-rt" | "gtfs-static" | "estimated"
+  intermediate_stops?: Array<{ stop_id: string; stop_name: string; lat: number; lng: number }>;
 }
 
 export interface CostBreakdown {
@@ -79,11 +80,17 @@ export interface RouteOption {
   parking_info?: ParkingInfo;
 }
 
+export interface RoutePreferences {
+  allowed_agencies: string[];
+  max_drive_radius_km: number;
+}
+
 export interface RouteRequest {
   origin: Coordinate;
   destination: Coordinate;
   modes?: RouteMode[];
   departure_time?: string;
+  preferences?: RoutePreferences;
 }
 
 export interface RouteResponse {

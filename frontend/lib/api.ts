@@ -22,6 +22,7 @@ import type {
   IsochroneRequest,
   IsochroneResponse,
   NavigationSessionResponse,
+  RoutePreferences,
 } from "./types";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
