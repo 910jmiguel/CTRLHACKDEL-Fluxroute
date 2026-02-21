@@ -5,9 +5,11 @@ Secondary: OTP index API for GO/regional rail lines not in local GTFS.
 Fallback: hardcoded TTC subway stations if GTFS unavailable.
 """
 
+import io
 import logging
 import os
 import re
+import zipfile
 from typing import Optional
 
 import httpx
@@ -453,20 +455,190 @@ async def _snap_streetcar_routes_to_roads(
         logger.info(f"Snapped {snapped} streetcar routes to actual roads via Mapbox")
 
 
+_GO_LINE_COLORS = {
+    "ST": "#00853F",  # Stouffville
+    "LE": "#00853F",  # Lakeshore East
+    "LW": "#00853F",  # Lakeshore West
+    "MI": "#00853F",  # Milton
+    "KI": "#00853F",  # Kitchener
+    "BA": "#00853F",  # Barrie
+    "RH": "#00853F",  # Richmond Hill
+}
+
+
+def _load_gtfs_zip(zip_path: str) -> dict:
+    """Load a GTFS zip file and return its DataFrames."""
+    data = {}
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            for fname in ["routes.txt", "trips.txt", "shapes.txt", "stops.txt", "stop_times.txt"]:
+                if fname in names:
+                    with zf.open(fname) as f:
+                        data[fname.replace(".txt", "")] = pd.read_csv(io.TextIOWrapper(f, encoding="utf-8-sig"))
+    except Exception as e:
+        logger.warning(f"Failed to load GTFS zip {zip_path}: {e}")
+    return data
+
+
+def _build_overlay_from_gtfs_zip(zip_path: str, agency_name: str, mode: str, color: str) -> dict:
+    """Extract line geometries and stations from a GTFS zip for a single agency."""
+    g = _load_gtfs_zip(zip_path)
+    routes_df = g.get("routes", pd.DataFrame())
+    trips_df = g.get("trips", pd.DataFrame())
+    shapes_df = g.get("shapes", pd.DataFrame())
+    stops_df = g.get("stops", pd.DataFrame())
+    stop_times_df = g.get("stop_times", pd.DataFrame())
+
+    lines = []
+    stations = []
+    seen = set()
+
+    if routes_df.empty or trips_df.empty or shapes_df.empty:
+        return {"lines": lines, "stations": stations}
+
+    for _, route in routes_df.iterrows():
+        route_id = route["route_id"]
+        short_name = str(route.get("route_short_name", "")) if pd.notna(route.get("route_short_name")) else ""
+        long_name = str(route.get("route_long_name", "")) if pd.notna(route.get("route_long_name")) else ""
+
+        # GO Transit: only include rail routes (route_type 2)
+        route_type = int(route.get("route_type", 3)) if pd.notna(route.get("route_type")) else 3
+        if agency_name == "GO Transit" and route_type != 2:
+            continue
+
+        route_color = _GO_LINE_COLORS.get(short_name, color)
+        raw_color = route.get("route_color")
+        if pd.notna(raw_color) and raw_color:
+            c = str(raw_color)
+            route_color = c if c.startswith("#") else f"#{c}"
+
+        # Find longest shape for this route
+        route_trips = trips_df[trips_df["route_id"] == route_id]
+        if route_trips.empty or "shape_id" not in route_trips.columns:
+            continue
+        valid_trips = route_trips.dropna(subset=["shape_id"])
+        if valid_trips.empty:
+            continue
+
+        best_shape_id = None
+        best_count = 0
+        for sid in valid_trips["shape_id"].unique():
+            count = len(shapes_df[shapes_df["shape_id"] == sid])
+            if count > best_count:
+                best_count = count
+                best_shape_id = sid
+
+        if best_shape_id is None or best_count < 2:
+            continue
+
+        shape_pts = shapes_df[shapes_df["shape_id"] == best_shape_id].sort_values("shape_pt_sequence")
+        coords = [[float(r["shape_pt_lon"]), float(r["shape_pt_lat"])] for _, r in shape_pts.iterrows()]
+        if len(coords) < 2:
+            continue
+
+        lines.append({
+            "type": "Feature",
+            "properties": {
+                "id": str(route_id),
+                "shortName": short_name,
+                "longName": long_name,
+                "mode": mode,
+                "color": route_color,
+                "agencyName": agency_name,
+            },
+            "geometry": {"type": "LineString", "coordinates": coords},
+        })
+
+        # Stations
+        if not stop_times_df.empty and not stops_df.empty:
+            trip_ids = route_trips["trip_id"].unique()
+            route_stop_times = stop_times_df[stop_times_df["trip_id"].isin(trip_ids)]
+            station_stop_ids = route_stop_times["stop_id"].unique()
+            route_stops = stops_df[stops_df["stop_id"].isin(station_stop_ids)]
+            lat_col = "stop_lat" if "stop_lat" in stops_df.columns else "latitude"
+            lng_col = "stop_lon" if "stop_lon" in stops_df.columns else "longitude"
+            for _, stop in route_stops.iterrows():
+                cleaned = _clean_station_name(str(stop.get("stop_name", "")))
+                key = (cleaned, short_name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                stations.append({
+                    "type": "Feature",
+                    "properties": {
+                        "name": cleaned,
+                        "stopId": str(stop["stop_id"]),
+                        "mode": mode,
+                        "color": route_color,
+                        "agencyName": agency_name,
+                        "routeName": short_name or long_name,
+                        "shortName": short_name,
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(stop[lng_col]), float(stop[lat_col])],
+                    },
+                })
+
+    return {"lines": lines, "stations": stations}
+
+
+def _load_local_agency_overlays() -> dict:
+    """Load GO Transit, YRT, MiWay, and UP Express from local GTFS zips in data/otp/."""
+    otp_dir = os.path.join(os.path.dirname(__file__), "..", "data", "otp")
+    otp_dir = os.path.normpath(otp_dir)
+
+    all_lines = []
+    all_stations = []
+
+    agency_configs = [
+        ("gotransit.zip", "GO Transit", "RAIL", "#00853F"),
+        ("yrt.zip",       "YRT",        "BUS",  "#0072CE"),
+        ("miway.zip",     "MiWay",      "BUS",  "#F7941D"),
+    ]
+
+    for zip_name, agency_name, mode, color in agency_configs:
+        zip_path = os.path.join(otp_dir, zip_name)
+        if not os.path.exists(zip_path):
+            logger.info(f"Skipping {zip_name} — not found at {zip_path}")
+            continue
+        try:
+            data = _build_overlay_from_gtfs_zip(zip_path, agency_name, mode, color)
+            all_lines.extend(data["lines"])
+            all_stations.extend(data["stations"])
+            logger.info(f"Loaded {len(data['lines'])} lines, {len(data['stations'])} stations from {zip_name}")
+        except Exception as e:
+            logger.warning(f"Failed to load {zip_name}: {e}")
+
+    return {"lines": all_lines, "stations": all_stations}
+
+
 async def fetch_transit_lines(
     gtfs: dict,
     http_client: Optional[httpx.AsyncClient] = None,
 ) -> dict:
-    """Build transit overlay: TTC from GTFS shapes, GO from OTP.
+    """Build transit overlay: TTC from GTFS shapes, GO/YRT/MiWay from local GTFS zips, GO from OTP as fallback.
 
     1. TTC lines from GTFS shapes.txt (always reliable, complete geometry)
-    2. If OTP available, add GO/regional rail lines from OTP index
-    3. Snap streetcar routes to actual roads via Mapbox Directions
+    2. GO Transit + regional agencies from local GTFS zips in data/otp/
+    3. If OTP available, supplement with any additional lines from OTP index
+    4. Snap streetcar routes to actual roads via Mapbox Directions
     """
     # Primary: TTC from GTFS shapes
     result = build_transit_overlay_from_gtfs(gtfs)
 
-    # Secondary: GO/regional rail from OTP (only RAIL mode, not SUBWAY/TRAM)
+    # Secondary: GO/regional from local GTFS zips (no OTP needed)
+    try:
+        local_data = _load_local_agency_overlays()
+        if local_data["lines"]:
+            result["lines"]["features"].extend(local_data["lines"])
+            result["stations"]["features"].extend(local_data["stations"])
+            logger.info(f"Added {len(local_data['lines'])} regional lines from local GTFS zips")
+    except Exception as e:
+        logger.warning(f"Failed to load local agency overlays: {e}")
+
+    # Tertiary: GO/regional rail from OTP (only RAIL mode, not SUBWAY/TRAM)
     go_lines: list = []
     go_stations: list = []
     if http_client:

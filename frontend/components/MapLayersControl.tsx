@@ -13,6 +13,7 @@ export interface TransitLineVisibility {
   line6: boolean;
   streetcars: boolean;
   upExpress: boolean;
+  goTransit: boolean;
 }
 
 interface MapLayersControlProps {
@@ -34,6 +35,10 @@ const TTC_LINES: { key: keyof TransitLineVisibility; label: string; color: strin
   { key: "line5", label: "Line 5 Eglinton", color: "#FF8C00", lineId: "5" },
   { key: "line6", label: "Line 6 Finch West", color: "#6EC4E8", lineId: "6" },
   { key: "streetcars", label: "Streetcars", color: "#DD3333" },
+];
+
+const REGIONAL_LINES: { key: keyof TransitLineVisibility; label: string; color: string }[] = [
+  { key: "goTransit", label: "GO Transit Rail", color: "#00853F" },
   { key: "upExpress", label: "UP Express", color: "#1E3A8A" },
 ];
 
@@ -94,10 +99,10 @@ export default function MapLayersControl({
             <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
 
-          {/* Transit section */}
+          {/* TTC section */}
           <div className="px-3 pb-2">
             <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-              Transit
+              TTC
             </div>
             <div className="space-y-1">
               {TTC_LINES.map(({ key, label, color, lineId }) => (
@@ -117,6 +122,28 @@ export default function MapLayersControl({
                         style={{ backgroundColor: color }}
                       />
                     )}
+                    <span className="text-xs text-[var(--text-secondary)]">{label}</span>
+                  </div>
+                  <Toggle
+                    checked={transitLineVisibility[key]}
+                    onChange={() => onToggleTransitLine(key)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Regional section */}
+          <div className="border-t border-[var(--border)] mx-3" />
+          <div className="px-3 py-2">
+            <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
+              Regional
+            </div>
+            <div className="space-y-1">
+              {REGIONAL_LINES.map(({ key, label, color }) => (
+                <div key={key} className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                     <span className="text-xs text-[var(--text-secondary)]">{label}</span>
                   </div>
                   <Toggle

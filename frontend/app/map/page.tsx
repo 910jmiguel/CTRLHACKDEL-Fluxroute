@@ -66,8 +66,9 @@ export default function MapPage() {
     line4: true,
     line5: true,
     line6: true,
-    streetcars: false,
+    streetcars: true,
     upExpress: true,
+    goTransit: true,
   });
   const [showVehicles, setShowVehicles] = useState(false);
   const [showUnselectedRoutes, setShowUnselectedRoutes] = useState(true);

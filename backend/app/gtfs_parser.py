@@ -471,7 +471,7 @@ def load_gtfs_data() -> dict:
                         rapid_index[stop_id] = route_info_map[route_id]
             logger.info(f"Built rapid transit index: {len(rapid_index)} stops")
     data["_rapid_index"] = rapid_index
-clau
+
     # Build all-routes index (includes bus route_type 3) for bus routing fallback
     all_routes_index: dict[str, dict] = {}
     if not routes_df.empty and "route_type" in routes_df.columns and not trips_df.empty and not stop_times_df.empty:
